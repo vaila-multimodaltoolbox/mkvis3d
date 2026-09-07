@@ -34,11 +34,16 @@ def read_wide_csv(path: str | Path, *, rate_hz: float = 100.0) -> MarkerTrial:
     sampling-rate metadata of its own; pass the true rate when known (e.g.
     from the paired `.c3d` file's header) to avoid silently assuming wrong.
     """
+    if not np.isfinite(rate_hz) or rate_hz <= 0:
+        raise ValueError("rate_hz must be finite and positive")
     df = pd.read_csv(path)
     point_numbers = _point_numbers_from_columns(df.columns)
     if not point_numbers:
         raise ValueError(f"{path}: no p{{n}}_x/_y/_z columns found")
 
+    missing = [f"p{n}_{axis}" for n in point_numbers for axis in "xyz" if f"p{n}_{axis}" not in df]
+    if missing:
+        raise ValueError(f"missing coordinate columns: {', '.join(missing)}")
     labels = tuple(f"p{n}" for n in point_numbers)
     n_frames = len(df)
     n_markers = len(labels)

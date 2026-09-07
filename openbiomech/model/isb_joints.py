@@ -105,7 +105,8 @@ def decompose_joint_angular_velocity(
     )  # (n, 3, 3), columns = e_flex, e_float, e_rot
 
     coeffs = np.full_like(omega_flat, np.nan)
-    dets = np.linalg.det(basis)
+    with np.errstate(invalid="ignore"):
+        dets = np.linalg.det(basis)
     solvable = np.abs(dets) > 1e-9
     if np.any(solvable):
         # Trailing singleton axis makes the batch-of-vectors shape (k, 3, 1)

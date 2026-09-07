@@ -59,6 +59,59 @@ NOT implemented -- genuinely blocked, not guessed:
 
 from __future__ import annotations
 
+import numpy as np
+
+# Exact x/y/z fallback fractions supplied in the continuation specification.
+_DE_LEVA_RADII = {
+    "thigh": (0.329, 0.329, 0.149),
+    "shank": (0.255, 0.249, 0.103),
+    "foot": (0.257, 0.245, 0.124),
+}
+
+
+def inertia_tensor(segment: str, mass_kg: float, length_m: float) -> np.ndarray:
+    """CoM inertia (kg m²): diag(m * (r * L)**2), explicit de Leva fallback.
+
+    Uses the exact radii requested in the 2026-09-07 continuation spec.
+    Mass is segment mass, NOT body mass. Existing Dumas mass/CoM lookups
+    remain separate; this is not a Dumas inertia tensor. The supplied
+    profile has no sex split and covers thigh/shank/foot only. Pelvis
+    inertia must be supplied separately. Local axes follow profile x/y/z.
+    """
+    if segment not in _DE_LEVA_RADII:
+        raise ValueError(f"no de Leva fallback radii for {segment!r}; expected thigh, shank, foot")
+    if not np.isfinite(mass_kg) or mass_kg <= 0:
+        raise ValueError("mass_kg must be finite and positive")
+    if not np.isfinite(length_m) or length_m <= 0:
+        raise ValueError("length_m must be finite and positive")
+    radii = np.asarray(_DE_LEVA_RADII[segment], dtype=np.float64)
+    return np.diag(mass_kg * (radii * length_m) ** 2)
+
+
+def global_inertia_tensor(local_inertia: np.ndarray, rotation: np.ndarray) -> np.ndarray:
+    """R @ I_com @ R.T; R columns are local axes expressed in the lab.
+
+    Accepts constant (3,3) inertia and (...,3,3) rotations. Invalid frames,
+    reflections and nonphysical inertia tensors raise ValueError.
+    """
+    inertia = np.asarray(local_inertia, dtype=np.float64)
+    R = np.asarray(rotation, dtype=np.float64)
+    if inertia.shape != (3, 3) or not np.isfinite(inertia).all():
+        raise ValueError("local_inertia must be a finite (3, 3) tensor")
+    if not np.allclose(inertia, inertia.T, atol=1e-12, rtol=0):
+        raise ValueError("local_inertia must be symmetric")
+    moments = np.linalg.eigvalsh(inertia)
+    if moments[0] < 0 or moments[-1] > moments[0] + moments[1] + 1e-12:
+        raise ValueError("local_inertia must have nonnegative physical principal moments")
+    if R.ndim < 2 or R.shape[-2:] != (3, 3) or not np.isfinite(R).all():
+        raise ValueError("rotation must have finite (..., 3, 3) matrices")
+    if not np.allclose(R.swapaxes(-1, -2) @ R, np.eye(3), atol=1e-7, rtol=0) or not np.allclose(
+        np.linalg.det(R), 1.0, atol=1e-7, rtol=0
+    ):
+        raise ValueError("rotation must be orthonormal and right-handed")
+    return R @ inertia @ R.swapaxes(-1, -2)
+
+
 _MASS_FRACTION: dict[str, dict[str, float]] = {
     "head": {"female": 0.067, "male": 0.067},
     "torso": {"female": 0.304, "male": 0.333},

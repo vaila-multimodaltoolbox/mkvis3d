@@ -279,9 +279,15 @@ def read_c3d(path: str | Path) -> MarkerTrial:
             residuals=np.zeros((0, 0), dtype=np.float64),
         )
 
+    raw_units = _group_values(parsed.groups, "POINT", "UNITS")
+    units = str(np.atleast_1d(raw_units)[0]).strip().lower() if raw_units is not None else ""
+    factors = {"m": 1.0, "mm": 0.001, "cm": 0.01}
+    if units not in factors:
+        raise ValueError(f"unsupported or missing POINT:UNITS: {units!r}; expected m, cm, mm")
+    factor = factors[units]
     return MarkerTrial(
         labels=parsed.point_labels,
         rate_hz=float(parsed.header.point_rate_hz),
-        xyz=parsed.points.as_xyz().astype(np.float64),
-        residuals=parsed.points.residual.astype(np.float64),
+        xyz=parsed.points.as_xyz().astype(np.float64) * factor,
+        residuals=np.where(parsed.points.residual < 0, -1.0, parsed.points.residual * factor),
     )

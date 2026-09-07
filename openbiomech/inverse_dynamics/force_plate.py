@@ -123,3 +123,72 @@ def compute_cop(
     out_force = np.where(contact[..., np.newaxis], f, 0.0)
     out_moment = np.where(contact[..., np.newaxis], m, 0.0)
     return {"cop": out_cop, "force": out_force, "moment": out_moment}
+
+
+def plate_frame(
+    corners: np.ndarray, *, convention: str = "continuation"
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return surface centre and local-to-lab rotation from four corners (m).
+
+    Shape (4,3) has one corner per row; C3D shape (3,4) is also accepted.
+    ``continuation`` uses EXACTLY the supplied C1+C2-C3-C4 x-axis and
+    C1+C4-C2-C3 y-axis. ``c3d`` uses official C3D quadrant order, swapping
+    those axes. These conventions have opposite normals: select explicitly
+    when reading FORCE_PLATFORM:CORNERS; do not infer from lab vertical.
+    Source: https://www.c3d.org/HTML/Documents/forceplatformcorners.htm
+    """
+    c = np.asarray(corners, dtype=np.float64)
+    if c.shape == (3, 4):
+        c = c.T
+    if c.shape != (4, 3) or not np.isfinite(c).all():
+        raise ValueError("corners must be finite (4, 3) or C3D (3, 4)")
+    if convention not in ("continuation", "c3d"):
+        raise ValueError("corner convention must be 'continuation' or 'c3d'")
+    x = c[0] + c[1] - c[2] - c[3]
+    y = c[0] + c[3] - c[1] - c[2]
+    if convention == "c3d":
+        x, y = y, x
+    if np.linalg.norm(x) < 1e-12 or np.linalg.norm(y) < 1e-12:
+        raise ValueError("corners define a degenerate plate")
+    x, y = x / np.linalg.norm(x), y / np.linalg.norm(y)
+    if abs(np.dot(x, y)) > 1e-7 or not np.allclose(c[0] + c[2], c[1] + c[3], atol=1e-8, rtol=0):
+        raise ValueError("corners must describe an ordered planar rectangle")
+    return c.mean(axis=0), np.column_stack([x, y, np.cross(x, y)])
+
+
+def global_plate_wrench(
+    force: np.ndarray,
+    surface_moment: np.ndarray,
+    corners: np.ndarray,
+    *,
+    convention: str = "continuation",
+    f_threshold: float = 15.0,
+) -> dict[str, np.ndarray]:
+    """Surface-centred LOCAL wrench -> GLOBAL force, COP and free moment.
+
+    Inputs use N, Nm and m; surface_moment must already be about the plate
+    surface centre. Contact is strictly local Fz > threshold, independent of
+    plate orientation in the lab. 'moment' in this result is the FREE moment
+    at COP, M_surface - COP_local x F, not the surface-centred input moment.
+    This prevents double-counting the GRF lever arm in Newton-Euler.
+    Inactive samples return zero force/moment/COP plus contact=False.
+    """
+    f = np.asarray(force, dtype=np.float64)
+    m = np.asarray(surface_moment, dtype=np.float64)
+    if f.ndim < 1 or f.shape[-1] != 3 or f.shape != m.shape:
+        raise ValueError("force and surface_moment must have matching (..., 3) shapes")
+    if not np.isfinite(f).all() or not np.isfinite(m).all():
+        raise ValueError("force and surface_moment must be finite")
+    if not np.isfinite(f_threshold) or f_threshold <= 0:
+        raise ValueError("f_threshold must be finite and positive")
+    origin, R = plate_frame(corners, convention=convention)
+    local = compute_cop(f, m, f_threshold=f_threshold)
+    contact = f[..., 2] > f_threshold
+    cop = local["cop"]
+    free_moment = m - np.cross(cop, f)
+    return {
+        "cop": np.where(contact[..., None], origin + cop @ R.T, 0.0),
+        "force": np.where(contact[..., None], f @ R.T, 0.0),
+        "moment": np.where(contact[..., None], free_moment @ R.T, 0.0),
+        "contact": contact,
+    }
