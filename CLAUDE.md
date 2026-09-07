@@ -28,7 +28,7 @@ code already tested in production by the sibling project
 | README crate | Python module | Status |
 |---|---|---|
 | `c3d-io` | `openbiomech/c3d_io/` | **Done.** `legacy_binary.py` is a native NumPy parser (header, parameter section, 3D + analog data, SoA layout) for Intel/VAX/MIPS in both int16 and float storage; `binary_stream.py`, `header.py`, `parameters.py` back it. `ezc3d_reader.py` is kept as the numerical oracle only — `read_c3d_native` matches it bit-for-bit on the golden fixture. |
-| `biomech-math` | `openbiomech/biomech_math/` | `filtering.py` (Butterworth) and `rigid_body.py` (Kabsch) implemented. Quaternions/SLERP, Euler/Cardan, GCVSPL splines — not started. |
+| `biomech-math` | `openbiomech/biomech_math/` | **Done.** `filtering.py` (Butterworth), `rigid_body.py` (Kabsch), `rotations.py` (scalar-first quaternions, Hamilton product, sign continuity, Cardan extraction + gimbal-lock margin, SLERP), `splines.py` (GCV smoothing splines and smooth differentiation). |
 | `biomech-model` | `openbiomech/model/` | Stub only (ISB joints, BSP, gait events). |
 | `inverse-dynamics` | `openbiomech/inverse_dynamics/` | Stub only (force plate types 1–5, COP, Newton-Euler, joint power). |
 | `viewer-core` / `gui-app` / `pipeline-cli` | — | Not started. |
@@ -79,6 +79,14 @@ files; do not add large binary fixtures without checking size.
   `N803` are suppressed project-wide.
 - `f64`-equivalent precision: use `np.float64` throughout the math modules;
   never silently downcast to `float32`.
+- Quaternions are **scalar-first** `(w, x, y, z)` everywhere, per README.md
+  §3.1. scipy is scalar-last, so every boundary with it reorders explicitly.
+  (vailá's `rotation.py:rotmat2quat` claims scalar-first but returns
+  scipy's scalar-last order — do not copy that function.)
+- Prefer scipy over re-deriving numerics: `Rotation`/`Slerp` own the rotation
+  conversions and `make_smoothing_spline` implements the GCV criterion
+  README.md §3.4 calls GCVSPL (cubic only; Woltring's quintic option and its
+  reported GCV score are not available through it).
 - Every new module in `biomech_math`/`c3d_io`/`model`/`inverse_dynamics` gets
   a deterministic unit test (synthetic ground truth, or the golden fixture)
   before being considered done — see the verification ladder in

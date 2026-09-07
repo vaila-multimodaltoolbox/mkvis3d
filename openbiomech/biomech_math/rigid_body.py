@@ -5,8 +5,12 @@ Adapted from `/home/preto/data/vaila/vaila/mesh_alignment.py:umeyama_alignment`
 Visual3D-style cluster/segment tracking (README.md §3.2) is a *rigid*
 registration, not a similarity transform, so no scale factor is estimated.
 
-Reflection-rejection (`det(R) == +1`) and the near-planar/collinear
-degeneracy guard are kept from the source implementation.
+Reflection-rejection (`det(R) == +1`) is kept from the source implementation.
+The degeneracy guard is deliberately *weaker* than the source's: because no
+scale is estimated, a rigid fit needs only three non-collinear points, so this
+module rejects collinear configurations rather than merely coplanar ones. The
+source's planarity test would reject every planar technical marker cluster —
+including the standard three-marker cluster README.md §3.2 is written around.
 """
 
 from __future__ import annotations
@@ -20,9 +24,10 @@ import numpy as np
 class KabschResult:
     """Result of fitting a rigid transform source -> target.
 
-    `degenerate` is True when the source point set is too small or too
-    close to planar/collinear for a numerically stable rotation estimate —
-    callers must skip a degenerate result rather than trust R/t.
+    `degenerate` is True when the source point set is too small or too close
+    to collinear for a numerically stable rotation estimate — callers must
+    skip a degenerate result rather than trust R/t. A *coplanar* set is fine:
+    three non-collinear markers determine a rigid transform uniquely.
     """
 
     degenerate: bool
@@ -40,7 +45,7 @@ def kabsch(
     target: np.ndarray,
     *,
     min_points: int = 3,
-    planarity_ratio_threshold: float = 1e-3,
+    collinearity_ratio_threshold: float = 1e-3,
 ) -> KabschResult:
     """Fit a rigid transform (R, t) mapping source points onto target points:
     target_i ~= R @ source_i + t, in the closed-form least-squares sense of
@@ -49,11 +54,15 @@ def kabsch(
     Args:
         source: (N, 3) array, N >= min_points.
         target: (N, 3) array, same N and row correspondence as source.
-        min_points: minimum number of point correspondences required.
-        planarity_ratio_threshold: minimum allowed ratio of the smallest to
-            largest singular value of the centered source points; below
-            this, the source set is treated as too close to planar/collinear
-            for a numerically stable rotation and the result is degenerate.
+        min_points: minimum number of point correspondences required. Three
+            non-collinear points already fix a rigid transform.
+        collinearity_ratio_threshold: minimum allowed ratio of the *second*
+            to the largest singular value of the centered source points.
+            Below this the points lie along a line, leaving the rotation
+            about that line unconstrained, and the result is degenerate.
+            The third singular value is deliberately not tested: it is
+            exactly zero for any coplanar cluster, which is still a
+            well-posed rigid registration.
 
     Returns:
         KabschResult. Check `.degenerate` before using `.R`/`.t`.
@@ -79,17 +88,16 @@ def kabsch(
     tgt_c = target - mu_tgt
 
     singular_values = np.linalg.svd(src_c, compute_uv=False)
-    if (
-        singular_values[0] <= 0
-        or (singular_values[-1] / singular_values[0]) < planarity_ratio_threshold
+    if singular_values[0] <= 0 or (singular_values[1] / singular_values[0]) < (
+        collinearity_ratio_threshold
     ):
-        ratio = 0.0 if singular_values[0] <= 0 else singular_values[-1] / singular_values[0]
+        ratio = 0.0 if singular_values[0] <= 0 else singular_values[1] / singular_values[0]
         return KabschResult(
             degenerate=True,
             reason=(
-                f"source points are near-planar/collinear "
-                f"(smallest/largest singular value ratio {ratio:.2e} < "
-                f"{planarity_ratio_threshold:.2e})"
+                f"source points are near-collinear "
+                f"(second/largest singular value ratio {ratio:.2e} < "
+                f"{collinearity_ratio_threshold:.2e})"
             ),
             n_points=n,
         )
