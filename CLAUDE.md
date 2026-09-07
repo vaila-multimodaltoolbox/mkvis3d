@@ -29,7 +29,7 @@ code already tested in production by the sibling project
 |---|---|---|
 | `c3d-io` | `openbiomech/c3d_io/` | **Done.** `legacy_binary.py` is a native NumPy parser (header, parameter section, 3D + analog data, SoA layout) for Intel/VAX/MIPS in both int16 and float storage; `binary_stream.py`, `header.py`, `parameters.py` back it. `ezc3d_reader.py` is kept as the numerical oracle only — `read_c3d_native` matches it bit-for-bit on the golden fixture. |
 | `biomech-math` | `openbiomech/biomech_math/` | **Done.** `filtering.py` (Butterworth), `rigid_body.py` (Kabsch), `rotations.py` (scalar-first quaternions, Hamilton product, sign continuity, Cardan extraction + gimbal-lock margin, SLERP), `splines.py` (GCV smoothing splines and smooth differentiation). |
-| `biomech-model` | `openbiomech/model/` | Stub only (ISB joints, BSP, gait events). |
+| `biomech-model` | `openbiomech/model/` | `landmark.py` (real + virtual/computed landmark trajectories) and `segment.py` (per-frame length, longitudinal axis from two landmarks) implemented. ISB joint coordinate systems, BSP, gait events — not started. |
 | `inverse-dynamics` | `openbiomech/inverse_dynamics/` | Stub only (force plate types 1–5, COP, Newton-Euler, joint power). |
 | `viewer-core` / `gui-app` / `pipeline-cli` | — | Not started. |
 
