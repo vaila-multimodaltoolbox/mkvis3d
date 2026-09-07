@@ -142,3 +142,75 @@ def test_local_gui_upload_matches_cli_and_rejects_missing_token(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_browser_smoke_automated(tmp_path):
+    import os
+    import shutil
+    import socket
+    import subprocess
+    import time
+    import urllib.request
+
+    node = shutil.which("node")
+    chrome = shutil.which("google-chrome") or "/opt/google/chrome/chrome"
+    if not node or not Path(chrome).exists():
+        pytest.skip("node or chrome not installed")
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        cdp_port = s.getsockname()[1]
+
+    proc = subprocess.Popen(
+        [
+            chrome,
+            "--headless",
+            "--no-sandbox",
+            "--disable-gpu",
+            "--no-first-run",
+            "--no-default-browser-check",
+            f"--user-data-dir={tmp_path / 'chrome'}",
+            f"--remote-debugging-port={cdp_port}",
+            "--noerrdialogs",
+            "--ozone-platform=headless",
+            "--ozone-override-screen-size=1440,1050",
+            "--use-angle=swiftshader-webgl",
+            "about:blank",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    server, url = create_server(0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        for _ in range(50):
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{cdp_port}/json/list", timeout=1
+                ) as resp:
+                    if resp.status == 200:
+                        break
+            except Exception:
+                time.sleep(0.1)
+        else:
+            pytest.fail("Chrome CDP did not become ready in time")
+
+        root = Path(__file__).resolve().parent.parent
+        env = dict(os.environ, CDP_PORT=str(cdp_port))
+        res = subprocess.run(
+            ["node", str(root / "tests/browser_smoke.mjs"), str(root), url],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0, f"browser smoke failed: {res.stderr}\n{res.stdout}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()

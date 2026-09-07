@@ -1,7 +1,8 @@
 import {writeFile} from "node:fs/promises";
 import assert from "node:assert/strict";
 const root=process.argv[2] || process.cwd();
-const targets=await (await fetch("http://127.0.0.1:9237/json/list")).json();
+const cdpPort = process.env.CDP_PORT || "9237";
+const targets=await (await fetch("http://127.0.0.1:"+cdpPort+"/json/list")).json();
 const ws=new WebSocket(targets.find(t=>t.type==="page").webSocketDebuggerUrl);
 await new Promise(resolve=>ws.addEventListener("open",resolve,{once:true}));
 let next=0;const pending=new Map(),errors=[];
@@ -40,10 +41,13 @@ if(process.argv[3]){
  await send("Page.navigate",{url:process.argv[3]});
  await until('document.getElementById("file") && !document.getElementById("open-panel").hidden');
  const doc=await send("DOM.getDocument");const node=await send("DOM.querySelector",{nodeId:doc.root.nodeId,selector:"#file"});
- await send("DOM.setFileInputFiles",{nodeId:node.nodeId,files:[root+"/data/rec3d_20260826_121305_m.c3d"]});
- await until('document.getElementById("frame").textContent.includes("631")');
- assert.match(await evaluate('document.getElementById("status").textContent'),/Arquivo carregado/);
+ for(const filename of ["rec3d_20260826_121305_m.c3d","rec3d_20260826_121305.csv","rec3d_20260826_121305.3d"]){
+  await evaluate('document.getElementById("status").textContent=""');
+  await send("DOM.setFileInputFiles",{nodeId:node.nodeId,files:[root+"/data/"+filename]});
+  await until('document.getElementById("status")?.textContent.includes("Arquivo carregado")');
+  assert.match(await evaluate('document.getElementById("frame").textContent'),/631/);
+ }
 }
 assert.deepEqual(errors,[]);
-console.log("Browser passed: golden trial, stepping, seek, playback, selection, distance CSV, saved HTML reload, local C3D upload, no JS exceptions.");
+console.log("Browser passed: golden trial, stepping, seek, playback, selection, distance CSV, saved HTML reload, local C3D/CSV/.3d upload, no JS exceptions.");
 ws.close();
