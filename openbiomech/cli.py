@@ -29,18 +29,31 @@ def _load_trial(path: Path, *, rate_hz: float = 100.0, units: str = "m") -> Mark
 def _cmd_view(args: argparse.Namespace) -> int:
     from .viewer import export_viewer
 
-    if args.path.resolve() == args.output.resolve():
+    output = args.output
+    if output is None:
+        output = args.path.with_name(f"{args.path.stem}_viewer.html")
+    if args.path.resolve() == output.resolve():
         raise ValueError("output must differ from the input file")
     trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
-    export_viewer(trial, args.path.name, args.output)
-    print(f"viewer: {args.output.resolve()}")
+    export_viewer(trial, args.path.name, output)
+    print(f"viewer: {output.resolve()}")
     return 0
 
 
 def _cmd_gui(args: argparse.Namespace) -> int:
     from .viewer import serve_viewer
 
-    serve_viewer(port=args.port, open_browser=not args.no_browser)
+    initial_trial = None
+    name = ""
+    if args.path:
+        initial_trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
+        name = args.path.name
+    serve_viewer(
+        port=args.port,
+        open_browser=not args.no_browser,
+        initial_trial=initial_trial,
+        name=name,
+    )
     return 0
 
 
@@ -96,7 +109,7 @@ def _cmd_segment(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="openbiomech",
+        prog="mkvis3d",
         description="mkvis3d / OpenBiomech — motion viewer and reproducible biomechanics.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -114,10 +127,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_segment.set_defaults(func=_cmd_segment)
 
     p_view = sub.add_parser("view", help="export a standalone interactive HTML movement viewer")
-    p_view.add_argument("path", type=Path)
-    p_view.add_argument("--output", "-o", type=Path, required=True)
+    p_view.add_argument("path", type=Path, help="path to a .c3d, .csv, or .3d trial file")
+    p_view.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="output HTML path (default: <input>_viewer.html)",
+    )
     p_view.set_defaults(func=_cmd_view)
-    for p in (p_info, p_segment, p_view):
+
+    p_gui = sub.add_parser("gui", help="open the local visual interface for C3D/CSV/.3d files")
+    p_gui.add_argument(
+        "path",
+        type=Path,
+        nargs="?",
+        default=None,
+        help="optional motion file (.c3d, .csv, .3d) to load immediately",
+    )
+    p_gui.add_argument("--port", type=int, default=0, help="local port (0 chooses a free port)")
+    p_gui.add_argument(
+        "--no-browser", action="store_true", help="print the URL without launching a browser"
+    )
+    p_gui.set_defaults(func=_cmd_gui)
+
+    for p in (p_info, p_segment, p_view, p_gui):
         p.add_argument(
             "--rate",
             type=float,
@@ -130,15 +164,11 @@ def build_parser() -> argparse.ArgumentParser:
             default="m",
             help="CSV/.3d coordinate units; C3D uses metadata",
         )
-    p_gui = sub.add_parser("gui", help="open the local visual interface for C3D/CSV/.3d files")
-    p_gui.add_argument("--port", type=int, default=0, help="local port (0 chooses a free port)")
-    p_gui.add_argument(
-        "--no-browser", action="store_true", help="print the URL without launching a browser"
-    )
-    p_gui.set_defaults(func=_cmd_gui)
+
     p_demo = sub.add_parser("demo", help="write a synthetic four-segment dynamics trial (JSON)")
     p_demo.add_argument("--output", "-o", type=Path, required=True)
     p_demo.set_defaults(func=_cmd_demo)
+
     p_dynamics = sub.add_parser(
         "dynamics", help="run inverse dynamics from synchronized SI-unit JSON; export CSV"
     )
@@ -149,8 +179,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    known_cmds = {"info", "segment", "view", "gui", "demo", "dynamics", "-h", "--help"}
+    if raw_args and raw_args[0] not in known_cmds and not raw_args[0].startswith("-"):
+        candidate = Path(raw_args[0])
+        if candidate.suffix.lower() in (".c3d", ".csv", ".3d") or candidate.exists():
+            raw_args.insert(0, "gui")
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_args)
     try:
         return args.func(args)
     except (OSError, ValueError) as exc:

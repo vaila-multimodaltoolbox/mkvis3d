@@ -14,7 +14,7 @@ await send("Runtime.enable");await send("Page.enable");
 await send("Emulation.setDeviceMetricsOverride",{width:1440,height:1050,deviceScaleFactor:1,mobile:false});
 await send("Page.navigate",{url:"file://"+root+"/outputs/rec3d_viewer.html"});
 await until('document.getElementById("frame")?.textContent.includes("631")');
-assert.match(await evaluate('document.getElementById("meta").textContent'),/70 marcadores/);
+assert.match(await evaluate('document.getElementById("meta").textContent'),/70 markers|70 marcadores/);
 assert.equal(await evaluate('document.getElementById("open-panel").hidden'),true);
 await evaluate('document.getElementById("next").click()');
 assert.match(await evaluate('document.getElementById("frame").textContent'),/^2 \/ 631/);
@@ -41,11 +41,12 @@ if(process.argv[3]){
  await send("Page.navigate",{url:process.argv[3]});
  await until('document.getElementById("file") && !document.getElementById("open-panel").hidden');
  const doc=await send("DOM.getDocument");const node=await send("DOM.querySelector",{nodeId:doc.root.nodeId,selector:"#file"});
- for(const filename of ["rec3d_20260826_121305_m.c3d","rec3d_20260826_121305.csv","rec3d_20260826_121305.3d"]){
+ for(const filename of ["pilot0102_squat03.c3d","rec3d_20260826_121305_m.c3d","rec3d_20260826_121305.csv","rec3d_20260826_121305.3d"]){
   await evaluate('document.getElementById("status").textContent=""');
   await send("DOM.setFileInputFiles",{nodeId:node.nodeId,files:[root+"/data/"+filename]});
-  await until('document.getElementById("status")?.textContent.includes("Arquivo carregado")');
-  assert.match(await evaluate('document.getElementById("frame").textContent'),/631/);
+  await until('document.getElementById("status")?.textContent.includes("File loaded") || document.getElementById("status")?.textContent.includes("Arquivo carregado")');
+  const frameText = await evaluate('document.getElementById("frame").textContent');
+  assert(frameText.includes("6772") || frameText.includes("631"), "unexpected frame: " + frameText);
  }
 }
 assert.deepEqual(errors,[]);

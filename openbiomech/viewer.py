@@ -55,7 +55,9 @@ def export_viewer(trial: MarkerTrial, name: str, output: Path) -> None:
     output.write_text(html, encoding="utf-8")
 
 
-def create_server(port: int = 0) -> tuple[ThreadingHTTPServer, str]:
+def create_server(
+    port: int = 0, initial_payload: dict | None = None
+) -> tuple[ThreadingHTTPServer, str]:
     """Bind loopback; uploads need a per-session token, never a disk path."""
     token = secrets.token_urlsafe(32)
 
@@ -73,10 +75,45 @@ def create_server(port: int = 0) -> tuple[ThreadingHTTPServer, str]:
             self.wfile.write(body)
 
         def do_GET(self) -> None:
-            if urlsplit(self.path).path != "/":
+            parsed = urlsplit(self.path)
+            req_path = parsed.path
+            if req_path == "/api/examples":
+                data_dir = Path(__file__).resolve().parent.parent / "data"
+                examples = []
+                if data_dir.exists():
+                    for ext in (".c3d", ".csv", ".3d"):
+                        for f in sorted(data_dir.glob(f"*{ext}")):
+                            examples.append({"name": f.name, "size": f.stat().st_size})
+                self.send_bytes(
+                    200, json.dumps({"examples": examples}).encode(), "application/json"
+                )
+                return
+            if req_path == "/api/example":
+                query = parse_qs(parsed.query)
+                name = Path(query.get("name", [""])[0]).name
+                data_dir = Path(__file__).resolve().parent.parent / "data"
+                target = data_dir / name
+                if not target.is_file():
+                    self.send_bytes(404, b'{"error":"Example not found"}', "application/json")
+                    return
+                try:
+                    payload = trial_payload(load_trial(target), name)
+                    self.send_bytes(
+                        200, json.dumps(payload, allow_nan=False).encode(), "application/json"
+                    )
+                except Exception as exc:
+                    self.send_bytes(
+                        400, json.dumps({"error": str(exc)}).encode(), "application/json"
+                    )
+                return
+            if req_path != "/":
                 self.send_bytes(404, b"Not found", "text/plain")
                 return
-            self.send_bytes(200, render_viewer(server=True).encode(), "text/html; charset=utf-8")
+            self.send_bytes(
+                200,
+                render_viewer(payload=initial_payload, server=True).encode(),
+                "text/html; charset=utf-8",
+            )
 
         def do_POST(self) -> None:
             if urlsplit(self.path).path != "/api/trial":
@@ -110,10 +147,17 @@ def create_server(port: int = 0) -> tuple[ThreadingHTTPServer, str]:
     return server, f"http://127.0.0.1:{server.server_port}/#{token}"
 
 
-def serve_viewer(*, port: int = 0, open_browser: bool = True) -> None:
-    server, url = create_server(port)
+def serve_viewer(
+    *,
+    port: int = 0,
+    open_browser: bool = True,
+    initial_trial: MarkerTrial | None = None,
+    name: str = "",
+) -> None:
+    initial_payload = trial_payload(initial_trial, name) if initial_trial else None
+    server, url = create_server(port, initial_payload=initial_payload)
     print(f"mkvis3d: {url}", flush=True)
-    print("Ctrl+C encerra a interface local.", flush=True)
+    print("Press Ctrl+C to stop the local viewer.", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:

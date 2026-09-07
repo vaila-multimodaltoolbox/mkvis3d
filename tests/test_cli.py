@@ -88,3 +88,29 @@ def test_segment_matches_direct_model_computation():
         rc = main(["segment", str(FIXTURE_C3D), "p1", "p5"])
     assert rc == 0
     assert f"{expected_mean:.4f}" in buf.getvalue()
+
+
+def test_view_command_supports_default_output(tmp_path):
+    target = tmp_path / "trial.c3d"
+    target.write_bytes(FIXTURE_C3D.read_bytes())
+    rc = main(["view", str(target)])
+    assert rc == 0
+    expected = tmp_path / "trial_viewer.html"
+    assert expected.exists()
+    assert "mkvis3d" in expected.read_text()
+
+
+def test_direct_file_path_routes_to_gui(monkeypatch):
+    called = []
+
+    def mock_serve_viewer(*, port=0, open_browser=True, initial_trial=None, name=""):
+        called.append((name, initial_trial is not None))
+
+    import openbiomech.viewer
+
+    monkeypatch.setattr(openbiomech.viewer, "serve_viewer", mock_serve_viewer)
+    rc = main([str(FIXTURE_C3D), "--no-browser"])
+    assert rc == 0
+    assert len(called) == 1
+    assert called[0][0] == FIXTURE_C3D.name
+    assert called[0][1] is True

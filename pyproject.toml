@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 openbiomech = "openbiomech.cli:main"
+mkvis3d = "openbiomech.cli:main"
 
 [dependency-groups]
 dev = [
