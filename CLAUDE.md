@@ -31,7 +31,8 @@ code already tested in production by the sibling project
 | `biomech-math` | `openbiomech/biomech_math/` | **Done.** `filtering.py` (Butterworth), `rigid_body.py` (Kabsch), `rotations.py` (scalar-first quaternions, Hamilton product, sign continuity, Cardan extraction + gimbal-lock margin, SLERP), `splines.py` (GCV smoothing splines and smooth differentiation). |
 | `biomech-model` | `openbiomech/model/` | `landmark.py` (real + virtual/computed landmark trajectories) and `segment.py` (per-frame length, longitudinal axis from two landmarks) implemented. ISB joint coordinate systems, BSP, gait events — not started. |
 | `inverse-dynamics` | `openbiomech/inverse_dynamics/` | Stub only (force plate types 1–5, COP, Newton-Euler, joint power). |
-| `viewer-core` / `gui-app` / `pipeline-cli` | — | Not started. |
+| `pipeline-cli` | `openbiomech/cli.py` | Minimal only: `openbiomech info <file>` / `openbiomech segment <file> <proximal> <distal>` (`.c3d`/`.csv`/`.3d`) via the `openbiomech` console script (`[project.scripts]` in `pyproject.toml`). Not the full crate (no config-driven batch pipeline) — that stays not started. |
+| `viewer-core` / `gui-app` | — | Not started. |
 
 The sequencing above is governed by
 [`loops/openbiomech-python-prototype-loop.md`](loops/openbiomech-python-prototype-loop.md).
