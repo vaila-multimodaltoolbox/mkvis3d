@@ -9,3 +9,4 @@ build/
 *.egg-info/
 uv.lock
 loops/state/
+vendor/

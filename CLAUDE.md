@@ -27,7 +27,7 @@ code already tested in production by the sibling project
 
 | README crate | Python module | Status |
 |---|---|---|
-| `c3d-io` | `openbiomech/c3d_io/` | `ezc3d_reader.py` wraps `ezc3d` (working, used as oracle). `legacy_binary.py` (custom binary parser per README §4) is a stub — future loop work. |
+| `c3d-io` | `openbiomech/c3d_io/` | **Done.** `legacy_binary.py` is a native NumPy parser (header, parameter section, 3D + analog data, SoA layout) for Intel/VAX/MIPS in both int16 and float storage; `binary_stream.py`, `header.py`, `parameters.py` back it. `ezc3d_reader.py` is kept as the numerical oracle only — `read_c3d_native` matches it bit-for-bit on the golden fixture. |
 | `biomech-math` | `openbiomech/biomech_math/` | `filtering.py` (Butterworth) and `rigid_body.py` (Kabsch) implemented. Quaternions/SLERP, Euler/Cardan, GCVSPL splines — not started. |
 | `biomech-model` | `openbiomech/model/` | Stub only (ISB joints, BSP, gait events). |
 | `inverse-dynamics` | `openbiomech/inverse_dynamics/` | Stub only (force plate types 1–5, COP, Newton-Euler, joint power). |
@@ -35,6 +35,16 @@ code already tested in production by the sibling project
 
 The sequencing above is governed by
 [`loops/openbiomech-python-prototype-loop.md`](loops/openbiomech-python-prototype-loop.md).
+
+## Reference sources
+
+`vendor/` is gitignored scratch space for read-only reference checkouts. The
+C3D parser was reverse-engineered against
+[BTKCore](https://github.com/Biomechanical-ToolKit/BTKCore)
+(`git clone --depth 1 ... vendor/BTKCore`; `Code/IO/btkC3DFileIO.{h,cpp}`).
+Where BTK and `ezc3d` disagree — the residual/camera-mask byte roles, and the
+sign of `ANALOG:OFFSET` — `ezc3d` wins as the declared oracle, and each choice
+is pinned by a named test in `tests/test_c3d_io_native.py`.
 
 ## Reused from vailá
 
