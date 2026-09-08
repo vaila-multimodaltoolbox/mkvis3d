@@ -48,7 +48,15 @@ if(process.argv[3]){
   const frameText = await evaluate('document.getElementById("frame").textContent');
   assert(frameText.includes("6772") || frameText.includes("631"), "unexpected frame: " + frameText);
  }
+ await evaluate('document.getElementById("action-view-shortcuts").click()');
+ assert.equal(await evaluate('document.getElementById("modal-shortcuts").classList.contains("open")'), true);
+ await evaluate('document.getElementById("btn-close-shortcuts").click()');
+ assert.equal(await evaluate('document.getElementById("modal-shortcuts").classList.contains("open")'), false);
+ await evaluate('document.getElementById("skeleton-template-select").value = "sam3dinov3_mhr70"; document.getElementById("btn-load-skeleton").click();');
+ assert.equal(await evaluate('skeletonPairs.length'), 30);
+ await evaluate('document.getElementById("btn-clear-skeleton").click()');
+ assert.equal(await evaluate('skeletonPairs.length'), 0);
 }
 assert.deepEqual(errors,[]);
-console.log("Browser passed: golden trial, stepping, seek, playback, selection, distance CSV, saved HTML reload, local C3D/CSV/.3d upload, no JS exceptions.");
+console.log("Browser passed: golden trial, stepping, seek, playback, selection, distance CSV, saved HTML reload, local C3D/CSV/.3d upload, modal close, skeleton template manual load, no JS exceptions.");
 ws.close();

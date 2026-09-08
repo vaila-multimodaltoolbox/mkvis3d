@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mkvis3d · Motion Analysis & 3D Viewer</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
 <style>
 :root {
   color-scheme: dark;
@@ -254,7 +255,74 @@ button.primary:hover { background: #7be4ce; }
   user-select: none;
 }
 .pane-title { display: flex; align-items: center; gap: 8px; color: var(--text-bright); }
-.pane-tools { display: flex; align-items: center; gap: 8px; }
+.pane-tools { display: flex; align-items: center; gap: 6px; }
+.btn-pane-tool {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-pane-tool:hover {
+  background: var(--bg-surface);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.window-pane.floating-pane {
+  position: fixed !important;
+  z-index: 1000 !important;
+  width: 540px;
+  height: 330px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px var(--accent);
+  border-radius: 8px;
+  resize: both;
+  overflow: hidden;
+  min-width: 280px;
+  min-height: 180px;
+}
+.window-pane.floating-pane .pane-header {
+  cursor: grab;
+  background: #182736;
+  border-bottom: 1px solid var(--accent);
+}
+.window-pane.floating-pane.is-dragging .pane-header {
+  cursor: grabbing;
+}
+.window-pane.detached-pane {
+  opacity: 0.9;
+}
+.detached-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+  background: rgba(14, 21, 30, 0.75);
+}
+.detached-placeholder p {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-bright);
+}
+.detached-placeholder button {
+  background: var(--accent);
+  color: #0b1118;
+  font-weight: 600;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
 .pane-body { flex: 1; position: relative; min-height: 0; overflow: hidden; }
 
 /* 3D Scene Viewport */
@@ -385,6 +453,7 @@ button.primary:hover { background: #7be4ce; }
 <!-- Menu Bar -->
 <nav class="menubar" role="menubar">
   <div class="brand-badge">
+    <img src="/favicon.ico" alt="" style="width: 18px; height: 18px; vertical-align: middle; margin-right: 4px; border-radius: 3px;" onerror="this.style.display='none'">
     mkvis<span>3d</span>
     <span class="brand-sub">OpenBiomech</span>
   </div>
@@ -401,8 +470,11 @@ button.primary:hover { background: #7be4ce; }
       <div class="dropdown-item" data-example="rec3d_20260826_121305.csv">Wide CSV Trial (rec3d....csv)</div>
       <div class="dropdown-item" data-example="rec3d_20260826_121305.3d">Wide 3D Trial (rec3d....3d)</div>
       <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Export & 3D Interchange</div>
       <div class="dropdown-item" id="action-export-plot">Export Distance / Plot CSV...</div>
       <div class="dropdown-item" id="action-export-all-csv">Export All Trajectories (CSV)...</div>
+      <div class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</div>
+      <div class="dropdown-item" id="action-export-bvh">Export Biovision Hierarchy (.bvh)...</div>
       <div class="dropdown-item" id="action-export-html">Save Standalone HTML Viewer...</div>
     </div>
   </div>
@@ -421,6 +493,9 @@ button.primary:hover { background: #7be4ce; }
       <div class="dropdown-item" id="action-toggle-labels">✓ Marker Labels <span class="shortcut-hint">L</span></div>
       <div class="dropdown-item" id="action-toggle-trails">✓ Trajectory Trails <span class="shortcut-hint">T</span></div>
       <div class="dropdown-item" id="action-toggle-bones">✓ Skeleton Bones <span class="shortcut-hint">B</span></div>
+      <div class="dropdown-item" id="action-toggle-distance">✓ Distance Line (A–B) <span class="shortcut-hint">D</span></div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item" id="action-view-shortcuts">Keyboard & Mouse Controls <span class="shortcut-hint">F1 / ?</span></div>
     </div>
   </div>
 
@@ -432,6 +507,13 @@ button.primary:hover { background: #7be4ce; }
       <div class="dropdown-item" id="action-win-plot1">✓ Plot Window 1</div>
       <div class="dropdown-item" id="action-win-plot2">Plot Window 2</div>
       <div class="dropdown-item" id="action-win-table">Marker Inspector Table</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Subwindow Pop-out & Float</div>
+      <div class="dropdown-item" id="action-float-plot1">↗ Flutuar Janela Plot 1</div>
+      <div class="dropdown-item" id="action-popout-plot1">⧉ Destacar Plot 1 em Nova Janela</div>
+      <div class="dropdown-item" id="action-float-table">↗ Flutuar Marker Inspector</div>
+      <div class="dropdown-item" id="action-popout-table">⧉ Destacar Marker Inspector em Nova Janela</div>
+      <div class="dropdown-item" id="action-dock-all">↙ Reanexar Todas as Janelas</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Layout Presets</div>
       <div class="dropdown-item" id="preset-default">Default (3D + Plot)</div>
@@ -505,17 +587,60 @@ button.primary:hover { background: #7be4ce; }
       <select id="marker-select" aria-label="Active Marker Selection"></select>
 
       <div style="margin-top: 12px;">
-        <div class="sidebar-header">Distance Measurement</div>
+        <div class="sidebar-header">
+          <span>Distance Measurement</span>
+          <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; text-transform: none; font-weight: normal; margin: 0;">
+            <input type="checkbox" id="chk-show-distance" checked>
+            <span id="txt-show-distance" style="color: var(--accent);">Exibir</span>
+          </label>
+        </div>
         <label for="marker-a">Marker A</label>
         <select id="marker-a" aria-label="Marker A"></select>
         
         <label for="marker-b">Marker B</label>
         <select id="marker-b" aria-label="Marker B"></select>
         
-        <div class="metric-card">
-          <label style="margin: 0 0 2px;">Distance</label>
+        <div class="metric-card" id="card-distance-metric">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <label style="margin: 0 0 2px;">Distance</label>
+            <button id="btn-toggle-distance" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Desativar</button>
+          </div>
           <div id="distance" class="metric-val">— m</div>
         </div>
+      </div>
+    </section>
+
+    <!-- Skeleton & Kinematic Model -->
+    <section class="sidebar-section">
+      <div class="sidebar-header">
+        <span>Skeleton / Kinematics</span>
+        <span id="skeleton-status-badge" style="font-size: 10px; color: var(--text-muted);">No skeleton</span>
+      </div>
+
+      <label for="skeleton-template-select">Skeleton Template</label>
+      <select id="skeleton-template-select" aria-label="Skeleton Template Selection">
+        <option value="none">— None / Sem Modelo —</option>
+        <option value="sam3dinov3_mhr70">SAM 3D / MHR-70 (70 keypoints)</option>
+        <option value="yolo_coco17">COCO-17 / YOLO (17 keypoints)</option>
+        <option value="mediapipe_pose33">MediaPipe Pose (33 keypoints)</option>
+        <option value="openpose_body25">OpenPose Body-25 (25 keypoints)</option>
+        <option value="fifa_body15">FIFA Body-15 (15 keypoints)</option>
+        <option value="vicon_squat">Vicon Squat (15 markers)</option>
+        <option value="mediapipe_hand21">MediaPipe Hand (21 keypoints)</option>
+        <option value="mediapipe_hands42">MediaPipe Both Hands (42 keypoints)</option>
+        <option value="mediapipe_holistic75">MediaPipe Holistic (75 keypoints)</option>
+        <option value="halpe26">Halpe-26 (26 keypoints)</option>
+        <option value="soccerfield_calib29">Soccer Field Calib (29 keypoints)</option>
+        <option value="soccerfield_pitch32">Soccer Field Pitch (32 keypoints)</option>
+        <option value="coco_wholebody133">COCO WholeBody (133 keypoints)</option>
+        <option value="sapiens2_goliath308">Sapiens2 Goliath (308 keypoints)</option>
+        <option value="custom">Upload Custom JSON...</option>
+      </select>
+      <input type="file" id="file-skeleton-custom" accept=".json" style="display:none">
+
+      <div class="btn-group" style="margin-top: 8px;">
+        <button id="btn-load-skeleton" class="primary" style="font-weight: 700;">Carregar Skeleton</button>
+        <button id="btn-clear-skeleton">Limpar</button>
       </div>
     </section>
 
@@ -575,7 +700,8 @@ button.primary:hover { background: #7be4ce; }
             <span>● 3D Viewport</span>
           </div>
           <div class="pane-tools">
-            <span style="font-size: 11px; color: var(--text-muted);">Orbit: Drag | Pan: Shift+Drag | Zoom: Wheel</span>
+            <span style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Orbit: Drag | Pan: Shift+Drag | Zoom: Wheel</span>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-3d" title="Destacar 3D em Nova Janela Independente (Multi-Monitor)">⧉</button>
           </div>
         </div>
         <div class="pane-body">
@@ -604,6 +730,8 @@ button.primary:hover { background: #7be4ce; }
           </div>
           <div class="pane-tools">
             <span id="plot1-readout" class="plot-readout">—</span>
+            <button class="btn-pane-tool btn-float" data-pane="panel-plot1" title="Janela Flutuante (Arrastável / Redimensionável)">↗</button>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-plot1" title="Destacar Plot 1 em Nova Janela Independente (Multi-Monitor)">⧉</button>
           </div>
         </div>
         <div class="pane-body">
@@ -625,7 +753,9 @@ button.primary:hover { background: #7be4ce; }
           </div>
           <div class="pane-tools">
             <span id="plot2-readout" class="plot-readout">—</span>
-            <button id="btn-close-plot2" style="padding: 2px 6px; font-size: 11px;">✕</button>
+            <button class="btn-pane-tool btn-float" data-pane="panel-plot2" title="Janela Flutuante (Arrastável / Redimensionável)">↗</button>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-plot2" title="Destacar Plot 2 em Nova Janela Independente (Multi-Monitor)">⧉</button>
+            <button id="btn-close-plot2" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Fechar Janela">✕</button>
           </div>
         </div>
         <div class="pane-body">
@@ -640,7 +770,9 @@ button.primary:hover { background: #7be4ce; }
             <span>Marker Inspector</span>
           </div>
           <div class="pane-tools">
-            <button id="btn-close-table" style="padding: 2px 6px; font-size: 11px;">✕</button>
+            <button class="btn-pane-tool btn-float" data-pane="panel-table" title="Janela Flutuante (Arrastável / Redimensionável)">↗</button>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-table" title="Destacar Marker Inspector em Nova Janela Independente (Multi-Monitor)">⧉</button>
+            <button id="btn-close-table" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Fechar Janela">✕</button>
           </div>
         </div>
         <div class="pane-body">
@@ -699,7 +831,7 @@ button.primary:hover { background: #7be4ce; }
   <div class="modal-dialog">
     <div class="modal-header">
       <h3>Keyboard & Mouse Navigation</h3>
-      <button class="modal-close" onclick="$(modal-shortcuts).classList.remove(open)">✕</button>
+      <button class="modal-close" id="btn-close-shortcuts" aria-label="Close">✕</button>
     </div>
     <div class="modal-body">
       <p>Standard motion capture and analysis shortcuts (Mokka & Visual3D compatible):</p>
@@ -715,12 +847,15 @@ button.primary:hover { background: #7be4ce; }
         <div><span class="key-cap">L</span></div><div>Toggle marker label tags</div>
         <div><span class="key-cap">T</span></div><div>Toggle active marker trail</div>
         <div><span class="key-cap">B</span></div><div>Toggle skeleton / stick figure bones</div>
+        <div><span class="key-cap">D</span></div><div>Toggle distance measurement line (Marker A–B)</div>
+        <div><span class="key-cap">Esc</span></div><div>Close open dialog / modal window</div>
       </div>
     </div>
   </div>
 </div>
 
 <script type="application/json" id="trial-data">__TRIAL_DATA__</script>
+<script type="application/json" id="skeleton-templates-data">__SKELETON_TEMPLATES__</script>
 <script>__VIEWER_SCRIPT__</script>
 </body>
 </html>

@@ -5,8 +5,10 @@ Stdlib HTTP and native readers; no CDN or vailá runtime dependency.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import secrets
+import sys
 import tempfile
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +19,24 @@ import numpy as np
 
 from .marker_trial import MarkerTrial
 from .trial_io import load_trial
+
+
+def get_project_root() -> Path:
+    """Return project root directory, accommodating PyInstaller bundle."""
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
+
+
+def load_all_skeleton_templates() -> dict[str, dict]:
+    """Load all JSON skeleton templates found in skeleton_templates/."""
+    templates_dir = get_project_root() / "skeleton_templates"
+    templates = {}
+    if templates_dir.is_dir():
+        for f in sorted(templates_dir.glob("*.json")):
+            with contextlib.suppress(Exception):
+                templates[f.stem] = json.loads(f.read_text(encoding="utf-8"))
+    return templates
 
 
 def trial_payload(trial: MarkerTrial, name: str) -> dict:
@@ -37,14 +57,23 @@ def trial_payload(trial: MarkerTrial, name: str) -> dict:
     }
 
 
-def render_viewer(payload: dict | None = None, *, server: bool = False) -> str:
+def render_viewer(
+    payload: dict | None = None,
+    *,
+    server: bool = False,
+    skeleton_templates: dict[str, dict] | None = None,
+) -> str:
     directory = Path(__file__).parent
+    if skeleton_templates is None:
+        skeleton_templates = load_all_skeleton_templates()
+    templates_json = json.dumps(skeleton_templates, ensure_ascii=True).replace("<", "\\u003c")
     data = json.dumps({"server": server, "trial": payload}, ensure_ascii=True, allow_nan=False)
     data = data.replace("<", "\\u003c")
     return (
         (directory / "viewer.html")
         .read_text(encoding="utf-8")
         .replace("__TRIAL_DATA__", data)
+        .replace("__SKELETON_TEMPLATES__", templates_json)
         .replace("__VIEWER_SCRIPT__", (directory / "viewer.js").read_text(encoding="utf-8"))
     )
 
@@ -60,6 +89,7 @@ def create_server(
 ) -> tuple[ThreadingHTTPServer, str]:
     """Bind loopback; uploads need a per-session token, never a disk path."""
     token = secrets.token_urlsafe(32)
+    current_trial: list[dict | None] = [initial_payload]
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args) -> None:
@@ -77,8 +107,21 @@ def create_server(
         def do_GET(self) -> None:
             parsed = urlsplit(self.path)
             req_path = parsed.path
+
+            if req_path == "/favicon.ico":
+                icon_path = get_project_root() / "assets" / "icons" / "vaila.ico"
+                if not icon_path.is_file():
+                    fallback = Path("/home/preto/data/vaila/docs/images/vaila_ico_trans.ico")
+                    if fallback.is_file():
+                        icon_path = fallback
+                if icon_path.is_file():
+                    self.send_bytes(200, icon_path.read_bytes(), "image/x-icon")
+                    return
+                self.send_bytes(404, b"Not found", "text/plain")
+                return
+
             if req_path == "/api/examples":
-                data_dir = Path(__file__).resolve().parent.parent / "data"
+                data_dir = get_project_root() / "data"
                 examples = []
                 if data_dir.exists():
                     for ext in (".c3d", ".csv", ".3d"):
@@ -88,16 +131,18 @@ def create_server(
                     200, json.dumps({"examples": examples}).encode(), "application/json"
                 )
                 return
+
             if req_path == "/api/example":
                 query = parse_qs(parsed.query)
                 name = Path(query.get("name", [""])[0]).name
-                data_dir = Path(__file__).resolve().parent.parent / "data"
+                data_dir = get_project_root() / "data"
                 target = data_dir / name
                 if not target.is_file():
                     self.send_bytes(404, b'{"error":"Example not found"}', "application/json")
                     return
                 try:
                     payload = trial_payload(load_trial(target), name)
+                    current_trial[0] = payload
                     self.send_bytes(
                         200, json.dumps(payload, allow_nan=False).encode(), "application/json"
                     )
@@ -106,12 +151,56 @@ def create_server(
                         400, json.dumps({"error": str(exc)}).encode(), "application/json"
                     )
                 return
+
+            if req_path == "/api/current_trial":
+                if current_trial[0] is not None:
+                    self.send_bytes(
+                        200,
+                        json.dumps(current_trial[0], allow_nan=False).encode(),
+                        "application/json",
+                    )
+                else:
+                    self.send_bytes(200, b"null", "application/json")
+                return
+
+            if req_path == "/api/skeleton_templates":
+                templates = load_all_skeleton_templates()
+                summary = []
+                for k, v in templates.items():
+                    kps = v.get("keypoints", [])
+                    conns = v.get("connections", [])
+                    summary.append(
+                        {
+                            "id": k,
+                            "schema": v.get("schema", k),
+                            "num_keypoints": v.get("num_keypoints", len(kps)),
+                            "num_connections": len(conns),
+                            "note": v.get("note", ""),
+                        }
+                    )
+                self.send_bytes(
+                    200, json.dumps({"templates": summary}).encode(), "application/json"
+                )
+                return
+
+            if req_path == "/api/skeleton_template":
+                query = parse_qs(parsed.query)
+                name = Path(query.get("name", [""])[0]).stem
+                templates = load_all_skeleton_templates()
+                if name in templates:
+                    self.send_bytes(200, json.dumps(templates[name]).encode(), "application/json")
+                else:
+                    self.send_bytes(404, b'{"error":"Template not found"}', "application/json")
+                return
+
             if req_path != "/":
                 self.send_bytes(404, b"Not found", "text/plain")
                 return
+
+            active_payload = current_trial[0] if current_trial[0] is not None else initial_payload
             self.send_bytes(
                 200,
-                render_viewer(payload=initial_payload, server=True).encode(),
+                render_viewer(payload=active_payload, server=True).encode(),
                 "text/html; charset=utf-8",
             )
 
@@ -137,6 +226,7 @@ def create_server(
                     path = Path(directory) / f"trial{suffix}"
                     path.write_bytes(self.rfile.read(length))
                     payload = trial_payload(load_trial(path, rate_hz=rate, units=units), name)
+                current_trial[0] = payload
                 self.send_bytes(
                     200, json.dumps(payload, allow_nan=False).encode(), "application/json"
                 )

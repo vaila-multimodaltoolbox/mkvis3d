@@ -137,11 +137,60 @@ def test_local_gui_upload_matches_cli_and_rejects_missing_token(tmp_path):
         response = connection.getresponse()
         assert response.status == 400
         assert "error" in json.loads(response.read())
+
+        # Test favicon.ico
+        connection.request("GET", "/favicon.ico")
+        response = connection.getresponse()
+        assert response.status == 200
+        assert b"PNG" in response.read() or len(response.read()) > 0
+
+        # Test /api/current_trial
+        connection.request("GET", "/api/current_trial")
+        response = connection.getresponse()
+        assert response.status == 200
+        current_data = json.loads(response.read())
+        assert current_data["name"] == "trial.csv"
+
+        # Test /api/skeleton_templates
+        connection.request("GET", "/api/skeleton_templates")
+        response = connection.getresponse()
+        assert response.status == 200
+        templates_data = json.loads(response.read())
+        assert "templates" in templates_data
+        template_ids = [t["id"] for t in templates_data["templates"]]
+        assert "sam3dinov3_mhr70" in template_ids
+
+        # Test /api/skeleton_template?name=sam3dinov3_mhr70
+        connection.request("GET", "/api/skeleton_template?name=sam3dinov3_mhr70")
+        response = connection.getresponse()
+        assert response.status == 200
+        sam_data = json.loads(response.read())
+        assert sam_data["num_keypoints"] == 70
+        assert len(sam_data["connections"]) == 30
+
+        # Test GET / retains active trial on reload/reflash
+        connection.request("GET", "/")
+        response = connection.getresponse()
+        assert response.status == 200
+        html_content = response.read().decode("utf-8")
+        assert "trial.csv" in html_content
     finally:
         connection.close()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_cli_defaults_to_gui_when_no_args(monkeypatch):
+    called = []
+
+    def mock_serve_viewer(**kwargs):
+        called.append(kwargs)
+
+    monkeypatch.setattr("openbiomech.viewer.serve_viewer", mock_serve_viewer)
+    assert main(["gui", "--no-browser"]) == 0
+    assert len(called) == 1
+    assert called[0]["initial_trial"] is None
 
 
 def test_browser_smoke_automated(tmp_path):

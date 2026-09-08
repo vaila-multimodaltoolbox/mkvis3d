@@ -1,12 +1,24 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const boot = JSON.parse($("trial-data").textContent);
+let embeddedTemplates = {};
+try {
+  const tEl = $("skeleton-templates-data");
+  if (tEl && tEl.textContent.trim()) {
+    embeddedTemplates = JSON.parse(tEl.textContent);
+  }
+} catch (e) {
+  console.warn("Could not parse embedded skeleton templates:", e);
+}
+
 const token = location.hash.slice(1);
 
 let trial = null, frame = 0, playing = false, lastTick = 0, elapsed = 0;
 let yaw = -0.45, pitch = 0.22, zoom = 1, pan = [0, 0], center = [0, 0, 0], span = 1;
-let distances = [], activeMarkerIndex = 0;
+let distances = [], activeMarkerIndex = 0, showDistance = true;
 let skeletonPairs = [];
+let activeSkeletonTemplate = "none";
+let loadedCustomTemplate = null;
 
 const canvas = $("scene"), ctx = canvas.getContext("2d");
 const graph1 = $("graph"), gx1 = graph1.getContext("2d");
@@ -51,8 +63,9 @@ function line(a, b, color, width = 1) {
 function fit() {
   if (!trial) return;
   let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-  for (const points of trial.xyz) {
-    for (const raw of points) {
+  const stride = Math.max(1, Math.floor(trial.xyz.length / 50));
+  for (let f = 0; f < trial.xyz.length; f += stride) {
+    for (const raw of trial.xyz[f]) {
       if (!valid(raw)) continue;
       const p = orient(raw);
       for (let j = 0; j < 3; j++) {
@@ -120,13 +133,10 @@ function drawGroundGrid() {
   }
 }
 
-// Skeleton / Bone connections
-function initSkeleton(labels) {
-  skeletonPairs = [];
-  const map = new Map(labels.map((lbl, idx) => [lbl, idx]));
-
-  // Standard squat pairs
-  const squatPairs = [
+// Built-in fallback Vicon squat skeleton template
+const VICON_SQUAT_TEMPLATE = {
+  schema: "vicon_squat",
+  connections: [
     ["D_barra2", "D_barra1"], ["D_barra1", "barra_centro"],
     ["barra_centro", "E_barra1"], ["E_barra1", "E_barra2"],
     ["D_trocanter", "D_joelho"], ["D_joelho", "D_tornozelo"],
@@ -135,34 +145,79 @@ function initSkeleton(labels) {
     ["D_acromio", "E_acromio"],
     ["D_acromio", "D_trocanter"], ["E_acromio", "E_trocanter"],
     ["D_acromio", "D_mao"], ["E_acromio", "E_mao"]
-  ];
-  for (const [a, b] of squatPairs) {
-    if (map.has(a) && map.has(b)) {
-      skeletonPairs.push([map.get(a), map.get(b)]);
-    }
-  }
+  ]
+};
 
-  // Automatic distance-based pairs if no known markers
-  if (skeletonPairs.length === 0 && trial && trial.xyz[0]) {
-    const pts = trial.xyz[0];
-    for (let i = 0; i < pts.length; i++) {
-      if (!valid(pts[i])) continue;
-      for (let j = i + 1; j < pts.length; j++) {
-        if (!valid(pts[j])) continue;
-        const d = Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1], pts[i][2] - pts[j][2]);
-        if (d > 0.05 && d < 0.22) {
-          skeletonPairs.push([i, j]);
-        }
-      }
-    }
+// Skeleton initialization - does NOT auto-load pairs, user loads explicitly
+function initSkeleton(labels) {
+  skeletonPairs = [];
+  activeSkeletonTemplate = "none";
+  if ($("skeleton-template-select")) $("skeleton-template-select").value = "none";
+  const badge = $("skeleton-status-badge");
+  if (badge) {
+    badge.textContent = "No skeleton";
+    badge.style.color = "var(--text-muted)";
   }
 }
 
+// Apply chosen skeleton template to current trial
+function applySkeletonTemplate(templateObj) {
+  if (!trial) return 0;
+  skeletonPairs = [];
+  if (!templateObj || !Array.isArray(templateObj.connections)) {
+    draw();
+    return 0;
+  }
+  const labelMap = new Map();
+  trial.labels.forEach((lbl, idx) => {
+    labelMap.set(lbl.toLowerCase().trim(), idx);
+    labelMap.set(`p${idx + 1}`, idx);
+  });
+
+  const tKeypoints = Array.isArray(templateObj.keypoints) ? templateObj.keypoints : [];
+  const tKeypointToIdx = new Map();
+  tKeypoints.forEach((kpName, kpIdx) => {
+    tKeypointToIdx.set(kpName.toLowerCase().trim(), kpIdx);
+  });
+
+  for (const conn of templateObj.connections) {
+    if (!Array.isArray(conn) || conn.length < 2) continue;
+    const aStr = String(conn[0]).toLowerCase().trim();
+    const bStr = String(conn[1]).toLowerCase().trim();
+    let idxA = -1, idxB = -1;
+
+    if (labelMap.has(aStr)) idxA = labelMap.get(aStr);
+    else if (tKeypointToIdx.has(aStr)) {
+      const pIdx = tKeypointToIdx.get(aStr);
+      if (pIdx < trial.labels.length) idxA = pIdx;
+    }
+
+    if (labelMap.has(bStr)) idxB = labelMap.get(bStr);
+    else if (tKeypointToIdx.has(bStr)) {
+      const pIdx = tKeypointToIdx.get(bStr);
+      if (pIdx < trial.labels.length) idxB = pIdx;
+    }
+
+    if (idxA >= 0 && idxB >= 0 && idxA < trial.labels.length && idxB < trial.labels.length && idxA !== idxB) {
+      skeletonPairs.push([idxA, idxB]);
+    }
+  }
+
+  if ($("bones")) $("bones").checked = skeletonPairs.length > 0;
+  const badge = $("skeleton-status-badge");
+  if (badge) {
+    badge.textContent = skeletonPairs.length > 0 ? `${skeletonPairs.length} conexões` : "0 conexões";
+    badge.style.color = skeletonPairs.length > 0 ? "var(--accent)" : "var(--text-muted)";
+  }
+  draw();
+  return skeletonPairs.length;
+}
+
 function drawSkeleton(pts) {
-  if (!$("bones") || !$("bones").checked || !skeletonPairs.length) return;
+  if (!$("bones") || !$("bones").checked || !skeletonPairs.length || !pts) return;
   for (const [i, j] of skeletonPairs) {
     if (valid(pts[i]) && valid(pts[j])) {
-      line(pts[i], pts[j], "rgba(110, 160, 205, 0.7)", 2);
+      line(pts[i], pts[j], "rgba(110, 160, 205, 0.75)", 2);
     }
   }
 }
@@ -175,7 +230,7 @@ function draw() {
 
   drawGroundGrid();
 
-  const pts = trial.xyz[frame];
+  const pts = trial.xyz[frame] || [];
   const activeIdx = activeMarkerIndex;
   const a = Number($("marker-a") ? $("marker-a").value : 0);
   const b = Number($("marker-b") ? $("marker-b").value : 1);
@@ -197,22 +252,24 @@ function draw() {
   drawSkeleton(pts);
 
   // Trajectory Trail of active marker
-  if ($("trail") && $("trail").checked && activeIdx >= 0) {
+  if ($("trail") && $("trail").checked && activeIdx >= 0 && activeIdx < trial.labels.length) {
     for (let f = Math.max(1, frame - 120); f <= frame; f++) {
       const p = trial.xyz[f - 1][activeIdx], q = trial.xyz[f][activeIdx];
       if (valid(p) && valid(q)) line(p, q, "#35827c", 1.5);
     }
   }
 
-  // Distance line between Marker A and B
-  if (valid(pts[a]) && valid(pts[b])) line(pts[a], pts[b], "#f2c875", 2);
+  // Distance line between Marker A and B (optional toggle)
+  if (showDistance && valid(pts[a]) && valid(pts[b])) {
+    line(pts[a], pts[b], "#f2c875", 2);
+  }
 
   // Render Marker Points
   const visible = pts.map((p, i) => ({ p, i })).filter(v => valid(v.p)).map(v => ({ ...v, q: project(v.p) })).sort((a, b) => b.q[2] - a.q[2]);
 
   for (const { i, q } of visible) {
     const isAct = i === activeIdx;
-    const isA = i === a, isB = i === b;
+    const isA = showDistance && i === a, isB = showDistance && i === b;
     ctx.beginPath();
     const radius = isAct ? 6 : (isA || isB ? 5 : 3.5);
     ctx.arc(q[0], q[1], radius, 0, Math.PI * 2);
@@ -241,40 +298,49 @@ function draw() {
   // Update distance readout
   const d = distances[frame];
   if ($("distance")) {
-    $("distance").textContent = Number.isFinite(d) ? `${d.toFixed(4)} m` : "Missing";
+    if (!showDistance) {
+      $("distance").textContent = Number.isFinite(d) ? `${d.toFixed(4)} m (Oculto)` : "Oculto";
+      $("distance").style.opacity = "0.55";
+    } else {
+      $("distance").textContent = Number.isFinite(d) ? `${d.toFixed(4)} m` : "Missing";
+      $("distance").style.opacity = "1";
+    }
   }
 
   // Draw charts and update table
   drawPlot1();
   drawPlot2();
   updateTable();
+
+  // Synchronize any popped out subwindows
+  syncPopoutContent("panel-plot1");
+  syncPopoutContent("panel-plot2");
+  syncPopoutContent("panel-table");
 }
 
-// Primary Plot (Plot 1)
+// Plot caching to avoid expensive calculations every animation frame
+let cachedPlot1Data = null;
+let cachedPlot1Mode = "";
+let cachedPlot1Marker = -1;
+
 function drawPlot1() {
   const canvasG = graph1;
   const gx = gx1;
   const mode = $("plot1-mode") ? $("plot1-mode").value : "distance";
-  drawSinglePlot(canvasG, gx, mode, $("plot1-readout"));
+  drawSinglePlot(canvasG, gx, mode, $("plot1-readout"), 1);
 }
 
-// Secondary Plot (Plot 2)
 function drawPlot2() {
   if (!graph2 || !$("panel-plot2") || $("panel-plot2").hidden) return;
   const canvasG = $("graph2");
   const gx = graph2;
   const mode = $("plot2-mode") ? $("plot2-mode").value : "active-z";
-  drawSinglePlot(canvasG, gx, mode, $("plot2-readout"));
+  drawSinglePlot(canvasG, gx, mode, $("plot2-readout"), 2);
 }
 
-function drawSinglePlot(canvasG, gx, mode, readoutEl) {
-  const w = canvasG.clientWidth, h = canvasG.clientHeight;
-  gx.clearRect(0, 0, w, h);
-  if (!trial) return;
-
-  let series = []; // array of { name, color, values }
+function getSeriesForMode(mode) {
+  const series = [];
   const totalFrames = trial.xyz.length;
-
   if (mode === "distance") {
     series.push({ name: "Distance", color: "#f2c875", values: distances });
   } else if (mode === "active-z") {
@@ -299,8 +365,15 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl) {
     }
     series.push({ name: "Speed (m/s)", color: "#a38bf5", values: speedVals });
   }
+  return series;
+}
 
-  // Find min and max across all series
+function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
+  const w = canvasG.clientWidth, h = canvasG.clientHeight;
+  gx.clearRect(0, 0, w, h);
+  if (!trial) return;
+
+  const series = getSeriesForMode(mode);
   let lo = Infinity, hi = -Infinity;
   for (const s of series) {
     for (const v of s.values) {
@@ -312,8 +385,8 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl) {
   }
   if (!Number.isFinite(lo)) return;
   const extent = Math.max(hi - lo, 0.001);
+  const totalFrames = trial.xyz.length;
 
-  // Update live readout text
   if (readoutEl) {
     const curVals = series.map(s => {
       const v = s.values[frame];
@@ -322,7 +395,6 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl) {
     readoutEl.textContent = curVals;
   }
 
-  // Draw horizontal guide lines
   gx.strokeStyle = "rgba(255, 255, 255, 0.08)";
   gx.lineWidth = 1;
   for (let k = 0; k <= 3; k++) {
@@ -333,7 +405,6 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl) {
     gx.stroke();
   }
 
-  // Draw plot series curves
   for (const s of series) {
     gx.strokeStyle = s.color;
     gx.lineWidth = 1.5;
@@ -353,13 +424,11 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl) {
     gx.stroke();
   }
 
-  // Value range axis labels
   gx.fillStyle = "#8298ad";
   gx.font = "10px system-ui, sans-serif";
   gx.fillText(`${hi.toFixed(3)}`, 2, 14);
   gx.fillText(`${lo.toFixed(3)}`, 2, h - 10);
 
-  // Draw Playhead Cursor Line
   const curX = 50 + frame * (w - 65) / Math.max(1, totalFrames - 1);
   gx.strokeStyle = "#f2c875";
   gx.lineWidth = 1.5;
@@ -369,12 +438,11 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl) {
   gx.stroke();
 }
 
-// Marker Inspector Table
 function updateTable() {
   if (!$("panel-table") || $("panel-table").hidden || !trial) return;
   const tbody = $("marker-table-body");
   if (!tbody) return;
-  const pts = trial.xyz[frame];
+  const pts = trial.xyz[frame] || [];
   for (let i = 0; i < trial.labels.length; i++) {
     const row = tbody.children[i];
     if (!row) continue;
@@ -405,6 +473,7 @@ function measure() {
   const a = Number($("marker-a").value), b = Number($("marker-b").value);
   distances = trial.xyz.map(p => valid(p[a]) && valid(p[b]) ? Math.hypot(...p[a].map((v, j) => v - p[b][j])) : NaN);
   draw();
+  saveSessionState();
 }
 
 function pause() {
@@ -417,12 +486,12 @@ function selectActiveMarker(idx) {
   activeMarkerIndex = idx;
   if ($("marker-select")) $("marker-select").value = String(idx);
   draw();
+  saveSessionState();
 }
 
 function seekToMotion() {
   if (!trial) return;
   pause();
-  // Find frame where standard deviation or motion begins
   let motionFrame = 0;
   const pts0 = trial.xyz[0];
   for (let f = 1; f < trial.xyz.length; f++) {
@@ -431,14 +500,83 @@ function seekToMotion() {
       const p = pts0[m], q = trial.xyz[f][m];
       if (valid(p) && valid(q)) diffSum += Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]);
     }
-    if (diffSum / trial.labels.length > 0.04) { // moved > 4cm on average
+    if (diffSum / trial.labels.length > 0.04) {
       motionFrame = Math.max(0, f - 10);
       break;
     }
   }
   frame = motionFrame;
   draw();
+  saveSessionState();
   status(`Jumped to motion onset at frame ${frame + 1} (${(frame / trial.rate_hz).toFixed(2)}s).`);
+}
+
+function saveSessionState() {
+  if (!trial) return;
+  try {
+    const state = {
+      trialName: trial.name,
+      frame,
+      activeMarkerIndex,
+      markerA: $("marker-a") ? $("marker-a").value : "0",
+      markerB: $("marker-b") ? $("marker-b").value : "1",
+      activeSkeletonTemplate,
+      yaw, pitch, zoom, pan,
+      up: $("up") ? $("up").value : "z",
+      grid: $("grid") ? $("grid").checked : true,
+      labels: $("labels") ? $("labels").checked : true,
+      trail: $("trail") ? $("trail").checked : true,
+      bones: $("bones") ? $("bones").checked : true,
+      loop: $("loop") ? $("loop").checked : true,
+      showDistance,
+      speed: $("speed") ? $("speed").value : "1"
+    };
+    sessionStorage.setItem("mkvis3d_session", JSON.stringify(state));
+  } catch (e) {
+    // Ignore quota errors
+  }
+}
+
+function restoreSessionState(data) {
+  try {
+    const raw = sessionStorage.getItem("mkvis3d_session");
+    if (!raw) return;
+    const state = JSON.parse(raw);
+    if (!state || state.trialName !== data.name) return;
+
+    if (Number.isFinite(state.frame) && state.frame >= 0 && state.frame < data.xyz.length) {
+      frame = state.frame;
+    }
+    if (Number.isFinite(state.activeMarkerIndex)) {
+      activeMarkerIndex = state.activeMarkerIndex;
+      if ($("marker-select")) $("marker-select").value = String(activeMarkerIndex);
+    }
+    if (state.markerA && $("marker-a")) $("marker-a").value = state.markerA;
+    if (state.markerB && $("marker-b")) $("marker-b").value = state.markerB;
+    if (Number.isFinite(state.yaw)) yaw = state.yaw;
+    if (Number.isFinite(state.pitch)) pitch = state.pitch;
+    if (Number.isFinite(state.zoom)) zoom = state.zoom;
+    if (Array.isArray(state.pan)) pan = state.pan;
+    if (state.up && $("up")) $("up").value = state.up;
+    if (typeof state.grid === "boolean" && $("grid")) $("grid").checked = state.grid;
+    if (typeof state.labels === "boolean" && $("labels")) $("labels").checked = state.labels;
+    if (typeof state.trail === "boolean" && $("trail")) $("trail").checked = state.trail;
+    if (typeof state.bones === "boolean" && $("bones")) $("bones").checked = state.bones;
+    if (typeof state.loop === "boolean" && $("loop")) $("loop").checked = state.loop;
+    if (typeof state.showDistance === "boolean") setDistanceVisible(state.showDistance);
+    if (state.speed && $("speed")) $("speed").value = state.speed;
+
+    if (state.activeSkeletonTemplate && state.activeSkeletonTemplate !== "none") {
+      if ($("skeleton-template-select")) $("skeleton-template-select").value = state.activeSkeletonTemplate;
+      if (state.activeSkeletonTemplate === "vicon_squat") {
+        applySkeletonTemplate(VICON_SQUAT_TEMPLATE);
+      } else if (embeddedTemplates[state.activeSkeletonTemplate]) {
+        applySkeletonTemplate(embeddedTemplates[state.activeSkeletonTemplate]);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not restore session state:", e);
+  }
 }
 
 function load(data) {
@@ -446,13 +584,13 @@ function load(data) {
   frame = 0;
   pause();
   activeMarkerIndex = 0;
+  skeletonPairs = [];
 
   $("title").textContent = data.name;
   $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
   if ($("marker-count-badge")) $("marker-count-badge").textContent = `${data.labels.length} markers`;
   $("welcome").hidden = true;
 
-  // Populate Marker Selectors
   for (const key of ["marker-a", "marker-b", "marker-select"]) {
     if (!$(key)) continue;
     $(key).replaceChildren(...data.labels.map((label, i) => {
@@ -464,8 +602,7 @@ function load(data) {
   }
   if ($("marker-b")) $("marker-b").value = String(Math.min(1, data.labels.length - 1));
 
-  // Enable controls
-  for (const id of ["play", "prev", "next", "timeline", "export", "snapshot", "first", "last", "seek-motion"]) {
+  for (const id of ["play", "prev", "next", "timeline", "export", "snapshot", "first", "last", "seek-motion", "btn-load-skeleton", "btn-clear-skeleton"]) {
     if ($(id)) $(id).disabled = false;
   }
   $("timeline").max = String(data.xyz.length - 1);
@@ -474,6 +611,8 @@ function load(data) {
   buildTable();
   fit();
   measure();
+  restoreSessionState(data);
+  saveSessionState();
   status("File loaded. Coordinates in meters; missing frames are preserved.");
 }
 
@@ -494,7 +633,7 @@ $("play").onclick = () => {
   if (!trial) return;
   if (playing) pause();
   else {
-    if (frame === trial.xyz.length - 1) frame = 0;
+    if (frame >= trial.xyz.length - 1) frame = 0;
     playing = true;
     lastTick = performance.now();
     $("play").textContent = "Pause";
@@ -506,38 +645,46 @@ function step(delta) {
   pause();
   frame = Math.max(0, Math.min(trial.xyz.length - 1, frame + delta));
   draw();
+  saveSessionState();
 }
 $("prev").onclick = () => step(-1);
 $("next").onclick = () => step(1);
-if ($("first")) $("first").onclick = () => { pause(); frame = 0; draw(); };
-if ($("last")) $("last").onclick = () => { pause(); frame = trial.xyz.length - 1; draw(); };
+if ($("first")) $("first").onclick = () => { pause(); frame = 0; draw(); saveSessionState(); };
+if ($("last")) $("last").onclick = () => { pause(); frame = trial.xyz.length - 1; draw(); saveSessionState(); };
 if ($("seek-motion")) $("seek-motion").onclick = seekToMotion;
 
 $("timeline").oninput = () => {
   pause();
   frame = Number($("timeline").value);
   draw();
+  saveSessionState();
 };
 
 function tick(now) {
-  if (playing && trial) {
-    elapsed += (now - lastTick) / 1000 * trial.rate_hz * Number($("speed").value);
-    const advance = Math.floor(elapsed);
-    elapsed -= advance;
-    if (advance) {
-      frame += advance;
-      if (frame >= trial.xyz.length) {
-        if ($("loop").checked) frame %= trial.xyz.length;
-        else {
-          frame = trial.xyz.length - 1;
-          pause();
+  try {
+    if (playing && trial) {
+      elapsed += (now - lastTick) / 1000 * trial.rate_hz * Number($("speed").value);
+      const advance = Math.floor(elapsed);
+      elapsed -= advance;
+      if (advance) {
+        frame += advance;
+        if (frame >= trial.xyz.length) {
+          if ($("loop") && $("loop").checked) {
+            frame %= trial.xyz.length;
+          } else {
+            frame = trial.xyz.length - 1;
+            pause();
+          }
         }
+        draw();
       }
-      draw();
     }
+  } catch (err) {
+    console.error("Render loop error:", err);
+  } finally {
+    lastTick = now;
+    requestAnimationFrame(tick);
   }
-  lastTick = now;
-  requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
 
@@ -559,6 +706,7 @@ canvas.onpointermove = e => {
   }
   drag = [e.clientX, e.clientY];
   draw();
+  saveSessionState();
 };
 canvas.onpointerup = () => drag = null;
 canvas.onpointercancel = () => drag = null;
@@ -566,6 +714,7 @@ canvas.onwheel = e => {
   e.preventDefault();
   zoom = Math.max(0.1, Math.min(20, zoom * Math.exp(-e.deltaY * 0.001)));
   draw();
+  saveSessionState();
 };
 
 // Interactive Chart Click-to-Seek
@@ -580,21 +729,23 @@ function setupChartSeek(canvasEl) {
     pause();
     frame = Math.round(norm * (trial.xyz.length - 1));
     draw();
+    saveSessionState();
   };
 }
 setupChartSeek(graph1);
 if ($("graph2")) setupChartSeek($("graph2"));
 
 // Camera View Presets
-$("front").onclick = () => { yaw = 0; pitch = 0; draw(); };
-$("side").onclick = () => { yaw = Math.PI / 2; pitch = 0; draw(); };
-$("top").onclick = () => { yaw = 0; pitch = Math.PI / 2; draw(); };
-$("reset").onclick = fit;
+$("front").onclick = () => { yaw = 0; pitch = 0; draw(); saveSessionState(); };
+$("side").onclick = () => { yaw = Math.PI / 2; pitch = 0; draw(); saveSessionState(); };
+$("top").onclick = () => { yaw = 0; pitch = Math.PI / 2; draw(); saveSessionState(); };
+$("reset").onclick = () => { fit(); saveSessionState(); };
 
-if ($("up")) $("up").onchange = fit;
-for (const id of ["labels", "trail", "grid", "bones"]) {
-  if ($(id)) $(id).onchange = draw;
+if ($("up")) $("up").onchange = () => { fit(); saveSessionState(); };
+for (const id of ["labels", "trail", "grid", "bones", "loop"]) {
+  if ($(id)) $(id).onchange = () => { draw(); saveSessionState(); };
 }
+if ($("speed")) $("speed").onchange = saveSessionState;
 for (const id of ["marker-a", "marker-b"]) {
   if ($(id)) $(id).onchange = measure;
 }
@@ -618,7 +769,7 @@ function setLayout(name) {
     $("panel-plot1").hidden = true;
     $("panel-plot2").hidden = true;
     $("panel-table").hidden = true;
-  } else { // default
+  } else {
     $("panel-plot1").hidden = false;
     $("panel-plot2").hidden = true;
     $("panel-table").hidden = true;
@@ -632,6 +783,103 @@ if ($("preset-3d")) $("preset-3d").onclick = () => setLayout("3d");
 
 if ($("btn-close-plot2")) $("btn-close-plot2").onclick = () => setLayout("default");
 if ($("btn-close-table")) $("btn-close-table").onclick = () => setLayout("default");
+
+// Skeleton Template Loading
+async function loadSelectedSkeleton() {
+  if (!trial) {
+    status("Carregue um arquivo antes de carregar o skeleton.", true);
+    return;
+  }
+  const select = $("skeleton-template-select");
+  const val = select ? select.value : "none";
+  if (val === "none") {
+    skeletonPairs = [];
+    activeSkeletonTemplate = "none";
+    if ($("skeleton-status-badge")) {
+      $("skeleton-status-badge").textContent = "Nenhum";
+      $("skeleton-status-badge").style.color = "var(--text-muted)";
+    }
+    draw();
+    saveSessionState();
+    status("Nenhum modelo de skeleton selecionado.");
+    return;
+  }
+  if (val === "custom") {
+    if (loadedCustomTemplate) {
+      activeSkeletonTemplate = "custom";
+      const count = applySkeletonTemplate(loadedCustomTemplate);
+      saveSessionState();
+      status(`Skeleton personalizado carregado (${count} conexões).`);
+    } else {
+      if ($("file-skeleton-custom")) $("file-skeleton-custom").click();
+    }
+    return;
+  }
+  if (val === "vicon_squat") {
+    activeSkeletonTemplate = "vicon_squat";
+    const count = applySkeletonTemplate(VICON_SQUAT_TEMPLATE);
+    saveSessionState();
+    status(`Skeleton Vicon Squat carregado (${count} conexões).`);
+    return;
+  }
+
+  let tObj = embeddedTemplates[val];
+  if (!tObj && boot.server) {
+    try {
+      const resp = await fetch(`/api/skeleton_template?name=${encodeURIComponent(val)}`);
+      if (resp.ok) tObj = await resp.json();
+    } catch (e) {
+      console.warn("Could not fetch skeleton template:", e);
+    }
+  }
+
+  if (tObj) {
+    activeSkeletonTemplate = val;
+    const count = applySkeletonTemplate(tObj);
+    saveSessionState();
+    status(`Skeleton ${tObj.schema || val} carregado (${count} conexões).`);
+  } else {
+    status(`Template '${val}' não encontrado.`, true);
+  }
+}
+
+if ($("btn-load-skeleton")) $("btn-load-skeleton").onclick = loadSelectedSkeleton;
+if ($("btn-clear-skeleton")) {
+  $("btn-clear-skeleton").onclick = () => {
+    skeletonPairs = [];
+    activeSkeletonTemplate = "none";
+    if ($("skeleton-template-select")) $("skeleton-template-select").value = "none";
+    if ($("skeleton-status-badge")) {
+      $("skeleton-status-badge").textContent = "No skeleton";
+      $("skeleton-status-badge").style.color = "var(--text-muted)";
+    }
+    saveSessionState();
+    draw();
+    status("Skeleton limpo.");
+  };
+}
+
+if ($("file-skeleton-custom")) {
+  $("file-skeleton-custom").onchange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const json = JSON.parse(evt.target.result);
+        loadedCustomTemplate = json;
+        activeSkeletonTemplate = "custom";
+        if ($("skeleton-template-select")) $("skeleton-template-select").value = "custom";
+        const count = applySkeletonTemplate(json);
+        saveSessionState();
+        status(`Template '${f.name}' carregado (${count} conexões).`);
+      } catch (err) {
+        status("Arquivo JSON inválido para skeleton.", true);
+      }
+    };
+    reader.readAsText(f);
+  };
+}
 
 // Menu Bar Interactivity
 document.querySelectorAll(".menu-item").forEach(item => {
@@ -710,6 +958,449 @@ bindToggle("action-toggle-trails", "trail");
 bindToggle("action-toggle-bones", "bones");
 bindToggle("action-toggle-loop", "loop");
 
+// Distance Measurement Toggle
+function setDistanceVisible(visible) {
+  showDistance = Boolean(visible);
+  if ($("chk-show-distance")) $("chk-show-distance").checked = showDistance;
+  if ($("txt-show-distance")) {
+    $("txt-show-distance").textContent = showDistance ? "Exibir" : "Oculto";
+    $("txt-show-distance").style.color = showDistance ? "var(--accent)" : "var(--text-muted)";
+  }
+  if ($("btn-toggle-distance")) {
+    $("btn-toggle-distance").textContent = showDistance ? "Desativar" : "Ativar";
+  }
+  if ($("action-toggle-distance")) {
+    $("action-toggle-distance").textContent = (showDistance ? "✓ " : "  ") + "Distance Line (A–B)  D";
+  }
+  saveSessionState();
+  render();
+}
+
+if ($("chk-show-distance")) {
+  $("chk-show-distance").onchange = e => setDistanceVisible(e.target.checked);
+}
+if ($("btn-toggle-distance")) {
+  $("btn-toggle-distance").onclick = () => setDistanceVisible(!showDistance);
+}
+if ($("action-toggle-distance")) {
+  $("action-toggle-distance").onclick = () => setDistanceVisible(!showDistance);
+}
+
+// ==========================================
+// Subwindows Floating & Pop-out Manager
+// ==========================================
+let activeFloatingPanes = new Set();
+let popoutWindows = {};
+
+function toggleFloatPane(paneId) {
+  if (activeFloatingPanes.has(paneId)) {
+    dockPane(paneId);
+  } else {
+    floatPane(paneId);
+  }
+}
+
+function floatPane(paneId) {
+  const pane = $(paneId);
+  if (!pane) return;
+  pane.hidden = false;
+  pane.classList.add("floating-pane");
+  activeFloatingPanes.add(paneId);
+
+  if (!pane.style.top || pane.style.top === "0px") {
+    const count = activeFloatingPanes.size;
+    pane.style.top = `${80 + count * 35}px`;
+    pane.style.left = `${340 + count * 35}px`;
+  }
+
+  const floatBtn = pane.querySelector(".btn-float");
+  if (floatBtn) {
+    floatBtn.textContent = "↙";
+    floatBtn.title = "Fixar / Reanexar à grade";
+  }
+  initDraggablePane(pane);
+  resize();
+}
+
+function dockPane(paneId) {
+  const pane = $(paneId);
+  if (!pane) return;
+  pane.classList.remove("floating-pane");
+  pane.style.top = "";
+  pane.style.left = "";
+  pane.style.width = "";
+  pane.style.height = "";
+  activeFloatingPanes.delete(paneId);
+
+  const floatBtn = pane.querySelector(".btn-float");
+  if (floatBtn) {
+    floatBtn.textContent = "↗";
+    floatBtn.title = "Janela Flutuante (Arrastável / Redimensionável)";
+  }
+  resize();
+}
+
+function dockAllPanes() {
+  for (const paneId of Array.from(activeFloatingPanes)) {
+    dockPane(paneId);
+  }
+  for (const paneId of Object.keys(popoutWindows)) {
+    restorePoppedOutPane(paneId);
+  }
+}
+
+function initDraggablePane(pane) {
+  const header = pane.querySelector(".pane-header");
+  if (!header || header.dataset.dragInit) return;
+  header.dataset.dragInit = "true";
+
+  let startX = 0, startY = 0, initialLeft = 0, initialTop = 0, dragging = false;
+
+  header.addEventListener("pointerdown", e => {
+    if (!pane.classList.contains("floating-pane")) return;
+    if (["BUTTON", "SELECT", "INPUT"].includes(e.target.tagName)) return;
+    dragging = true;
+    pane.classList.add("is-dragging");
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = pane.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+    header.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  header.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    const newLeft = Math.max(10, Math.min(window.innerWidth - 100, initialLeft + dx));
+    const newTop = Math.max(10, Math.min(window.innerHeight - 60, initialTop + dy));
+    pane.style.left = `${newLeft}px`;
+    pane.style.top = `${newTop}px`;
+  });
+
+  const stopDrag = e => {
+    if (dragging) {
+      dragging = false;
+      pane.classList.remove("is-dragging");
+      try { header.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+  };
+  header.addEventListener("pointerup", stopDrag);
+  header.addEventListener("pointercancel", stopDrag);
+}
+
+function popoutPane(paneId) {
+  if (activeFloatingPanes.has(paneId)) {
+    dockPane(paneId);
+  }
+  const pane = $(paneId);
+  if (!pane) return;
+
+  if (popoutWindows[paneId] && !popoutWindows[paneId].closed) {
+    popoutWindows[paneId].focus();
+    return;
+  }
+
+  const titleText = pane.querySelector(".pane-title") ? pane.querySelector(".pane-title").innerText : paneId;
+
+  const popWin = window.open("", `mkvis3d_popout_${paneId}`, "width=760,height=500,resizable=yes,scrollbars=yes");
+  if (!popWin) {
+    status("Pop-up bloqueado pelo navegador. Abrindo em janela flutuante interna.");
+    floatPane(paneId);
+    return;
+  }
+
+  popoutWindows[paneId] = popWin;
+
+  const doc = popWin.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>mkvis3d — ${titleText}</title>
+  <link rel="icon" href="/favicon.ico">
+  <style>
+    :root {
+      --bg-dark: #0e151e; --bg-surface: #141f2d; --bg-panel: #111a24; --bg-panel-alt: #162231;
+      --accent: #59dec3; --text: #e4edf5; --text-muted: #8295a8; --border-color: rgba(255, 255, 255, 0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-dark); color: var(--text);
+      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+    }
+    .pop-header {
+      height: 38px; background: var(--bg-panel-alt); border-bottom: 1px solid var(--border-color);
+      display: flex; align-items: center; justify-content: space-between; padding: 0 14px;
+      font-size: 12px; font-weight: 600;
+    }
+    .pop-body { flex: 1; position: relative; overflow: auto; display: flex; }
+    .btn-redock {
+      background: var(--accent); color: #0b1118; border: none; border-radius: 4px;
+      padding: 4px 10px; font-weight: 600; cursor: pointer; font-size: 11px;
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+    .table-wrap { width: 100%; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border-color); }
+    th { background: var(--bg-surface); position: sticky; top: 0; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="pop-header">
+    <div>● ${titleText} <span style="font-size:10px; color:var(--accent); margin-left:8px;">[Janela Independente]</span></div>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <span id="pop-readout" style="font-size:11px; color:var(--text-muted);"></span>
+      <button class="btn-redock" id="btn-pop-redock">↙ Reanexar à Janela Principal</button>
+    </div>
+  </div>
+  <div class="pop-body" id="pop-body-container"></div>
+</body>
+</html>`);
+  doc.close();
+
+  pane.classList.add("detached-pane");
+  const origBody = pane.querySelector(".pane-body");
+  let ph = pane.querySelector(`.detached-placeholder`);
+  if (!ph) {
+    ph = document.createElement("div");
+    ph.className = "detached-placeholder";
+    ph.id = `detached-ph-${paneId}`;
+    ph.innerHTML = `
+      <p><strong>${titleText}</strong> está destacada em uma janela independente.</p>
+      <button type="button" onclick="restorePoppedOutPane('${paneId}')">↙ Reanexar</button>
+    `;
+    pane.appendChild(ph);
+  }
+  if (origBody) origBody.style.display = "none";
+
+  const reDockBtn = doc.getElementById("btn-pop-redock");
+  if (reDockBtn) {
+    reDockBtn.onclick = () => {
+      restorePoppedOutPane(paneId);
+    };
+  }
+
+  popWin.onbeforeunload = () => {
+    restorePoppedOutPane(paneId);
+  };
+
+  syncPopoutContent(paneId);
+}
+
+function restorePoppedOutPane(paneId) {
+  const pane = $(paneId);
+  if (!pane) return;
+  pane.classList.remove("detached-pane");
+  const ph = $(`detached-ph-${paneId}`);
+  if (ph) ph.remove();
+  const origBody = pane.querySelector(".pane-body");
+  if (origBody) origBody.style.display = "";
+  if (popoutWindows[paneId] && !popoutWindows[paneId].closed) {
+    try { popoutWindows[paneId].close(); } catch (_) {}
+  }
+  delete popoutWindows[paneId];
+  resize();
+}
+
+function syncPopoutContent(paneId) {
+  const popWin = popoutWindows[paneId];
+  if (!popWin || popWin.closed) return;
+  const container = popWin.document.getElementById("pop-body-container");
+  if (!container) return;
+
+  if (paneId === "panel-plot1" || paneId === "panel-plot2") {
+    let popCanvas = popWin.document.getElementById("pop-canvas");
+    if (!popCanvas) {
+      popCanvas = popWin.document.createElement("canvas");
+      popCanvas.id = "pop-canvas";
+      container.innerHTML = "";
+      container.appendChild(popCanvas);
+    }
+    const rect = container.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      if (popCanvas.width !== rect.width || popCanvas.height !== rect.height) {
+        popCanvas.width = rect.width;
+        popCanvas.height = rect.height;
+      }
+      const popCtx = popCanvas.getContext("2d");
+      const srcCanvas = paneId === "panel-plot1" ? $("graph") : $("graph2");
+      if (srcCanvas && popCtx && popCanvas.width > 0 && popCanvas.height > 0) {
+        popCtx.drawImage(srcCanvas, 0, 0, popCanvas.width, popCanvas.height);
+      }
+    }
+  } else if (paneId === "panel-table") {
+    const srcWrap = $("panel-table").querySelector(".table-wrap");
+    if (srcWrap) {
+      container.innerHTML = `<div class="table-wrap">${srcWrap.innerHTML}</div>`;
+    }
+  }
+}
+
+// Attach listener to all btn-float and btn-popout buttons
+document.querySelectorAll(".btn-float").forEach(btn => {
+  btn.onclick = e => {
+    e.stopPropagation();
+    const paneId = btn.dataset.pane;
+    if (paneId) toggleFloatPane(paneId);
+  };
+});
+
+document.querySelectorAll(".btn-popout").forEach(btn => {
+  btn.onclick = e => {
+    e.stopPropagation();
+    const paneId = btn.dataset.pane;
+    if (paneId) popoutPane(paneId);
+  };
+});
+
+if ($("action-float-plot1")) $("action-float-plot1").onclick = () => toggleFloatPane("panel-plot1");
+if ($("action-popout-plot1")) $("action-popout-plot1").onclick = () => popoutPane("panel-plot1");
+if ($("action-float-table")) $("action-float-table").onclick = () => toggleFloatPane("panel-table");
+if ($("action-popout-table")) $("action-popout-table").onclick = () => popoutPane("panel-table");
+if ($("action-dock-all")) $("action-dock-all").onclick = dockAllPanes;
+
+// Blender and BVH exports
+function exportBlenderPythonScript() {
+  if (!trial) {
+    status("Nenhum trial carregado para exportar para o Blender.", true);
+    return;
+  }
+  status("Gerando script Python para o Blender...");
+  const trialName = $("title") ? $("title").textContent.replace(/[^a-zA-Z0-9_-]/g, "_") : "trial";
+  
+  const bones = skeletonPairs.map(p => [trial.labels[p[0]], trial.labels[p[1]]]);
+  
+  const cleanXyz = trial.xyz.map(framePts =>
+    framePts.map(pt => valid(pt) ? [Number(pt[0].toFixed(5)), Number(pt[1].toFixed(5)), Number(pt[2].toFixed(5))] : null)
+  );
+
+  const fps = Math.round(trial.rate_hz) || 100;
+  const scriptContent = `# OpenBiomech (mkvis3d) -> Blender Generator Script
+import bpy
+import mathutils
+
+def build_openbiomech():
+    scene = bpy.context.scene
+    scene.render.fps = ${fps}
+    scene.frame_start = 1
+    scene.frame_end = ${trial.xyz.length}
+    scene.unit_settings.system = 'METRIC'
+    
+    coll_name = "OpenBiomech_${trialName}"
+    coll = bpy.data.collections.get(coll_name) or bpy.data.collections.new(coll_name)
+    if coll_name not in scene.collection.children:
+        scene.collection.children.link(coll)
+        
+    labels = ${JSON.stringify(trial.labels)}
+    trajectory = ${JSON.stringify(cleanXyz)}
+    
+    marker_objs = {}
+    for idx, lbl in enumerate(labels):
+        obj = bpy.data.objects.get(f"OB_{lbl}") or bpy.data.objects.new(f"OB_{lbl}", None)
+        obj.empty_display_type = 'SPHERE'
+        obj.empty_display_size = 0.015
+        if f"OB_{lbl}" not in coll.objects:
+            coll.objects.link(obj)
+        marker_objs[lbl] = obj
+        marker_objs[f"p{idx+1}"] = obj
+
+    for f_idx, pts in enumerate(trajectory):
+        fr = f_idx + 1
+        for m_idx, pt in enumerate(pts):
+            if pt is not None:
+                lbl = labels[m_idx]
+                obj = marker_objs[lbl]
+                obj.location = (pt[0], pt[1], pt[2])
+                obj.keyframe_insert(data_path="location", frame=fr)
+
+    bones_list = ${JSON.stringify(bones)}
+    if bones_list:
+        arm_data = bpy.data.armatures.new("Armature_${trialName}")
+        arm_obj = bpy.data.objects.new("Armature_${trialName}", arm_data)
+        coll.objects.link(arm_obj)
+        bpy.context.view_layer.objects.active = arm_obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        created = []
+        for (ja, jb) in bones_list:
+            if ja in marker_objs and jb in marker_objs:
+                oa = marker_objs[ja]
+                ob = marker_objs[jb]
+                b = arm_data.edit_bones.new(f"Bone_{ja}_{jb}")
+                b.head = oa.location
+                b.tail = ob.location
+                created.append((b.name, ja, jb))
+                
+        bpy.ops.object.mode_set(mode='POSE')
+        for (bname, ja, jb) in created:
+            pb = arm_obj.pose.bones.get(bname)
+            if pb:
+                c1 = pb.constraints.new(type='COPY_LOCATION')
+                c1.target = marker_objs[ja]
+                c2 = pb.constraints.new(type='STRETCH_TO')
+                c2.target = marker_objs[jb]
+
+    print("[OpenBiomech] Import complete! Press Space in Blender to play.")
+
+if __name__ == "__main__":
+    build_openbiomech()
+`;
+  download(scriptContent, `${trialName}_blender.py`, "text/x-python");
+  status("Script Blender (.py) exportado com sucesso!");
+}
+
+function exportBVHMotionFile() {
+  if (!trial) {
+    status("Nenhum trial carregado para exportar para BVH.", true);
+    return;
+  }
+  status("Gerando arquivo BVH...");
+  const trialName = $("title") ? $("title").textContent.replace(/[^a-zA-Z0-9_-]/g, "_") : "trial";
+  const rateHz = trial.rate_hz > 0 ? trial.rate_hz : 100;
+  const frameTime = (1 / rateHz).toFixed(8);
+
+  const lines = ["HIERARCHY"];
+  for (const label of trial.labels) {
+    lines.push(`ROOT ${label}`);
+    lines.push("{");
+    lines.push("\tOFFSET 0.000000 0.000000 0.000000");
+    lines.push("\tCHANNELS 3 Xposition Yposition Zposition");
+    lines.push("\tEnd Site");
+    lines.push("\t{");
+    lines.push("\t\tOFFSET 0.000000 0.000000 0.000000");
+    lines.push("\t}");
+    lines.push("}");
+  }
+  lines.push("MOTION");
+  lines.push(`Frames: ${trial.xyz.length}`);
+  lines.push(`Frame Time: ${frameTime}`);
+
+  const lastValid = trial.labels.map(() => [0, 0, 0]);
+  for (const framePts of trial.xyz) {
+    const vals = [];
+    for (let i = 0; i < framePts.length; i++) {
+      const pt = framePts[i];
+      if (valid(pt)) {
+        lastValid[i] = pt;
+      }
+      const p = lastValid[i];
+      vals.push(p[0].toFixed(6), p[1].toFixed(6), p[2].toFixed(6));
+    }
+    lines.push(vals.join(" "));
+  }
+
+  download(lines.join("\n") + "\n", `${trialName}.bvh`, "text/plain");
+  status("Arquivo BVH (.bvh) exportado com sucesso!");
+}
+
+if ($("action-export-blender")) $("action-export-blender").onclick = exportBlenderPythonScript;
+if ($("action-export-bvh")) $("action-export-bvh").onclick = exportBVHMotionFile;
+
 // Windows Menu Actions
 if ($("action-win-3d")) $("action-win-3d").onclick = () => {
   const p = $("panel-3d"); p.hidden = !p.hidden; resize();
@@ -724,18 +1415,46 @@ if ($("action-win-table")) $("action-win-table").onclick = () => {
   const p = $("panel-table"); p.hidden = !p.hidden; resize();
 };
 
-// Help Modal
-if ($("action-help-shortcuts")) {
-  $("action-help-shortcuts").onclick = () => $("modal-shortcuts").classList.add("open");
+// Help & Shortcuts Modals
+function openShortcutsModal() {
+  const m = $("modal-shortcuts");
+  if (m) m.classList.add("open");
 }
+function closeShortcutsModal() {
+  const m = $("modal-shortcuts");
+  if (m) m.classList.remove("open");
+}
+
+if ($("action-view-shortcuts")) $("action-view-shortcuts").onclick = openShortcutsModal;
+if ($("action-help-shortcuts")) $("action-help-shortcuts").onclick = openShortcutsModal;
+if ($("btn-close-shortcuts")) $("btn-close-shortcuts").onclick = closeShortcutsModal;
+
+const shortcutsModalEl = $("modal-shortcuts");
+if (shortcutsModalEl) {
+  shortcutsModalEl.onclick = e => {
+    if (e.target === shortcutsModalEl) closeShortcutsModal();
+  };
+}
+
 if ($("action-help-about")) {
   $("action-help-about").onclick = () => {
-    alert("mkvis3d · OpenBiomech\nModern biomechanical motion viewer & analysis suite\nEngineered for Vicon, Qualisys, C3D, CSV, and .3d formats.");
+    alert("mkvis3d · OpenBiomech\nModern biomechanical motion viewer & analysis suite\nCompatible with Vicon, Qualisys, C3D, CSV, and .3d formats.");
   };
 }
 
 // Keyboard shortcuts
 document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    document.querySelectorAll(".modal-backdrop.open").forEach(m => m.classList.remove("open"));
+    return;
+  }
+  if (e.key === "?" || e.key === "F1") {
+    if (!["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+      e.preventDefault();
+      openShortcutsModal();
+      return;
+    }
+  }
   if (["INPUT", "SELECT", "BUTTON", "TEXTAREA"].includes(document.activeElement.tagName)) return;
   if (e.code === "Space") { e.preventDefault(); $("play").click(); }
   if (e.code === "ArrowLeft") step(-1);
@@ -744,16 +1463,19 @@ document.addEventListener("keydown", e => {
   if (e.code === "End") { e.preventDefault(); if ($("last")) $("last").click(); }
   if (e.key === "r" || e.key === "R") fit();
   if (e.key === "g" || e.key === "G") {
-    if ($("grid")) { $("grid").checked = !$("grid").checked; draw(); }
+    if ($("grid")) { $("grid").checked = !$("grid").checked; draw(); saveSessionState(); }
   }
   if (e.key === "l" || e.key === "L") {
-    if ($("labels")) { $("labels").checked = !$("labels").checked; draw(); }
+    if ($("labels")) { $("labels").checked = !$("labels").checked; draw(); saveSessionState(); }
   }
   if (e.key === "t" || e.key === "T") {
-    if ($("trail")) { $("trail").checked = !$("trail").checked; draw(); }
+    if ($("trail")) { $("trail").checked = !$("trail").checked; draw(); saveSessionState(); }
   }
   if (e.key === "b" || e.key === "B") {
-    if ($("bones")) { $("bones").checked = !$("bones").checked; draw(); }
+    if ($("bones")) { $("bones").checked = !$("bones").checked; draw(); saveSessionState(); }
+  }
+  if (e.key === "d" || e.key === "D") {
+    setDistanceVisible(!showDistance);
   }
 });
 
@@ -827,5 +1549,17 @@ if ($("file")) {
 }
 
 $("open-panel").hidden = !boot.server;
-if (boot.trial) load(boot.trial);
+
+// Initial loading: check inlined trial, then check server active trial
+if (boot.trial) {
+  load(boot.trial);
+} else if (boot.server) {
+  fetch("/api/current_trial")
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (data) load(data);
+    })
+    .catch(() => {});
+}
+
 resize();

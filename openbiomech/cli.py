@@ -107,6 +107,30 @@ def _cmd_segment(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_blender(args: argparse.Namespace) -> int:
+    from .blender_io import export_blender_script
+    from .viewer import load_all_skeleton_templates
+
+    trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
+    template = None
+    if getattr(args, "skeleton", None):
+        all_templates = load_all_skeleton_templates()
+        template = all_templates.get(args.skeleton)
+
+    out = export_blender_script(trial, args.output, skeleton_template=template)
+    print(f"blender script: {out.resolve()}")
+    return 0
+
+
+def _cmd_bvh(args: argparse.Namespace) -> int:
+    from .blender_io import export_bvh
+
+    trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
+    out = export_bvh(trial, args.output)
+    print(f"bvh: {out.resolve()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mkvis3d",
@@ -151,7 +175,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_gui.set_defaults(func=_cmd_gui)
 
-    for p in (p_info, p_segment, p_view, p_gui):
+    p_blender = sub.add_parser(
+        "blender", help="export trial to an executable Blender Python script (.py)"
+    )
+    p_blender.add_argument("path", type=Path, help="path to a .c3d, .csv, or .3d trial file")
+    p_blender.add_argument(
+        "--output", "-o", type=Path, required=True, help="output Python script path"
+    )
+    p_blender.add_argument(
+        "--skeleton",
+        "-s",
+        type=str,
+        default=None,
+        help="skeleton template name (e.g. sam3dinov3_mhr70)",
+    )
+    p_blender.set_defaults(func=_cmd_blender)
+
+    p_bvh = sub.add_parser(
+        "bvh", help="export trial to standard Biovision Hierarchy (.bvh) mocap file"
+    )
+    p_bvh.add_argument("path", type=Path, help="path to a .c3d, .csv, or .3d trial file")
+    p_bvh.add_argument("--output", "-o", type=Path, required=True, help="output BVH path")
+    p_bvh.set_defaults(func=_cmd_bvh)
+
+    for p in (p_info, p_segment, p_view, p_gui, p_blender, p_bvh):
         p.add_argument(
             "--rate",
             type=float,
@@ -180,7 +227,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
-    known_cmds = {"info", "segment", "view", "gui", "demo", "dynamics", "-h", "--help"}
+    known_cmds = {
+        "info",
+        "segment",
+        "view",
+        "gui",
+        "demo",
+        "dynamics",
+        "blender",
+        "bvh",
+        "-h",
+        "--help",
+    }
     if raw_args and raw_args[0] not in known_cmds and not raw_args[0].startswith("-"):
         candidate = Path(raw_args[0])
         if candidate.suffix.lower() in (".c3d", ".csv", ".3d") or candidate.exists():
