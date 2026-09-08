@@ -16,6 +16,122 @@ await send("Page.navigate",{url:"file://"+root+"/outputs/rec3d_viewer.html"});
 await until('document.getElementById("frame")?.textContent.includes("631")');
 assert.match(await evaluate('document.getElementById("meta").textContent'),/70 markers|70 marcadores/);
 assert.equal(await evaluate('document.getElementById("open-panel").hidden'),true);
+
+// Theme Verification: default dark mode
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "dark");
+assert.equal(await evaluate('document.getElementById("theme-label").textContent'), "Dark");
+assert.equal(await evaluate('document.getElementById("theme-icon").textContent'), "🌙");
+
+// Switch to Light Mode via toolbar button
+await evaluate('document.getElementById("btn-toggle-theme").click()');
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "light");
+assert.equal(await evaluate('document.getElementById("theme-label").textContent'), "Light");
+assert.equal(await evaluate('document.getElementById("theme-icon").textContent'), "☀️");
+
+// Capture Light Mode screenshot
+const lightShot = await send("Page.captureScreenshot", { format: "png" });
+await writeFile(root + "/outputs/viewer_light.png", Buffer.from(lightShot.data, "base64"));
+
+// Switch to Dark Mode via View menu
+await evaluate('document.getElementById("action-theme-dark").click()');
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "dark");
+
+// Switch to Light Mode via View menu
+await evaluate('document.getElementById("action-theme-light").click()');
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "light");
+
+// Switch to Dark Mode via Options menu
+await evaluate('document.getElementById("action-opt-theme-dark").click()');
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "dark");
+
+// Switch to Light Mode via Options menu
+await evaluate('document.getElementById("action-opt-theme-light").click()');
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "light");
+
+// Toggle with Alt+T shortcut (light -> dark)
+await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "t", altKey: true, bubbles: true }))');
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "dark");
+
+// Toggle with Alt+T shortcut (dark -> light)
+await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "t", altKey: true, bubbles: true }))');
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "light");
+
+// Return to dark mode for baseline tests
+await evaluate('document.getElementById("btn-toggle-theme").click()');
+assert.equal(await evaluate('document.documentElement.getAttribute("data-theme")'), "dark");
+
+// Marker Size & Color Customization verification (viewc3d.py parity)
+assert.equal(await evaluate('markerSize'), 3.5);
+assert.equal(await evaluate('markerColor'), "auto");
+
+// Test '+' and '-' keyboard shortcuts for marker size
+await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "+", bubbles: true }))');
+assert.equal(await evaluate('markerSize'), 4.0);
+assert.equal(await evaluate('document.getElementById("marker-size-val").textContent'), "4.0 px");
+
+await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "-", bubbles: true }))');
+assert.equal(await evaluate('markerSize'), 3.5);
+
+// Test marker size slider
+await evaluate('document.getElementById("marker-size-slider").value = "5"; document.getElementById("marker-size-slider").dispatchEvent(new Event("input"))');
+assert.equal(await evaluate('markerSize'), 5.0);
+
+// Test 'C' shortcut to cycle marker colors (11 colors from viewc3d.py)
+await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true }))');
+assert.equal(await evaluate('markerColor'), "#f97316"); // Orange (viewc3d default)
+assert.equal(await evaluate('document.getElementById("marker-color-name-badge").textContent'), "Orange");
+
+// Test swatch selection (Green)
+await evaluate('document.querySelector(".color-swatch-btn[data-color=\\"#22c55e\\"]").click()');
+assert.equal(await evaluate('markerColor'), "#22c55e");
+assert.equal(await evaluate('document.getElementById("marker-color-name-badge").textContent'), "Green");
+
+// Test reset button
+await evaluate('document.getElementById("btn-reset-marker-style").click()');
+assert.equal(await evaluate('markerColor'), "auto");
+assert.equal(await evaluate('markerSize'), 3.5);
+
+// Test Vertical Splitter between 3D Viewport and Charts
+assert.ok(await evaluate('Boolean(document.getElementById("vertical-splitter"))'));
+await evaluate('document.getElementById("windows-container").style.setProperty("--plot-height", "220px"); resize()');
+assert.equal(await evaluate('getComputedStyle(document.getElementById("windows-container")).getPropertyValue("--plot-height").trim()'), "220px");
+
+// Capture screenshot demonstrating custom orange markers + resized vertical splitter
+await evaluate('setMarkerColor("#f97316", "Orange"); setMarkerSize(5.0);');
+const markerShot = await send("Page.captureScreenshot", { format: "png" });
+await writeFile(root + "/outputs/viewer_custom_markers.png", Buffer.from(markerShot.data, "base64"));
+
+await evaluate('document.getElementById("vertical-splitter").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))');
+assert.equal(await evaluate('getComputedStyle(document.getElementById("windows-container")).getPropertyValue("--plot-height").trim()'), "170px");
+await evaluate('resetMarkerStyle();');
+
+// Test Popout subwindow and graceful floating fallback under headless browser
+await evaluate('document.querySelector(".btn-popout[data-pane=\\"panel-plot1\\"]").click()');
+const isPoppedOrFloated = await evaluate('Boolean(popoutWindows["panel-plot1"] || activeFloatingPanes.has("panel-plot1"))');
+assert.ok(isPoppedOrFloated);
+await evaluate('dockAllPanes()');
+assert.equal(await evaluate('activeFloatingPanes.has("panel-plot1")'), false);
+
+// Test simulated popout subwindow rendering and redocking
+await evaluate(`
+  const mockDoc = document.implementation.createHTMLDocument("popout");
+  mockDoc.body.innerHTML = '<div class="pop-header"><button id="btn-pop-redock">Reanexar</button></div><div id="pop-body-container"></div>';
+  popoutWindows["panel-plot1"] = {
+    document: mockDoc,
+    closed: false,
+    focus: () => {},
+    close: () => {},
+    addEventListener: () => {}
+  };
+  document.getElementById("panel-plot1").classList.add("detached-pane");
+  syncPopoutContent("panel-plot1");
+`);
+assert.ok(await evaluate('Boolean(popoutWindows["panel-plot1"])'));
+assert.equal(await evaluate('document.getElementById("panel-plot1").classList.contains("detached-pane")'), true);
+await evaluate('restorePoppedOutPane("panel-plot1")');
+assert.equal(await evaluate('document.getElementById("panel-plot1").classList.contains("detached-pane")'), false);
+assert.equal(await evaluate('Boolean(popoutWindows["panel-plot1"])'), false);
+
 await evaluate('document.getElementById("next").click()');
 assert.match(await evaluate('document.getElementById("frame").textContent'),/^2 \/ 631/);
 await evaluate('document.getElementById("timeline").value="100";document.getElementById("timeline").dispatchEvent(new Event("input"))');
@@ -32,6 +148,15 @@ await evaluate('window.saved=[];URL.createObjectURL=(blob)=>{window.saved.push(b
 const csv=await evaluate('window.saved[0].text()');assert.equal(csv.trim().split("\n").length,632);
 await evaluate('document.getElementById("snapshot").click()');
 const html=await evaluate('window.saved[1].text()');
+assert(html.includes('data-theme="dark"'));
+
+// Test snapshot exported in light mode
+await evaluate('document.getElementById("btn-toggle-theme").click()');
+await evaluate('document.getElementById("snapshot").click()');
+const htmlLight = await evaluate('window.saved[2].text()');
+assert(htmlLight.includes('data-theme="light"'));
+await evaluate('document.getElementById("btn-toggle-theme").click()');
+
 await writeFile(root+"/outputs/browser_snapshot.html",html);
 await send("Page.navigate",{url:"file://"+root+"/outputs/browser_snapshot.html"});
 await until('document.getElementById("frame")?.textContent.includes("631")');
@@ -40,6 +165,8 @@ await writeFile(root+"/outputs/viewer.png",Buffer.from(screenshot.data,"base64")
 if(process.argv[3]){
  await send("Page.navigate",{url:process.argv[3]});
  await until('document.getElementById("file") && !document.getElementById("open-panel").hidden');
+ const welcomeBtnWorks = await evaluate('let clicked = false; const f = document.getElementById("file"); const oldClick = f.click; f.click = () => { clicked = true; }; document.getElementById("btn-welcome-select").click(); f.click = oldClick; clicked');
+ assert.equal(welcomeBtnWorks, true);
  const doc=await send("DOM.getDocument");const node=await send("DOM.querySelector",{nodeId:doc.root.nodeId,selector:"#file"});
  for(const filename of ["pilot0102_squat03.c3d","rec3d_20260826_121305_m.c3d","rec3d_20260826_121305.csv","rec3d_20260826_121305.3d"]){
   await evaluate('document.getElementById("status").textContent=""');

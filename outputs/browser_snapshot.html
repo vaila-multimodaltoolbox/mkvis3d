@@ -1,11 +1,17 @@
 <!doctype html>
-<html lang="en"><head>
+<html lang="en" data-theme="dark" data-marker-size="3.5" data-marker-color="auto"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mkvis3d · Motion Analysis &amp; 3D Viewer</title>
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
+<script>
+try {
+  const t = localStorage.getItem("mkvis3d_theme") || sessionStorage.getItem("mkvis3d_theme");
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+} catch (e) {}
+</script>
 <style>
-:root {
+:root, [data-theme="dark"] {
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: #dce6ef;
@@ -13,15 +19,79 @@
   --bg-dark: #0a0f16;
   --bg-panel: #131d28;
   --bg-panel-alt: #182433;
+  --bg-surface: #141f2d;
+  --input-bg: #0a0f16;
+  --btn-bg: #182433;
+  --btn-hover-bg: #223245;
   --border-color: #273648;
   --accent: #59dec3;
+  --accent-hover: #7be4ce;
+  --accent-text: #081a17;
   --accent-gold: #f2c875;
   --accent-red: #ef8686;
+  --text-normal: #dce6ef;
   --text-muted: #8ca3ba;
   --text-bright: #f0f6fc;
+  --header-bg: rgba(19, 29, 40, 0.85);
+  --scene-bg: #0b1118;
+  --plot-bg: #0d141d;
+  --table-row-border: rgba(39, 54, 72, 0.5);
+  --table-hover: rgba(89, 222, 195, 0.08);
+  --table-selected: rgba(89, 222, 195, 0.18);
+  --accent-subtle: rgba(89, 222, 195, 0.1);
+  --accent-border: rgba(89, 222, 195, 0.25);
+  --dropzone-border: rgba(89, 222, 195, 0.35);
+  --dropzone-bg: rgba(89, 222, 195, 0.04);
+  --shadow-menu: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-modal: 0 16px 40px rgba(0, 0, 0, 0.8);
+  --shadow-floating: 0 16px 40px rgba(0, 0, 0, 0.75);
+  --modal-backdrop: rgba(0, 0, 0, 0.75);
+  --floating-header-bg: #182736;
+  --detached-bg: rgba(14, 21, 30, 0.75);
+  --metric-card-bg: #0a0f16;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #1e293b;
+  background: #f1f5f9;
+  --bg-dark: #eef2f6;
+  --bg-panel: #ffffff;
+  --bg-panel-alt: #f8fafc;
+  --bg-surface: #e2e8f0;
+  --input-bg: #ffffff;
+  --btn-bg: #f1f5f9;
+  --btn-hover-bg: #e2e8f0;
+  --border-color: #cbd5e1;
+  --accent: #0f766e;
+  --accent-hover: #115e59;
+  --accent-text: #ffffff;
+  --accent-gold: #b45309;
+  --accent-red: #dc2626;
+  --text-normal: #1e293b;
+  --text-muted: #64748b;
+  --text-bright: #0f172a;
+  --header-bg: rgba(255, 255, 255, 0.95);
+  --scene-bg: #f8fafc;
+  --plot-bg: #ffffff;
+  --table-row-border: #e2e8f0;
+  --table-hover: rgba(15, 118, 110, 0.08);
+  --table-selected: rgba(15, 118, 110, 0.16);
+  --accent-subtle: rgba(15, 118, 110, 0.1);
+  --accent-border: rgba(15, 118, 110, 0.35);
+  --dropzone-border: rgba(15, 118, 110, 0.4);
+  --dropzone-bg: rgba(15, 118, 110, 0.04);
+  --shadow-menu: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-modal: 0 16px 40px rgba(0, 0, 0, 0.2);
+  --shadow-floating: 0 16px 40px rgba(0, 0, 0, 0.18);
+  --modal-backdrop: rgba(15, 23, 42, 0.45);
+  --floating-header-bg: #e2e8f0;
+  --detached-bg: rgba(248, 250, 252, 0.92);
+  --metric-card-bg: #f8fafc;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-dark); }
+body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-dark); color: var(--text-normal); }
 
 /* Menu Bar */
 .menubar {
@@ -53,7 +123,7 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
 .menu-btn {
   background: transparent;
   border: 0;
-  color: #dce6ef;
+  color: var(--text-normal);
   padding: 5px 10px;
   border-radius: 4px;
   cursor: pointer;
@@ -70,10 +140,10 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
   top: 100%;
   left: 0;
   min-width: 230px;
-  background: var(--bg-panel-alt);
+  background: var(--bg-panel);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  box-shadow: var(--shadow-menu);
   padding: 6px 0;
   z-index: 2000;
 }
@@ -83,25 +153,45 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
   align-items: center;
   justify-content: space-between;
   padding: 7px 14px;
-  color: #dce6ef;
+  color: var(--text-normal);
   font-size: 12px;
   cursor: pointer;
   text-decoration: none;
   white-space: nowrap;
 }
-.dropdown-item:hover { background: rgba(89, 222, 195, 0.12); color: var(--accent); }
+.dropdown-item:hover { background: var(--accent-subtle); color: var(--accent); }
 .dropdown-divider { height: 1px; background: var(--border-color); margin: 5px 0; }
 .dropdown-header { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); padding: 5px 14px 2px; }
 .shortcut-hint { font-size: 11px; color: var(--text-muted); margin-left: 14px; }
 
 .top-status-badge {
-  margin-left: auto;
   font-size: 11px;
   padding: 3px 9px;
   border-radius: 12px;
-  background: rgba(89, 222, 195, 0.1);
+  background: var(--accent-subtle);
   color: var(--accent);
-  border: 1px solid rgba(89, 222, 195, 0.25);
+  border: 1px solid var(--accent-border);
+}
+
+.theme-toggle-btn {
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border-color);
+  color: var(--text-bright);
+  padding: 3px 9px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.theme-toggle-btn:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* App Container */
@@ -144,7 +234,7 @@ select, input[type=number], input[type=text] {
   padding: 7px 10px;
   border: 1px solid var(--border-color);
   border-radius: 5px;
-  background: var(--bg-dark);
+  background: var(--input-bg);
   color: var(--text-bright);
   font-size: 12px;
 }
@@ -152,17 +242,17 @@ select:focus, input:focus { outline: 1px solid var(--accent); border-color: var(
 button {
   padding: 7px 12px;
   border: 1px solid var(--border-color);
-  background: var(--bg-panel-alt);
+  background: var(--btn-bg);
   color: var(--text-bright);
   border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
   transition: all 0.15s ease;
 }
-button:hover { border-color: var(--accent); color: var(--accent); }
-button:disabled { opacity: 0.35; cursor: default; border-color: var(--border-color); color: var(--text-muted); }
-button.primary { background: var(--accent); color: #081a17; border: 0; font-weight: 700; }
-button.primary:hover { background: #7be4ce; }
+button:hover { border-color: var(--accent); color: var(--accent); background: var(--btn-hover-bg); }
+button:disabled { opacity: 0.35; cursor: default; border-color: var(--border-color); color: var(--text-muted); background: var(--btn-bg); }
+button.primary { background: var(--accent); color: var(--accent-text); border: 0; font-weight: 700; }
+button.primary:hover { background: var(--accent-hover); color: var(--accent-text); }
 
 .btn-group { display: flex; gap: 6px; }
 .btn-group > * { flex: 1; text-align: center; }
@@ -172,7 +262,7 @@ button.primary:hover { background: #7be4ce; }
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #c0d1e0;
+  color: var(--text-normal);
   margin: 6px 0;
   cursor: pointer;
 }
@@ -191,7 +281,7 @@ button.primary:hover { background: #7be4ce; }
 #trial-header {
   padding: 10px 18px;
   border-bottom: 1px solid var(--border-color);
-  background: rgba(19, 29, 40, 0.75);
+  background: var(--header-bg);
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -210,25 +300,39 @@ button.primary:hover { background: #7be4ce; }
   padding: 8px;
   min-height: 0;
   overflow: hidden;
+  --plot-height: 170px;
 }
 #windows-container.layout-default {
   grid-template-columns: 1fr;
-  grid-template-rows: 1fr 150px;
+  grid-template-rows: 1fr 6px var(--plot-height, 170px);
 }
+#windows-container.layout-default #panel-3d { grid-row: 1; grid-column: 1; }
+#windows-container.layout-default #vertical-splitter { grid-row: 2; grid-column: 1; }
+#windows-container.layout-default #panel-plot1 { grid-row: 3; grid-column: 1; }
+
 #windows-container.layout-dual {
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 150px;
+  grid-template-rows: 1fr 6px var(--plot-height, 170px);
 }
-#windows-container.layout-dual #panel-3d { grid-column: 1 / 3; }
+#windows-container.layout-dual #panel-3d { grid-row: 1; grid-column: 1 / 3; }
+#windows-container.layout-dual #vertical-splitter { grid-row: 2; grid-column: 1 / 3; }
+#windows-container.layout-dual #panel-plot1 { grid-row: 3; grid-column: 1; }
+#windows-container.layout-dual #panel-plot2 { grid-row: 3; grid-column: 2; }
+
 #windows-container.layout-full {
   grid-template-columns: 1fr 320px;
-  grid-template-rows: 1fr 150px;
+  grid-template-rows: 1fr 6px var(--plot-height, 170px);
 }
-#windows-container.layout-full #panel-plot1 { grid-column: 1 / 3; }
+#windows-container.layout-full #panel-3d { grid-row: 1; grid-column: 1; }
+#windows-container.layout-full #panel-table { grid-row: 1; grid-column: 2; }
+#windows-container.layout-full #vertical-splitter { grid-row: 2; grid-column: 1 / 3; }
+#windows-container.layout-full #panel-plot1 { grid-row: 3; grid-column: 1 / 3; }
+
 #windows-container.layout-3d {
   grid-template-columns: 1fr;
   grid-template-rows: 1fr;
 }
+#windows-container.layout-3d #vertical-splitter { display: none !important; }
 
 /* Individual Window Pane */
 .window-pane {
@@ -279,7 +383,8 @@ button.primary:hover { background: #7be4ce; }
   z-index: 1000 !important;
   width: 540px;
   height: 330px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px var(--accent);
+  box-shadow: var(--shadow-floating), 0 0 0 1px var(--accent);
+  background: var(--bg-panel);
   border-radius: 8px;
   resize: both;
   overflow: hidden;
@@ -288,8 +393,9 @@ button.primary:hover { background: #7be4ce; }
 }
 .window-pane.floating-pane .pane-header {
   cursor: grab;
-  background: #182736;
+  background: var(--floating-header-bg);
   border-bottom: 1px solid var(--accent);
+  color: var(--text-bright);
 }
 .window-pane.floating-pane.is-dragging .pane-header {
   cursor: grabbing;
@@ -306,7 +412,7 @@ button.primary:hover { background: #7be4ce; }
   padding: 24px;
   color: var(--text-muted);
   text-align: center;
-  background: rgba(14, 21, 30, 0.75);
+  background: var(--detached-bg);
 }
 .detached-placeholder p {
   margin: 0 0 12px;
@@ -315,7 +421,7 @@ button.primary:hover { background: #7be4ce; }
 }
 .detached-placeholder button {
   background: var(--accent);
-  color: #0b1118;
+  color: var(--accent-text);
   font-weight: 600;
   padding: 5px 12px;
   border: none;
@@ -324,8 +430,56 @@ button.primary:hover { background: #7be4ce; }
 }
 .pane-body { flex: 1; position: relative; min-height: 0; overflow: hidden; }
 
+/* Vertical Resizer / Splitter Handle between 3D Viewport and Charts */
+.window-splitter-h {
+  height: 6px;
+  margin: -1px 0;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  user-select: none;
+  touch-action: none;
+  transition: background 0.15s ease;
+  border-radius: 3px;
+}
+.window-splitter-h::after {
+  content: "";
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-color);
+  transition: background 0.15s, width 0.15s;
+}
+.window-splitter-h:hover, .window-splitter-h.is-dragging {
+  background: rgba(89, 222, 195, 0.18);
+}
+.window-splitter-h:hover::after, .window-splitter-h.is-dragging::after {
+  background: var(--accent);
+  width: 80px;
+}
+
+/* Color Swatches Grid */
+.color-swatch-btn {
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+.color-swatch-btn:hover {
+  transform: scale(1.12);
+  border-color: var(--text-bright);
+}
+.color-swatch-btn.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* 3D Scene Viewport */
-#scene { display: block; width: 100%; height: 100%; touch-action: none; background: #0b1118; }
+#scene { display: block; width: 100%; height: 100%; touch-action: none; background: var(--scene-bg); }
 #welcome {
   position: absolute;
   inset: 0;
@@ -341,14 +495,19 @@ button.primary:hover { background: #7be4ce; }
 #welcome h2 { font-size: 20px; color: var(--text-bright); margin-bottom: 8px; font-weight: 600; }
 #welcome p { font-size: 13px; max-width: 440px; line-height: 1.5; margin-bottom: 16px; }
 .drop-zone-hint {
-  border: 2px dashed rgba(89, 222, 195, 0.35);
+  border: 2px dashed var(--dropzone-border);
   border-radius: 10px;
   padding: 24px 36px;
-  background: rgba(89, 222, 195, 0.04);
+  background: var(--dropzone-bg);
+  pointer-events: auto;
+}
+.drop-zone-hint button {
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 /* Plot Canvases */
-.plot-canvas { display: block; width: 100%; height: 100%; background: #0d141d; cursor: crosshair; }
+.plot-canvas { display: block; width: 100%; height: 100%; background: var(--plot-bg); cursor: crosshair; }
 .plot-readout { font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* Marker Inspector Table */
@@ -363,9 +522,9 @@ button.primary:hover { background: #7be4ce; }
   color: var(--text-muted);
   font-weight: 600;
 }
-.marker-table td { padding: 4px 10px; border-bottom: 1px solid rgba(39, 54, 72, 0.5); font-variant-numeric: tabular-nums; }
-.marker-table tr:hover { background: rgba(89, 222, 195, 0.08); cursor: pointer; }
-.marker-table tr.selected { background: rgba(89, 222, 195, 0.18); font-weight: 600; color: var(--accent); }
+.marker-table td { padding: 4px 10px; border-bottom: 1px solid var(--table-row-border); color: var(--text-normal); font-variant-numeric: tabular-nums; }
+.marker-table tr:hover { background: var(--table-hover); cursor: pointer; }
+.marker-table tr.selected { background: var(--table-selected); font-weight: 600; color: var(--accent); }
 
 /* Playback Toolbar */
 #toolbar {
@@ -399,7 +558,7 @@ button.primary:hover { background: #7be4ce; }
 
 /* Readout card in sidebar */
 .metric-card {
-  background: var(--bg-dark);
+  background: var(--metric-card-bg);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 10px;
@@ -412,7 +571,7 @@ button.primary:hover { background: #7be4ce; }
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--modal-backdrop);
   z-index: 5000;
   align-items: center;
   justify-content: center;
@@ -424,7 +583,7 @@ button.primary:hover { background: #7be4ce; }
   border-radius: 8px;
   width: 520px;
   max-width: 90vw;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.8);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 .modal-header {
@@ -438,9 +597,9 @@ button.primary:hover { background: #7be4ce; }
 .modal-header h3 { font-size: 14px; font-weight: 700; color: var(--text-bright); }
 .modal-close { background: transparent; border: 0; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 4px; }
 .modal-close:hover { color: var(--text-bright); }
-.modal-body { padding: 18px; font-size: 13px; line-height: 1.6; max-height: 70vh; overflow-y: auto; }
+.modal-body { padding: 18px; font-size: 13px; line-height: 1.6; max-height: 70vh; overflow-y: auto; color: var(--text-normal); }
 .key-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; margin-top: 10px; }
-.key-cap { background: var(--bg-dark); border: 1px solid var(--border-color); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11px; text-align: center; display: inline-block; color: var(--accent); }
+.key-cap { background: var(--input-bg); border: 1px solid var(--border-color); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11px; text-align: center; display: inline-block; color: var(--accent); }
 
 /* Utility */
 [hidden] { display: none !important; }
@@ -494,6 +653,10 @@ button.primary:hover { background: #7be4ce; }
       <div class="dropdown-item" id="action-toggle-bones">✓ Skeleton Bones <span class="shortcut-hint">B</span></div>
       <div class="dropdown-item" id="action-toggle-distance">✓ Distance Line (A–B)  D</div>
       <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Color Theme</div>
+      <div class="dropdown-item" id="action-theme-dark">✓ Dark Mode (Escuro)</div>
+      <div class="dropdown-item" id="action-theme-light">  Light Mode (Claro)</div>
+      <div class="dropdown-divider"></div>
       <div class="dropdown-item" id="action-view-shortcuts">Keyboard &amp; Mouse Controls <span class="shortcut-hint">F1 / ?</span></div>
     </div>
   </div>
@@ -535,6 +698,16 @@ button.primary:hover { background: #7be4ce; }
       <div class="dropdown-item" data-floor="auto">✓ Auto (Floor at lowest marker)</div>
       <div class="dropdown-item" data-floor="origin">Origin (Z = 0)</div>
       <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Color Theme</div>
+      <div class="dropdown-item" id="action-opt-theme-dark">✓ Dark Mode (Escuro)</div>
+      <div class="dropdown-item" id="action-opt-theme-light">  Light Mode (Claro)</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Markers Appearance (viewc3d)</div>
+      <div class="dropdown-item" id="action-cycle-marker-color">Cycle Marker Color <span class="shortcut-hint">C</span></div>
+      <div class="dropdown-item" id="action-inc-marker-size">Increase Marker Size <span class="shortcut-hint">+</span></div>
+      <div class="dropdown-item" id="action-dec-marker-size">Decrease Marker Size <span class="shortcut-hint">-</span></div>
+      <div class="dropdown-item" id="action-reset-marker-style">Reset Marker Style</div>
+      <div class="dropdown-divider"></div>
       <div class="dropdown-item" id="action-toggle-loop">✓ Loop Playback</div>
     </div>
   </div>
@@ -548,6 +721,11 @@ button.primary:hover { background: #7be4ce; }
     </div>
   </div>
 
+  <div class="theme-toggle-wrap" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+    <button id="btn-toggle-theme" class="theme-toggle-btn" title="Dark Mode Active (Click or Alt+T for Light Mode)" aria-label="Toggle Light / Dark Mode">
+      <span id="theme-icon">🌙</span> <span id="theme-label">Dark</span>
+    </button>
+  </div>
   <div class="top-status-badge">Local Session · No Cloud Upload</div>
 </nav>
 
@@ -604,8 +782,37 @@ button.primary:hover { background: #7be4ce; }
             <label style="margin: 0 0 2px;">Distance</label>
             <button id="btn-toggle-distance" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Desativar</button>
           </div>
-          <div id="distance" class="metric-val" style="opacity: 1;">0.0608 m</div>
+          <div id="distance" class="metric-val" style="opacity: 1;">0.0612 m</div>
         </div>
+      </div>
+    </section>
+
+    <!-- Marker Appearance & Style (like viewc3d.py) -->
+    <section class="sidebar-section">
+      <div class="sidebar-header">
+        <span>Marker Appearance</span>
+        <span id="marker-color-name-badge" style="font-size: 10px; color: var(--accent);">Default</span>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+        <label for="marker-size-slider" style="margin: 0;">Marker Size</label>
+        <span id="marker-size-val" style="font-size: 11px; font-weight: 600; color: var(--accent);">3.5 px</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <button id="btn-dec-marker-size" type="button" style="padding: 2px 8px; font-weight: bold;" title="Diminuir Marcadores (-)">−</button>
+        <input type="range" id="marker-size-slider" min="1" max="15" step="0.5" value="3.5" style="flex: 1;">
+        <button id="btn-inc-marker-size" type="button" style="padding: 2px 8px; font-weight: bold;" title="Aumentar Marcadores (+)">+</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+        <label style="margin: 0;">Marker Color (viewc3d)</label>
+        <button id="btn-cycle-marker-color" type="button" style="font-size: 10px; padding: 1px 6px;" title="Alternar Cor (C)">Ciclar (C)</button>
+      </div>
+      <div id="marker-color-swatches" class="color-swatches-grid" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 6px;"><button type="button" class="color-swatch-btn selected" data-color="auto" title="Default (Theme Color)" style="background: rgb(155, 190, 215);"></button><button type="button" class="color-swatch-btn" data-color="#f97316" title="Orange" style="background: rgb(249, 115, 22);"></button><button type="button" class="color-swatch-btn" data-color="#3b82f6" title="Blue" style="background: rgb(59, 130, 246);"></button><button type="button" class="color-swatch-btn" data-color="#22c55e" title="Green" style="background: rgb(34, 197, 94);"></button><button type="button" class="color-swatch-btn" data-color="#ef4444" title="Red" style="background: rgb(239, 68, 68);"></button><button type="button" class="color-swatch-btn" data-color="#ffffff" title="White" style="background: rgb(255, 255, 255);"></button><button type="button" class="color-swatch-btn" data-color="#eab308" title="Yellow" style="background: rgb(234, 179, 8);"></button><button type="button" class="color-swatch-btn" data-color="#a855f7" title="Purple" style="background: rgb(168, 85, 247);"></button><button type="button" class="color-swatch-btn" data-color="#06b6d4" title="Cyan" style="background: rgb(6, 182, 212);"></button><button type="button" class="color-swatch-btn" data-color="#ec4899" title="Pink" style="background: rgb(236, 72, 153);"></button><button type="button" class="color-swatch-btn" data-color="#6b7280" title="Gray" style="background: rgb(107, 114, 128);"></button><button type="button" class="color-swatch-btn" data-color="#111827" title="Black" style="background: rgb(17, 24, 39);"></button></div>
+      <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;">
+        <input type="color" id="marker-color-custom" value="#f97316" title="Cor personalizada" style="width: 28px; height: 24px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; background: transparent;">
+        <span style="font-size: 11px; color: var(--text-muted);">Custom Color</span>
+        <button id="btn-reset-marker-style" type="button" style="margin-left: auto; font-size: 10px; padding: 1px 6px;">Reset</button>
       </div>
     </section>
 
@@ -687,11 +894,11 @@ button.primary:hover { background: #7be4ce; }
         <h1 id="title">rec3d_20260826_121305_m.c3d</h1>
         <div id="meta">631 frames · 70 markers · 100 Hz · coordinates in meters</div>
       </div>
-      <div id="status" role="status" aria-live="polite">File loaded. Coordinates in meters; missing frames are preserved.</div>
+      <div id="status" role="status" aria-live="polite">Pop-up bloqueado pelo navegador. Abrindo em janela flutuante interna.</div>
     </div>
 
     <!-- Windows Container -->
-    <div id="windows-container" class="layout-default">
+    <div id="windows-container" class="layout-default" style="--plot-height: 170px;">
       <!-- 3D Viewport Window -->
       <section id="panel-3d" class="window-pane">
         <div class="pane-header">
@@ -704,23 +911,26 @@ button.primary:hover { background: #7be4ce; }
           </div>
         </div>
         <div class="pane-body">
-          <canvas id="scene" aria-label="3D marker cloud visualization" width="1142" height="699"></canvas>
+          <canvas id="scene" aria-label="3D marker cloud visualization" width="1142" height="665"></canvas>
           <div id="welcome" hidden="">
             <div class="drop-zone-hint">
               <h2>Drop motion file here</h2>
               <p>Drag and drop any C3D, CSV, or .3d file into this window, or pick an example from the <strong>File</strong> menu.</p>
-              <button class="primary" onclick="$(file).click()">Select File</button>
+              <button id="btn-welcome-select" class="primary" type="button">Select File</button>
             </div>
           </div>
         </div>
       </section>
 
+      <!-- Vertical Resizer / Splitter Handle between 3D & Charts -->
+      <div id="vertical-splitter" class="window-splitter-h" role="separator" aria-orientation="horizontal" title="Arraste para ajustar a altura dos gráficos (Duplo clique para redefinir)"></div>
+
       <!-- Plot Window 1 -->
-      <section id="panel-plot1" class="window-pane">
-        <div class="pane-header">
+      <section id="panel-plot1" class="window-pane" style="">
+        <div class="pane-header" data-drag-init="true">
           <div class="pane-title">
             <span>Plot 1:</span>
-            <select id="plot1-mode" style="background: var(--bg-dark); color: var(--accent); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px;">
+            <select id="plot1-mode" style="background: var(--input-bg); color: var(--accent); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px;">
               <option value="distance">Distance (Marker A to B)</option>
               <option value="active-z">Active Marker · Z Position (Height)</option>
               <option value="active-xyz">Active Marker · X, Y, Z Coordinates</option>
@@ -734,7 +944,7 @@ button.primary:hover { background: #7be4ce; }
           </div>
         </div>
         <div class="pane-body">
-          <canvas id="graph" class="plot-canvas" aria-label="Primary motion trajectory chart" width="1142" height="116"></canvas>
+          <canvas id="graph" class="plot-canvas" aria-label="Primary motion trajectory chart" width="1142" height="136"></canvas>
         </div>
       </section>
 
@@ -743,7 +953,7 @@ button.primary:hover { background: #7be4ce; }
         <div class="pane-header">
           <div class="pane-title">
             <span>Plot 2:</span>
-            <select id="plot2-mode" style="background: var(--bg-dark); color: var(--accent); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px;">
+            <select id="plot2-mode" style="background: var(--input-bg); color: var(--accent); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px;">
               <option value="active-z" selected="">Active Marker · Z Position (Height)</option>
               <option value="active-speed">Active Marker · 3D Velocity / Speed</option>
               <option value="active-xyz">Active Marker · X, Y, Z Coordinates</option>
@@ -807,7 +1017,7 @@ button.primary:hover { background: #7be4ce; }
 
       <div id="timeline-wrap">
         <input id="timeline" type="range" min="0" max="630" value="0" aria-label="Frame timeline">
-        <span id="frame">110 / 631 · 1.090 s / 6.300 s</span>
+        <span id="frame">109 / 631 · 1.080 s / 6.300 s</span>
       </div>
 
       <div style="display: flex; align-items: center; gap: 6px;">
@@ -847,6 +1057,9 @@ button.primary:hover { background: #7be4ce; }
         <div><span class="key-cap">T</span></div><div>Toggle active marker trail</div>
         <div><span class="key-cap">B</span></div><div>Toggle skeleton / stick figure bones</div>
         <div><span class="key-cap">D</span></div><div>Toggle distance measurement line (Marker A–B)</div>
+        <div><span class="key-cap">C</span></div><div>Cycle marker color (11 colors from viewc3d)</div>
+        <div><span class="key-cap">+</span> / <span class="key-cap">-</span></div><div>Increase / decrease marker size</div>
+        <div><span class="key-cap">Alt + T</span></div><div>Toggle Light / Dark theme mode</div>
         <div><span class="key-cap">Esc</span></div><div>Close open dialog / modal window</div>
       </div>
     </div>
@@ -876,6 +1089,136 @@ let distances = [], activeMarkerIndex = 0, showDistance = true;
 let skeletonPairs = [];
 let activeSkeletonTemplate = "none";
 let loadedCustomTemplate = null;
+let popoutWindows = {};
+
+// Marker Appearance Palette (matching /home/preto/data/vaila/vaila/viewc3d.py)
+const MARKER_PALETTE = [
+  { name: "Orange", hex: "#f97316" }, // [1.0, 0.65, 0.0] - Default in viewc3d.py
+  { name: "Blue", hex: "#3b82f6" },   // [0.0, 0.5, 1.0]
+  { name: "Green", hex: "#22c55e" },  // [0.0, 1.0, 0.0]
+  { name: "Red", hex: "#ef4444" },    // [1.0, 0.0, 0.0]
+  { name: "White", hex: "#ffffff" },  // [1.0, 1.0, 1.0]
+  { name: "Yellow", hex: "#eab308" }, // [1.0, 1.0, 0.0]
+  { name: "Purple", hex: "#a855f7" }, // [0.5, 0.0, 1.0]
+  { name: "Cyan", hex: "#06b6d4" },   // [0.0, 1.0, 1.0]
+  { name: "Pink", hex: "#ec4899" },   // [1.0, 0.0, 1.0]
+  { name: "Gray", hex: "#6b7280" },   // [0.5, 0.5, 0.5]
+  { name: "Black", hex: "#111827" },  // [0.0, 0.0, 0.0]
+];
+
+let markerSize = 3.5;
+let markerColor = "auto";
+let markerPaletteIndex = -1;
+
+function setMarkerSize(size) {
+  markerSize = Math.max(1, Math.min(15, Number(size) || 3.5));
+  if ($("marker-size-slider")) $("marker-size-slider").value = String(markerSize);
+  if ($("marker-size-val")) $("marker-size-val").textContent = `${markerSize.toFixed(1)} px`;
+  draw();
+  saveSessionState();
+}
+
+function setMarkerColor(colorHex, colorName) {
+  markerColor = colorHex;
+  if (!colorName) {
+    if (colorHex === "auto") {
+      colorName = "Default";
+    } else {
+      const match = MARKER_PALETTE.find(p => p.hex.toLowerCase() === colorHex.toLowerCase());
+      colorName = match ? match.name : colorHex;
+    }
+  }
+  if ($("marker-color-name-badge")) $("marker-color-name-badge").textContent = colorName;
+  if ($("marker-color-custom") && colorHex !== "auto") $("marker-color-custom").value = colorHex;
+  document.querySelectorAll(".color-swatch-btn").forEach(btn => {
+    btn.classList.toggle("selected", btn.dataset.color === colorHex);
+  });
+  status(`Marker color: ${colorName}`);
+  draw();
+  saveSessionState();
+}
+
+function cycleMarkerColor() {
+  markerPaletteIndex = (markerPaletteIndex + 1) % (MARKER_PALETTE.length + 1);
+  if (markerPaletteIndex === MARKER_PALETTE.length) {
+    setMarkerColor("auto", "Default (Theme)");
+  } else {
+    const item = MARKER_PALETTE[markerPaletteIndex];
+    setMarkerColor(item.hex, item.name);
+  }
+}
+
+function resetMarkerStyle() {
+  markerPaletteIndex = -1;
+  setMarkerSize(3.5);
+  setMarkerColor("auto", "Default");
+}
+
+let currentTheme = "dark";
+try {
+  const saved = localStorage.getItem("mkvis3d_theme") || sessionStorage.getItem("mkvis3d_theme");
+  if (saved === "light" || saved === "dark") {
+    currentTheme = saved;
+  }
+} catch (e) {}
+
+function setTheme(theme) {
+  currentTheme = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", currentTheme);
+  try {
+    localStorage.setItem("mkvis3d_theme", currentTheme);
+    sessionStorage.setItem("mkvis3d_theme", currentTheme);
+  } catch (e) {}
+
+  const themeIcon = $("theme-icon");
+  const themeLabel = $("theme-label");
+  const btnToggle = $("btn-toggle-theme");
+  if (themeIcon) themeIcon.textContent = currentTheme === "light" ? "☀️" : "🌙";
+  if (themeLabel) themeLabel.textContent = currentTheme === "light" ? "Light" : "Dark";
+  if (btnToggle) {
+    btnToggle.title = currentTheme === "light"
+      ? "Light Mode Active (Click or Alt+T for Dark Mode)"
+      : "Dark Mode Active (Click or Alt+T for Light Mode)";
+  }
+
+  // Update View menu items
+  if ($("action-theme-dark")) {
+    $("action-theme-dark").textContent = (currentTheme === "dark" ? "✓ " : "  ") + "Dark Mode (Escuro)";
+  }
+  if ($("action-theme-light")) {
+    $("action-theme-light").textContent = (currentTheme === "light" ? "✓ " : "  ") + "Light Mode (Claro)";
+  }
+
+  // Update Options menu items
+  if ($("action-opt-theme-dark")) {
+    $("action-opt-theme-dark").textContent = (currentTheme === "dark" ? "✓ " : "  ") + "Dark Mode (Escuro)";
+  }
+  if ($("action-opt-theme-light")) {
+    $("action-opt-theme-light").textContent = (currentTheme === "light" ? "✓ " : "  ") + "Light Mode (Claro)";
+  }
+
+  const autoSwatch = document.querySelector('.color-swatch-btn[data-color="auto"]');
+  if (autoSwatch) {
+    autoSwatch.style.background = currentTheme === "light" ? "#475569" : "#9bbed7";
+  }
+
+  // Synchronize detached/popout windows
+  for (const paneId in popoutWindows) {
+    const popWin = popoutWindows[paneId];
+    if (popWin && !popWin.closed && popWin.document && popWin.document.documentElement) {
+      popWin.document.documentElement.setAttribute("data-theme", currentTheme);
+      syncPopoutContent(paneId);
+    }
+  }
+
+  // Redraw canvases with new theme palette
+  draw();
+  saveSessionState();
+}
+
+function toggleTheme() {
+  setTheme(currentTheme === "dark" ? "light" : "dark");
+}
 
 const canvas = $("scene"), ctx = canvas.getContext("2d");
 const graph1 = $("graph"), gx1 = graph1.getContext("2d");
@@ -894,27 +1237,27 @@ function orient(p) {
   return up === "y" ? [p[0], -p[2], p[1]] : up === "x" ? [p[1], p[2], p[0]] : p;
 }
 
-function projectOriented(p) {
+function projectOriented(p, w = canvas.clientWidth, h = canvas.clientHeight) {
   const diff = [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
   const x = Math.cos(yaw) * diff[0] - Math.sin(yaw) * diff[1];
   const depth = Math.sin(yaw) * diff[0] + Math.cos(yaw) * diff[1];
   const z = Math.cos(pitch) * diff[2] - Math.sin(pitch) * depth;
-  const s = Math.min(canvas.clientWidth, canvas.clientHeight) * 0.75 / span * zoom;
-  return [canvas.clientWidth / 2 + x * s + pan[0], canvas.clientHeight / 2 - z * s + pan[1], depth];
+  const s = Math.min(w, h) * 0.75 / span * zoom;
+  return [w / 2 + x * s + pan[0], h / 2 - z * s + pan[1], depth];
 }
 
-function project(raw) {
-  return projectOriented(orient(raw));
+function project(raw, w = canvas.clientWidth, h = canvas.clientHeight) {
+  return projectOriented(orient(raw), w, h);
 }
 
-function line(a, b, color, width = 1) {
-  const p = project(a), q = project(b);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.beginPath();
-  ctx.moveTo(p[0], p[1]);
-  ctx.lineTo(q[0], q[1]);
-  ctx.stroke();
+function line(a, b, color, width = 1, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
+  const p = project(a, w, h), q = project(b, w, h);
+  targetCtx.strokeStyle = color;
+  targetCtx.lineWidth = width;
+  targetCtx.beginPath();
+  targetCtx.moveTo(p[0], p[1]);
+  targetCtx.lineTo(q[0], q[1]);
+  targetCtx.stroke();
 }
 
 function fit() {
@@ -955,38 +1298,43 @@ function getFloorHeight() {
 }
 
 // 3D Ground Plane Grid
-function drawGroundGrid() {
+function drawGroundGrid(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
   if (!$("grid") || !$("grid").checked) return;
   const floorH = getFloorHeight();
   const gridSize = Math.max(span * 1.5, 2.0);
   const step = gridSize > 5 ? 1.0 : gridSize > 2 ? 0.5 : 0.2;
   const count = Math.min(20, Math.ceil(gridSize / step));
   const extent = count * step;
+  const isLight = currentTheme === "light";
 
-  ctx.lineWidth = 1;
+  targetCtx.lineWidth = 1;
   for (let i = -count; i <= count; i++) {
     const x = i * step;
     const isCenter = i === 0;
-    ctx.strokeStyle = isCenter ? "rgba(239, 134, 134, 0.6)" : "rgba(75, 105, 135, 0.25)";
-    ctx.lineWidth = isCenter ? 1.5 : 1;
-    const p1 = projectOriented([center[0] + x, center[1] - extent, floorH]);
-    const p2 = projectOriented([center[0] + x, center[1] + extent, floorH]);
-    ctx.beginPath();
-    ctx.moveTo(p1[0], p1[1]);
-    ctx.lineTo(p2[0], p2[1]);
-    ctx.stroke();
+    targetCtx.strokeStyle = isCenter
+      ? (isLight ? "rgba(220, 38, 38, 0.7)" : "rgba(239, 134, 134, 0.6)")
+      : (isLight ? "rgba(100, 116, 139, 0.25)" : "rgba(75, 105, 135, 0.25)");
+    targetCtx.lineWidth = isCenter ? 1.5 : 1;
+    const p1 = projectOriented([center[0] + x, center[1] - extent, floorH], w, h);
+    const p2 = projectOriented([center[0] + x, center[1] + extent, floorH], w, h);
+    targetCtx.beginPath();
+    targetCtx.moveTo(p1[0], p1[1]);
+    targetCtx.lineTo(p2[0], p2[1]);
+    targetCtx.stroke();
   }
   for (let i = -count; i <= count; i++) {
     const y = i * step;
     const isCenter = i === 0;
-    ctx.strokeStyle = isCenter ? "rgba(130, 217, 157, 0.6)" : "rgba(75, 105, 135, 0.25)";
-    ctx.lineWidth = isCenter ? 1.5 : 1;
-    const p1 = projectOriented([center[0] - extent, center[1] + y, floorH]);
-    const p2 = projectOriented([center[0] + extent, center[1] + y, floorH]);
-    ctx.beginPath();
-    ctx.moveTo(p1[0], p1[1]);
-    ctx.lineTo(p2[0], p2[1]);
-    ctx.stroke();
+    targetCtx.strokeStyle = isCenter
+      ? (isLight ? "rgba(22, 163, 74, 0.7)" : "rgba(130, 217, 157, 0.6)")
+      : (isLight ? "rgba(100, 116, 139, 0.25)" : "rgba(75, 105, 135, 0.25)");
+    targetCtx.lineWidth = isCenter ? 1.5 : 1;
+    const p1 = projectOriented([center[0] - extent, center[1] + y, floorH], w, h);
+    const p2 = projectOriented([center[0] + extent, center[1] + y, floorH], w, h);
+    targetCtx.beginPath();
+    targetCtx.moveTo(p1[0], p1[1]);
+    targetCtx.lineTo(p2[0], p2[1]);
+    targetCtx.stroke();
   }
 }
 
@@ -1070,11 +1418,92 @@ function applySkeletonTemplate(templateObj) {
   return skeletonPairs.length;
 }
 
-function drawSkeleton(pts) {
+function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
   if (!$("bones") || !$("bones").checked || !skeletonPairs.length || !pts) return;
+  const boneColor = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
   for (const [i, j] of skeletonPairs) {
     if (valid(pts[i]) && valid(pts[j])) {
-      line(pts[i], pts[j], "rgba(110, 160, 205, 0.75)", 2);
+      line(pts[i], pts[j], boneColor, 2, targetCtx, w, h);
+    }
+  }
+}
+
+// Render 3D scene to any canvas context (main scene or detached popout window)
+function drawSceneToContext(targetCtx, w, h) {
+  targetCtx.clearRect(0, 0, w, h);
+  if (!trial) return;
+
+  drawGroundGrid(targetCtx, w, h);
+
+  const pts = trial.xyz[frame] || [];
+  const activeIdx = activeMarkerIndex;
+  const a = Number($("marker-a") ? $("marker-a").value : 0);
+  const b = Number($("marker-b") ? $("marker-b").value : 1);
+  const isLight = currentTheme === "light";
+
+  // Coordinate axes at origin
+  const origin = [0, 0, 0];
+  const axesColors = isLight
+    ? ["#dc2626", "#16a34a", "#2563eb"]
+    : ["#ef8686", "#82d99d", "#7faeeb"];
+  const axesLabels = ["X", "Y", "Z"];
+  for (let i = 0; i < 3; i++) {
+    const end = [0, 0, 0]; end[i] = span * 0.22;
+    line(origin, end, axesColors[i], 2, targetCtx, w, h);
+    const p = project(end, w, h);
+    targetCtx.fillStyle = axesColors[i];
+    targetCtx.font = "bold 11px system-ui, sans-serif";
+    targetCtx.fillText(axesLabels[i], p[0] + 5, p[1]);
+  }
+
+  // Draw Skeleton Bones
+  drawSkeleton(pts, targetCtx, w, h);
+
+  // Trajectory Trail of active marker
+  if ($("trail") && $("trail").checked && activeIdx >= 0 && activeIdx < trial.labels.length) {
+    const trailColor = isLight ? "#0f766e" : "#35827c";
+    for (let f = Math.max(1, frame - 120); f <= frame; f++) {
+      const p = trial.xyz[f - 1][activeIdx], q = trial.xyz[f][activeIdx];
+      if (valid(p) && valid(q)) line(p, q, trailColor, 1.5, targetCtx, w, h);
+    }
+  }
+
+  // Distance line between Marker A and B (optional toggle)
+  if (showDistance && valid(pts[a]) && valid(pts[b])) {
+    const distColor = isLight ? "#b45309" : "#f2c875";
+    line(pts[a], pts[b], distColor, 2, targetCtx, w, h);
+  }
+
+  // Render Marker Points with custom size and custom/palette color
+  const visible = pts.map((p, i) => ({ p, i })).filter(v => valid(v.p)).map(v => ({ ...v, q: project(v.p, w, h) })).sort((a, b) => b.q[2] - a.q[2]);
+
+  const actColor = isLight ? "#0f766e" : "#59dec3";
+  const bColor = isLight ? "#b45309" : "#f2c875";
+  const themeDefaultColor = isLight ? "#475569" : "#9bbed7";
+  const regularColor = markerColor === "auto" ? themeDefaultColor : markerColor;
+
+  const baseRadius = markerSize;
+  for (const { i, q } of visible) {
+    const isAct = i === activeIdx;
+    const isA = showDistance && i === a, isB = showDistance && i === b;
+    targetCtx.beginPath();
+    const radius = isAct ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
+    targetCtx.arc(q[0], q[1], radius, 0, Math.PI * 2);
+    targetCtx.fillStyle = isAct ? actColor : (isA ? actColor : (isB ? bColor : regularColor));
+    targetCtx.fill();
+
+    if (isAct) {
+      targetCtx.strokeStyle = isLight ? "#0f172a" : "#ffffff";
+      targetCtx.lineWidth = Math.max(1.5, baseRadius * 0.4);
+      targetCtx.stroke();
+    }
+
+    if ($("labels") && $("labels").checked) {
+      targetCtx.fillStyle = isAct
+        ? (isLight ? "#0f172a" : "#ffffff")
+        : (isLight ? "#475569" : "#adbdcd");
+      targetCtx.font = (isAct ? "bold 11px" : "10px") + " system-ui, sans-serif";
+      targetCtx.fillText(trial.labels[i], q[0] + radius + 3, q[1] - 3);
     }
   }
 }
@@ -1082,69 +1511,10 @@ function drawSkeleton(pts) {
 // 3D Scene Rendering
 function draw() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
-  ctx.clearRect(0, 0, w, h);
+  if (w > 0 && h > 0) {
+    drawSceneToContext(ctx, w, h);
+  }
   if (!trial) return;
-
-  drawGroundGrid();
-
-  const pts = trial.xyz[frame] || [];
-  const activeIdx = activeMarkerIndex;
-  const a = Number($("marker-a") ? $("marker-a").value : 0);
-  const b = Number($("marker-b") ? $("marker-b").value : 1);
-
-  // Coordinate axes at origin
-  const origin = [0, 0, 0];
-  const axesColors = ["#ef8686", "#82d99d", "#7faeeb"];
-  const axesLabels = ["X", "Y", "Z"];
-  for (let i = 0; i < 3; i++) {
-    const end = [0, 0, 0]; end[i] = span * 0.22;
-    line(origin, end, axesColors[i], 2);
-    const p = project(end);
-    ctx.fillStyle = axesColors[i];
-    ctx.font = "11px system-ui, sans-serif";
-    ctx.fillText(axesLabels[i], p[0] + 5, p[1]);
-  }
-
-  // Draw Skeleton Bones
-  drawSkeleton(pts);
-
-  // Trajectory Trail of active marker
-  if ($("trail") && $("trail").checked && activeIdx >= 0 && activeIdx < trial.labels.length) {
-    for (let f = Math.max(1, frame - 120); f <= frame; f++) {
-      const p = trial.xyz[f - 1][activeIdx], q = trial.xyz[f][activeIdx];
-      if (valid(p) && valid(q)) line(p, q, "#35827c", 1.5);
-    }
-  }
-
-  // Distance line between Marker A and B (optional toggle)
-  if (showDistance && valid(pts[a]) && valid(pts[b])) {
-    line(pts[a], pts[b], "#f2c875", 2);
-  }
-
-  // Render Marker Points
-  const visible = pts.map((p, i) => ({ p, i })).filter(v => valid(v.p)).map(v => ({ ...v, q: project(v.p) })).sort((a, b) => b.q[2] - a.q[2]);
-
-  for (const { i, q } of visible) {
-    const isAct = i === activeIdx;
-    const isA = showDistance && i === a, isB = showDistance && i === b;
-    ctx.beginPath();
-    const radius = isAct ? 6 : (isA || isB ? 5 : 3.5);
-    ctx.arc(q[0], q[1], radius, 0, Math.PI * 2);
-    ctx.fillStyle = isAct ? "#59dec3" : (isA ? "#59dec3" : (isB ? "#f2c875" : "#9bbed7"));
-    ctx.fill();
-
-    if (isAct) {
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-
-    if ($("labels") && $("labels").checked) {
-      ctx.fillStyle = isAct ? "#ffffff" : "#adbdcd";
-      ctx.font = (isAct ? "bold 11px" : "10px") + " system-ui, sans-serif";
-      ctx.fillText(trial.labels[i], q[0] + 7, q[1] - 5);
-    }
-  }
 
   // Update Frame readout & timeline slider
   const curTime = (frame / trial.rate_hz).toFixed(3);
@@ -1173,6 +1543,7 @@ function draw() {
   syncPopoutContent("panel-plot1");
   syncPopoutContent("panel-plot2");
   syncPopoutContent("panel-table");
+  syncPopoutContent("panel-3d");
 }
 
 // Plot caching to avoid expensive calculations every animation frame
@@ -1196,20 +1567,27 @@ function drawPlot2() {
 }
 
 function getSeriesForMode(mode) {
+  const isLight = currentTheme === "light";
+  const colDistance = isLight ? "#b45309" : "#f2c875";
+  const colZ = isLight ? "#0f766e" : "#59dec3";
+  const colX = isLight ? "#dc2626" : "#ef8686";
+  const colY = isLight ? "#16a34a" : "#82d99d";
+  const colSpeed = isLight ? "#7c3aed" : "#a38bf5";
+
   const series = [];
   const totalFrames = trial.xyz.length;
   if (mode === "distance") {
-    series.push({ name: "Distance", color: "#f2c875", values: distances });
+    series.push({ name: "Distance", color: colDistance, values: distances });
   } else if (mode === "active-z") {
     const vals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
-    series.push({ name: "Z (Height)", color: "#59dec3", values: vals });
+    series.push({ name: "Z (Height)", color: colZ, values: vals });
   } else if (mode === "active-xyz") {
     const xVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][0] : NaN);
     const yVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][1] : NaN);
     const zVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
-    series.push({ name: "X", color: "#ef8686", values: xVals });
-    series.push({ name: "Y", color: "#82d99d", values: yVals });
-    series.push({ name: "Z", color: "#59dec3", values: zVals });
+    series.push({ name: "X", color: colX, values: xVals });
+    series.push({ name: "Y", color: colY, values: yVals });
+    series.push({ name: "Z", color: colZ, values: zVals });
   } else if (mode === "active-speed") {
     const speedVals = [0];
     for (let i = 1; i < totalFrames; i++) {
@@ -1220,7 +1598,7 @@ function getSeriesForMode(mode) {
         speedVals.push(NaN);
       }
     }
-    series.push({ name: "Speed (m/s)", color: "#a38bf5", values: speedVals });
+    series.push({ name: "Speed (m/s)", color: colSpeed, values: speedVals });
   }
   return series;
 }
@@ -1230,6 +1608,7 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
   gx.clearRect(0, 0, w, h);
   if (!trial) return;
 
+  const isLight = currentTheme === "light";
   const series = getSeriesForMode(mode);
   let lo = Infinity, hi = -Infinity;
   for (const s of series) {
@@ -1252,7 +1631,7 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
     readoutEl.textContent = curVals;
   }
 
-  gx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  gx.strokeStyle = isLight ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.08)";
   gx.lineWidth = 1;
   for (let k = 0; k <= 3; k++) {
     const y = 14 + k * (h - 28) / 3;
@@ -1281,13 +1660,13 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
     gx.stroke();
   }
 
-  gx.fillStyle = "#8298ad";
+  gx.fillStyle = isLight ? "#64748b" : "#8298ad";
   gx.font = "10px system-ui, sans-serif";
   gx.fillText(`${hi.toFixed(3)}`, 2, 14);
   gx.fillText(`${lo.toFixed(3)}`, 2, h - 10);
 
   const curX = 50 + frame * (w - 65) / Math.max(1, totalFrames - 1);
-  gx.strokeStyle = "#f2c875";
+  gx.strokeStyle = isLight ? "#b45309" : "#f2c875";
   gx.lineWidth = 1.5;
   gx.beginPath();
   gx.moveTo(curX, 0);
@@ -1300,6 +1679,10 @@ function updateTable() {
   const tbody = $("marker-table-body");
   if (!tbody) return;
   const pts = trial.xyz[frame] || [];
+  const isLight = currentTheme === "light";
+  const okColor = isLight ? "#0f766e" : "#59dec3";
+  const errColor = isLight ? "#dc2626" : "#ef8686";
+
   for (let i = 0; i < trial.labels.length; i++) {
     const row = tbody.children[i];
     if (!row) continue;
@@ -1307,7 +1690,7 @@ function updateTable() {
     const isOk = valid(p);
     row.classList.toggle("selected", i === activeMarkerIndex);
     row.cells[2].textContent = isOk ? "OK" : "Missing";
-    row.cells[2].style.color = isOk ? "#59dec3" : "#ef8686";
+    row.cells[2].style.color = isOk ? okColor : errColor;
     row.cells[3].textContent = isOk ? p[0].toFixed(3) : "—";
     row.cells[4].textContent = isOk ? p[1].toFixed(3) : "—";
     row.cells[5].textContent = isOk ? p[2].toFixed(3) : "—";
@@ -1386,7 +1769,11 @@ function saveSessionState() {
       bones: $("bones") ? $("bones").checked : true,
       loop: $("loop") ? $("loop").checked : true,
       showDistance,
-      speed: $("speed") ? $("speed").value : "1"
+      speed: $("speed") ? $("speed").value : "1",
+      theme: currentTheme,
+      markerSize,
+      markerColor,
+      plotHeight: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--plot-height").trim() : "170px"
     };
     sessionStorage.setItem("mkvis3d_session", JSON.stringify(state));
   } catch (e) {
@@ -1422,6 +1809,18 @@ function restoreSessionState(data) {
     if (typeof state.loop === "boolean" && $("loop")) $("loop").checked = state.loop;
     if (typeof state.showDistance === "boolean") setDistanceVisible(state.showDistance);
     if (state.speed && $("speed")) $("speed").value = state.speed;
+    if (state.theme && (state.theme === "light" || state.theme === "dark")) {
+      setTheme(state.theme);
+    }
+    if (Number.isFinite(state.markerSize)) {
+      setMarkerSize(state.markerSize);
+    }
+    if (typeof state.markerColor === "string") {
+      setMarkerColor(state.markerColor);
+    }
+    if (state.plotHeight && $("windows-container")) {
+      $("windows-container").style.setProperty("--plot-height", state.plotHeight);
+    }
 
     if (state.activeSkeletonTemplate && state.activeSkeletonTemplate !== "none") {
       if ($("skeleton-template-select")) $("skeleton-template-select").value = state.activeSkeletonTemplate;
@@ -1616,20 +2015,25 @@ if ($("plot2-mode")) $("plot2-mode").onchange = draw;
 function setLayout(name) {
   const container = $("windows-container");
   container.className = `layout-${name}`;
+  const splitter = $("vertical-splitter");
   if (name === "dual") {
     $("panel-plot2").hidden = false;
     $("panel-table").hidden = true;
+    if (splitter) splitter.hidden = false;
   } else if (name === "full") {
     $("panel-plot2").hidden = true;
     $("panel-table").hidden = false;
+    if (splitter) splitter.hidden = false;
   } else if (name === "3d") {
     $("panel-plot1").hidden = true;
     $("panel-plot2").hidden = true;
     $("panel-table").hidden = true;
+    if (splitter) splitter.hidden = true;
   } else {
     $("panel-plot1").hidden = false;
     $("panel-plot2").hidden = true;
     $("panel-table").hidden = true;
+    if (splitter) splitter.hidden = false;
   }
   resize();
 }
@@ -1815,6 +2219,13 @@ bindToggle("action-toggle-trails", "trail");
 bindToggle("action-toggle-bones", "bones");
 bindToggle("action-toggle-loop", "loop");
 
+// Theme toggles
+if ($("btn-toggle-theme")) $("btn-toggle-theme").onclick = toggleTheme;
+if ($("action-theme-dark")) $("action-theme-dark").onclick = () => setTheme("dark");
+if ($("action-theme-light")) $("action-theme-light").onclick = () => setTheme("light");
+if ($("action-opt-theme-dark")) $("action-opt-theme-dark").onclick = () => setTheme("dark");
+if ($("action-opt-theme-light")) $("action-opt-theme-light").onclick = () => setTheme("light");
+
 // Distance Measurement Toggle
 function setDistanceVisible(visible) {
   showDistance = Boolean(visible);
@@ -1847,7 +2258,6 @@ if ($("action-toggle-distance")) {
 // Subwindows Floating & Pop-out Manager
 // ==========================================
 let activeFloatingPanes = new Set();
-let popoutWindows = {};
 
 function toggleFloatPane(paneId) {
   if (activeFloatingPanes.has(paneId)) {
@@ -1876,6 +2286,14 @@ function floatPane(paneId) {
     floatBtn.title = "Fixar / Reanexar à grade";
   }
   initDraggablePane(pane);
+
+  if (!pane._paneResizeObs) {
+    pane._paneResizeObs = new ResizeObserver(() => {
+      if (pane.classList.contains("floating-pane")) resize();
+    });
+    pane._paneResizeObs.observe(pane);
+  }
+
   resize();
 }
 
@@ -1960,9 +2378,9 @@ function popoutPane(paneId) {
     return;
   }
 
-  const titleText = pane.querySelector(".pane-title") ? pane.querySelector(".pane-title").innerText : paneId;
+  const titleText = pane.querySelector(".pane-title") ? pane.querySelector(".pane-title").innerText.replace(/^[●\s]+/, "") : paneId;
 
-  const popWin = window.open("", `mkvis3d_popout_${paneId}`, "width=760,height=500,resizable=yes,scrollbars=yes");
+  const popWin = window.open("", `mkvis3d_popout_${paneId}`, "width=820,height=520,resizable=yes,scrollbars=yes");
   if (!popWin) {
     status("Pop-up bloqueado pelo navegador. Abrindo em janela flutuante interna.");
     floatPane(paneId);
@@ -1974,45 +2392,100 @@ function popoutPane(paneId) {
   const doc = popWin.document;
   doc.open();
   doc.write(`<!DOCTYPE html>
-<html>
+<html data-theme="${currentTheme}">
 <head>
   <meta charset="utf-8">
   <title>mkvis3d — ${titleText}</title>
   <link rel="icon" href="/favicon.ico">
   <style>
-    :root {
+    :root, [data-theme="dark"] {
+      color-scheme: dark;
       --bg-dark: #0e151e; --bg-surface: #141f2d; --bg-panel: #111a24; --bg-panel-alt: #162231;
-      --accent: #59dec3; --text: #e4edf5; --text-muted: #8295a8; --border-color: rgba(255, 255, 255, 0.08);
+      --accent: #59dec3; --accent-hover: #7be4ce; --accent-text: #081a17;
+      --text: #e4edf5; --text-muted: #8295a8; --border-color: rgba(255, 255, 255, 0.08);
+      --input-bg: #0e151e; --btn-bg: #141f2d; --btn-hover-bg: #1a283a;
+    }
+    [data-theme="light"] {
+      color-scheme: light;
+      --bg-dark: #f0f4f8; --bg-surface: #e2e8f0; --bg-panel: #ffffff; --bg-panel-alt: #f8fafc;
+      --accent: #0f766e; --accent-hover: #115e59; --accent-text: #ffffff;
+      --text: #1e293b; --text-muted: #64748b; --border-color: #cbd5e1;
+      --input-bg: #ffffff; --btn-bg: #ffffff; --btn-hover-bg: #e2e8f0;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg-dark); color: var(--text);
-      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+      display: flex; flex-direction: column; height: 100vh; overflow: hidden; user-select: none;
     }
     .pop-header {
-      height: 38px; background: var(--bg-panel-alt); border-bottom: 1px solid var(--border-color);
-      display: flex; align-items: center; justify-content: space-between; padding: 0 14px;
-      font-size: 12px; font-weight: 600;
+      min-height: 40px; background: var(--bg-panel-alt); border-bottom: 1px solid var(--border-color);
+      display: flex; align-items: center; justify-content: space-between; padding: 4px 12px;
+      font-size: 12px; font-weight: 600; gap: 10px; flex-wrap: wrap;
     }
-    .pop-body { flex: 1; position: relative; overflow: auto; display: flex; }
+    .pop-header-left, .pop-header-center, .pop-header-right {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .pop-title { color: var(--text); font-weight: 700; white-space: nowrap; }
+    .pop-select {
+      background: var(--input-bg); color: var(--accent); border: 1px solid var(--border-color);
+      border-radius: 4px; padding: 3px 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+    }
+    .pop-tool-btn {
+      background: var(--btn-bg); color: var(--text); border: 1px solid var(--border-color);
+      border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pop-tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .pop-play-btn { background: var(--accent); color: var(--accent-text); border: none; }
+    .pop-play-btn:hover { background: var(--accent-hover); color: var(--accent-text); }
+    .pop-timeline-range {
+      width: 140px; accent-color: var(--accent); cursor: pointer;
+    }
+    .pop-frame-badge {
+      font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .pop-readout-text {
+      font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap;
+    }
     .btn-redock {
-      background: var(--accent); color: #0b1118; border: none; border-radius: 4px;
-      padding: 4px 10px; font-weight: 600; cursor: pointer; font-size: 11px;
+      background: var(--btn-bg); color: var(--accent); border: 1px solid var(--border-color);
+      border-radius: 4px; padding: 4px 10px; font-weight: 600; cursor: pointer; font-size: 11px; white-space: nowrap;
     }
+    .btn-redock:hover { background: var(--accent); color: var(--accent-text); }
+    .pop-body { flex: 1; position: relative; overflow: auto; display: flex; min-height: 0; }
     canvas { display: block; width: 100%; height: 100%; }
-    .table-wrap { width: 100%; overflow: auto; }
+    .table-wrap { width: 100%; height: 100%; overflow: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border-color); }
-    th { background: var(--bg-surface); position: sticky; top: 0; color: var(--text-muted); }
+    th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid var(--border-color); font-variant-numeric: tabular-nums; }
+    th { background: var(--bg-panel-alt); position: sticky; top: 0; color: var(--text-muted); font-weight: 600; z-index: 1; }
+    tr:hover { background: rgba(89, 222, 195, 0.08); cursor: pointer; }
+    tr.selected { background: rgba(89, 222, 195, 0.2); font-weight: 600; color: var(--accent); }
   </style>
 </head>
 <body>
   <div class="pop-header">
-    <div>● ${titleText} <span style="font-size:10px; color:var(--accent); margin-left:8px;">[Janela Independente]</span></div>
-    <div style="display:flex; gap:8px; align-items:center;">
-      <span id="pop-readout" style="font-size:11px; color:var(--text-muted);"></span>
-      <button class="btn-redock" id="btn-pop-redock">↙ Reanexar à Janela Principal</button>
+    <div class="pop-header-left">
+      <span class="pop-title">● ${titleText}</span>
+      ${paneId === "panel-plot1" || paneId === "panel-plot2" ? `
+        <select id="pop-plot-mode" class="pop-select" title="Modo do Gráfico">
+          <option value="distance">Distance (Marker A to B)</option>
+          <option value="active-z">Active Marker · Z Position (Height)</option>
+          <option value="active-xyz">Active Marker · X, Y, Z Coordinates</option>
+          <option value="active-speed">Active Marker · 3D Velocity / Speed</option>
+        </select>
+      ` : ""}
+    </div>
+    <div class="pop-header-center">
+      <button id="pop-btn-prev" class="pop-tool-btn" title="Frame Anterior (←)">◀</button>
+      <button id="pop-btn-play" class="pop-tool-btn pop-play-btn" title="Play / Pause (Space)">Play</button>
+      <button id="pop-btn-next" class="pop-tool-btn" title="Próximo Frame (→)">▶</button>
+      <input type="range" id="pop-timeline" class="pop-timeline-range" min="0" max="0" value="0" title="Scrub Timeline">
+      <span id="pop-frame" class="pop-frame-badge">0 / 0</span>
+    </div>
+    <div class="pop-header-right">
+      <span id="pop-readout" class="pop-readout-text"></span>
+      <button class="btn-redock" id="btn-pop-redock">↙ Reanexar</button>
     </div>
   </div>
   <div class="pop-body" id="pop-body-container"></div>
@@ -2020,9 +2493,164 @@ function popoutPane(paneId) {
 </html>`);
   doc.close();
 
+  const container = doc.getElementById("pop-body-container");
+  if (paneId === "panel-plot1" || paneId === "panel-plot2") {
+    const popCanvas = doc.createElement("canvas");
+    popCanvas.id = "pop-canvas";
+    popCanvas.className = "plot-canvas";
+    popCanvas.style.cursor = "crosshair";
+    container.appendChild(popCanvas);
+
+    // Timeline scrubbing by clicking/dragging on the plot canvas in the popout window
+    let isScrubbing = false;
+    const seekFromPop = e => {
+      if (!trial) return;
+      const rect = popCanvas.getBoundingClientRect();
+      const frac = Math.max(0, Math.min(1, (e.clientX - rect.left - 50) / Math.max(1, rect.width - 65)));
+      pause();
+      frame = Math.round(frac * (trial.xyz.length - 1));
+      draw();
+      saveSessionState();
+    };
+    popCanvas.addEventListener("pointerdown", e => {
+      isScrubbing = true;
+      seekFromPop(e);
+      popCanvas.setPointerCapture(e.pointerId);
+    });
+    popCanvas.addEventListener("pointermove", e => {
+      if (isScrubbing) seekFromPop(e);
+    });
+    const stopPopScrub = e => {
+      if (isScrubbing) {
+        isScrubbing = false;
+        try { popCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      }
+    };
+    popCanvas.addEventListener("pointerup", stopPopScrub);
+    popCanvas.addEventListener("pointercancel", stopPopScrub);
+
+    // Link mode selector
+    const popMode = doc.getElementById("pop-plot-mode");
+    const origMode = paneId === "panel-plot1" ? $("plot1-mode") : $("plot2-mode");
+    if (popMode && origMode) {
+      popMode.value = origMode.value;
+      popMode.onchange = () => {
+        origMode.value = popMode.value;
+        draw();
+        saveSessionState();
+      };
+    }
+  } else if (paneId === "panel-3d") {
+    const pop3d = doc.createElement("canvas");
+    pop3d.id = "pop-3d-canvas";
+    pop3d.style.display = "block";
+    pop3d.style.width = "100%";
+    pop3d.style.height = "100%";
+    pop3d.style.cursor = "grab";
+    container.appendChild(pop3d);
+
+    let isOrbit = false, isPan = false, pX = 0, pY = 0;
+    pop3d.addEventListener("pointerdown", e => {
+      isOrbit = e.button === 0 && !e.shiftKey;
+      isPan = e.button === 1 || (e.button === 0 && e.shiftKey) || e.button === 2;
+      pX = e.clientX; pY = e.clientY;
+      pop3d.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    pop3d.addEventListener("pointermove", e => {
+      if (!isOrbit && !isPan) return;
+      const dx = e.clientX - pX, dy = e.clientY - pY;
+      pX = e.clientX; pY = e.clientY;
+      if (isOrbit) {
+        yaw += dx * 0.008;
+        pitch = Math.max(-1.5, Math.min(1.5, pitch - dy * 0.008));
+      } else if (isPan) {
+        pan[0] += dx * 0.002 * span / zoom;
+        pan[1] -= dy * 0.002 * span / zoom;
+      }
+      draw();
+    });
+    const stop3d = e => {
+      isOrbit = false; isPan = false;
+      try { pop3d.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    pop3d.addEventListener("pointerup", stop3d);
+    pop3d.addEventListener("pointercancel", stop3d);
+    pop3d.addEventListener("wheel", e => {
+      zoom = Math.max(0.1, Math.min(20, zoom * (e.deltaY > 0 ? 0.9 : 1.1)));
+      draw();
+      e.preventDefault();
+    }, { passive: false });
+  } else if (paneId === "panel-table") {
+    const wrap = doc.createElement("div");
+    wrap.className = "table-wrap";
+    wrap.innerHTML = `
+      <table class="marker-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Marker</th>
+            <th>Status</th>
+            <th>X (m)</th>
+            <th>Y (m)</th>
+            <th>Z (m)</th>
+          </tr>
+        </thead>
+        <tbody id="pop-marker-table-body"></tbody>
+      </table>
+    `;
+    container.appendChild(wrap);
+  }
+
+  // Transport controls in popout window
+  const popPlay = doc.getElementById("pop-btn-play");
+  if (popPlay) {
+    popPlay.onclick = () => {
+      if ($("play")) $("play").click();
+    };
+  }
+  const popPrev = doc.getElementById("pop-btn-prev");
+  if (popPrev) popPrev.onclick = () => step(-1);
+  const popNext = doc.getElementById("pop-btn-next");
+  if (popNext) popNext.onclick = () => step(1);
+  const popTimeline = doc.getElementById("pop-timeline");
+  if (popTimeline) {
+    popTimeline.oninput = e => {
+      if (!trial) return;
+      pause();
+      frame = Math.max(0, Math.min(trial.xyz.length - 1, Number(e.target.value)));
+      draw();
+      saveSessionState();
+    };
+  }
+
+  // Keyboard navigation inside popout window
+  popWin.addEventListener("keydown", e => {
+    if (e.code === "Space") {
+      e.preventDefault();
+      if ($("play")) $("play").click();
+    } else if (e.code === "ArrowLeft") {
+      e.preventDefault();
+      step(-1);
+    } else if (e.code === "ArrowRight") {
+      e.preventDefault();
+      step(1);
+    } else if (e.key === "c" || e.key === "C") {
+      cycleMarkerColor();
+    } else if (e.key === "+" || e.key === "=") {
+      setMarkerSize(markerSize + 0.5);
+    } else if (e.key === "-") {
+      setMarkerSize(markerSize - 0.5);
+    }
+  });
+
+  popWin.addEventListener("resize", () => {
+    syncPopoutContent(paneId);
+  });
+
   pane.classList.add("detached-pane");
   const origBody = pane.querySelector(".pane-body");
-  let ph = pane.querySelector(`.detached-placeholder`);
+  let ph = pane.querySelector(".detached-placeholder");
   if (!ph) {
     ph = document.createElement("div");
     ph.className = "detached-placeholder";
@@ -2066,34 +2694,94 @@ function restorePoppedOutPane(paneId) {
 
 function syncPopoutContent(paneId) {
   const popWin = popoutWindows[paneId];
-  if (!popWin || popWin.closed) return;
-  const container = popWin.document.getElementById("pop-body-container");
-  if (!container) return;
+  if (!popWin || popWin.closed || !popWin.document) return;
+  const doc = popWin.document;
+
+  // Sync player transport
+  if (trial) {
+    const popTimeline = doc.getElementById("pop-timeline");
+    if (popTimeline) {
+      popTimeline.max = trial.xyz.length - 1;
+      popTimeline.value = frame;
+    }
+    const popPlay = doc.getElementById("pop-btn-play");
+    if (popPlay) {
+      popPlay.textContent = playing ? "⏸ Pause" : "▶ Play";
+    }
+    const popFrame = doc.getElementById("pop-frame");
+    if (popFrame) {
+      const curTime = (frame / trial.rate_hz).toFixed(3);
+      const totalTime = ((trial.xyz.length - 1) / trial.rate_hz).toFixed(3);
+      popFrame.textContent = `${frame + 1} / ${trial.xyz.length} · ${curTime}s / ${totalTime}s`;
+    }
+  }
 
   if (paneId === "panel-plot1" || paneId === "panel-plot2") {
-    let popCanvas = popWin.document.getElementById("pop-canvas");
-    if (!popCanvas) {
-      popCanvas = popWin.document.createElement("canvas");
-      popCanvas.id = "pop-canvas";
-      container.innerHTML = "";
-      container.appendChild(popCanvas);
+    const popCanvas = doc.getElementById("pop-canvas");
+    const popReadout = doc.getElementById("pop-readout");
+    const origModeEl = paneId === "panel-plot1" ? $("plot1-mode") : $("plot2-mode");
+    const mode = origModeEl ? origModeEl.value : "distance";
+    const popMode = doc.getElementById("pop-plot-mode");
+    if (popMode && popMode.value !== mode) {
+      popMode.value = mode;
     }
-    const rect = container.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      if (popCanvas.width !== rect.width || popCanvas.height !== rect.height) {
-        popCanvas.width = rect.width;
-        popCanvas.height = rect.height;
+    if (popCanvas && popCanvas.parentElement) {
+      const rect = popCanvas.parentElement.getBoundingClientRect();
+      const ratio = popWin.devicePixelRatio || 1;
+      if (rect.width > 0 && rect.height > 0) {
+        if (popCanvas.width !== Math.round(rect.width * ratio) || popCanvas.height !== Math.round(rect.height * ratio)) {
+          popCanvas.width = Math.round(rect.width * ratio);
+          popCanvas.height = Math.round(rect.height * ratio);
+        }
+        const popCtx = popCanvas.getContext("2d");
+        popCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        drawSinglePlot(popCanvas, popCtx, mode, popReadout, paneId);
       }
-      const popCtx = popCanvas.getContext("2d");
-      const srcCanvas = paneId === "panel-plot1" ? $("graph") : $("graph2");
-      if (srcCanvas && popCtx && popCanvas.width > 0 && popCanvas.height > 0) {
-        popCtx.drawImage(srcCanvas, 0, 0, popCanvas.width, popCanvas.height);
+    }
+  } else if (paneId === "panel-3d") {
+    const pop3d = doc.getElementById("pop-3d-canvas");
+    if (pop3d && pop3d.parentElement && trial) {
+      const rect = pop3d.parentElement.getBoundingClientRect();
+      const ratio = popWin.devicePixelRatio || 1;
+      if (rect.width > 0 && rect.height > 0) {
+        if (pop3d.width !== Math.round(rect.width * ratio) || pop3d.height !== Math.round(rect.height * ratio)) {
+          pop3d.width = Math.round(rect.width * ratio);
+          pop3d.height = Math.round(rect.height * ratio);
+        }
+        const popCtx = pop3d.getContext("2d");
+        popCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        drawSceneToContext(popCtx, rect.width, rect.height);
       }
     }
   } else if (paneId === "panel-table") {
-    const srcWrap = $("panel-table").querySelector(".table-wrap");
-    if (srcWrap) {
-      container.innerHTML = `<div class="table-wrap">${srcWrap.innerHTML}</div>`;
+    const tbody = doc.getElementById("pop-marker-table-body");
+    if (tbody && trial) {
+      const pts = trial.xyz[frame] || [];
+      const isLight = currentTheme === "light";
+      const okColor = isLight ? "#0f766e" : "#59dec3";
+      const errColor = isLight ? "#dc2626" : "#ef8686";
+      if (tbody.children.length !== trial.labels.length) {
+        tbody.innerHTML = "";
+        for (let i = 0; i < trial.labels.length; i++) {
+          const tr = doc.createElement("tr");
+          tr.innerHTML = `<td>${i + 1}</td><td>${trial.labels[i]}</td><td></td><td></td><td></td><td></td>`;
+          const mIdx = i;
+          tr.onclick = () => selectActiveMarker(mIdx);
+          tbody.appendChild(tr);
+        }
+      }
+      for (let i = 0; i < trial.labels.length; i++) {
+        const row = tbody.children[i];
+        if (!row) continue;
+        const p = pts[i];
+        const isOk = valid(p);
+        row.classList.toggle("selected", i === activeMarkerIndex);
+        row.cells[2].textContent = isOk ? "OK" : "Missing";
+        row.cells[2].style.color = isOk ? okColor : errColor;
+        row.cells[3].textContent = isOk ? p[0].toFixed(3) : "—";
+        row.cells[4].textContent = isOk ? p[1].toFixed(3) : "—";
+        row.cells[5].textContent = isOk ? p[2].toFixed(3) : "—";
+      }
     }
   }
 }
@@ -2325,7 +3013,12 @@ document.addEventListener("keydown", e => {
   if (e.key === "l" || e.key === "L") {
     if ($("labels")) { $("labels").checked = !$("labels").checked; draw(); saveSessionState(); }
   }
-  if (e.key === "t" || e.key === "T") {
+  if ((e.altKey && (e.key === "t" || e.key === "T")) || (e.shiftKey && (e.key === "T" || e.key === "t"))) {
+    e.preventDefault();
+    toggleTheme();
+    return;
+  }
+  if (!e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === "t" || e.key === "T")) {
     if ($("trail")) { $("trail").checked = !$("trail").checked; draw(); saveSessionState(); }
   }
   if (e.key === "b" || e.key === "B") {
@@ -2333,6 +3026,21 @@ document.addEventListener("keydown", e => {
   }
   if (e.key === "d" || e.key === "D") {
     setDistanceVisible(!showDistance);
+  }
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "+" || e.key === "=")) {
+    e.preventDefault();
+    setMarkerSize(markerSize + 0.5);
+    return;
+  }
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "-" || e.key === "_")) {
+    e.preventDefault();
+    setMarkerSize(markerSize - 0.5);
+    return;
+  }
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === "c" || e.key === "C")) {
+    e.preventDefault();
+    cycleMarkerColor();
+    return;
   }
 });
 
@@ -2354,6 +3062,9 @@ $("export").onclick = () => {
 
 $("snapshot").onclick = () => {
   const root = document.documentElement.cloneNode(true);
+  root.setAttribute("data-theme", currentTheme);
+  root.setAttribute("data-marker-size", String(markerSize));
+  root.setAttribute("data-marker-color", markerColor);
   root.querySelector("#trial-data").textContent = JSON.stringify({ server: false, trial }).replace(/</g, "\\u003c");
   download("<!doctype html>\n" + root.outerHTML, "movement.html", "text/html");
 };
@@ -2405,6 +3116,118 @@ if ($("file")) {
   };
 }
 
+if ($("btn-welcome-select")) {
+  $("btn-welcome-select").onclick = () => {
+    if ($("file")) $("file").click();
+  };
+}
+
+function initMarkerControls() {
+  const slider = $("marker-size-slider");
+  const btnInc = $("btn-inc-marker-size");
+  const btnDec = $("btn-dec-marker-size");
+  const btnCycle = $("btn-cycle-marker-color");
+  const colorPicker = $("marker-color-custom");
+  const btnReset = $("btn-reset-marker-style");
+  const swatchesContainer = $("marker-color-swatches");
+
+  if (slider) {
+    slider.oninput = e => setMarkerSize(Number(e.target.value));
+  }
+  if (btnInc) btnInc.onclick = () => setMarkerSize(markerSize + 0.5);
+  if (btnDec) btnDec.onclick = () => setMarkerSize(markerSize - 0.5);
+  if (btnCycle) btnCycle.onclick = cycleMarkerColor;
+  if (btnReset) btnReset.onclick = resetMarkerStyle;
+  if (colorPicker) {
+    colorPicker.oninput = e => setMarkerColor(e.target.value, e.target.value);
+  }
+
+  // Populate color swatches
+  if (swatchesContainer) {
+    swatchesContainer.innerHTML = "";
+    // Auto swatch (theme default)
+    const autoBtn = document.createElement("button");
+    autoBtn.type = "button";
+    autoBtn.className = "color-swatch-btn" + (markerColor === "auto" ? " selected" : "");
+    autoBtn.dataset.color = "auto";
+    autoBtn.title = "Default (Theme Color)";
+    autoBtn.style.background = currentTheme === "light" ? "#475569" : "#9bbed7";
+    autoBtn.onclick = () => setMarkerColor("auto", "Default (Theme)");
+    swatchesContainer.appendChild(autoBtn);
+
+    // 11 predefined colors from viewc3d.py
+    for (const item of MARKER_PALETTE) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "color-swatch-btn" + (markerColor === item.hex ? " selected" : "");
+      btn.dataset.color = item.hex;
+      btn.title = item.name;
+      btn.style.background = item.hex;
+      btn.onclick = () => setMarkerColor(item.hex, item.name);
+      swatchesContainer.appendChild(btn);
+    }
+  }
+
+  // Options menu items
+  if ($("action-cycle-marker-color")) $("action-cycle-marker-color").onclick = cycleMarkerColor;
+  if ($("action-inc-marker-size")) $("action-inc-marker-size").onclick = () => setMarkerSize(markerSize + 0.5);
+  if ($("action-dec-marker-size")) $("action-dec-marker-size").onclick = () => setMarkerSize(markerSize - 0.5);
+  if ($("action-reset-marker-style")) $("action-reset-marker-style").onclick = resetMarkerStyle;
+}
+
+function initVerticalSplitter() {
+  const splitter = $("vertical-splitter");
+  const container = $("windows-container");
+  if (!splitter || !container) return;
+
+  let isDragging = false;
+  let startY = 0;
+  let startHeight = 170;
+
+  splitter.addEventListener("pointerdown", e => {
+    isDragging = true;
+    startY = e.clientY;
+    splitter.classList.add("is-dragging");
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const currentHeightStr = getComputedStyle(container).getPropertyValue("--plot-height").trim();
+    startHeight = parseFloat(currentHeightStr) || 170;
+    splitter.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  splitter.addEventListener("pointermove", e => {
+    if (!isDragging) return;
+    const dy = startY - e.clientY;
+    const containerRect = container.getBoundingClientRect();
+    const minHeight = 70;
+    const maxHeight = Math.max(minHeight, containerRect.height - 100);
+    const newHeight = Math.min(maxHeight, Math.max(minHeight, Math.round(startHeight + dy)));
+    container.style.setProperty("--plot-height", `${newHeight}px`);
+    resize();
+  });
+
+  const stopDrag = e => {
+    if (isDragging) {
+      isDragging = false;
+      splitter.classList.remove("is-dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try { splitter.releasePointerCapture(e.pointerId); } catch (_) {}
+      saveSessionState();
+    }
+  };
+
+  splitter.addEventListener("pointerup", stopDrag);
+  splitter.addEventListener("pointercancel", stopDrag);
+
+  splitter.addEventListener("dblclick", () => {
+    container.style.setProperty("--plot-height", "170px");
+    resize();
+    saveSessionState();
+  });
+}
+
 $("open-panel").hidden = !boot.server;
 
 // Initial loading: check inlined trial, then check server active trial
@@ -2419,7 +3242,12 @@ if (boot.trial) {
     .catch(() => {});
 }
 
+initMarkerControls();
+initVerticalSplitter();
 resize();
+setTheme(currentTheme);
+setMarkerSize(markerSize);
+setMarkerColor(markerColor);
 </script>
 
 
