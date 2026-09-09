@@ -41,6 +41,10 @@ def read_c3d(path: str | Path) -> MarkerTrial:
 
     point_data = datac3d["data"]["points"]  # (4, n_markers, n_frames): X,Y,Z,1
     residuals = datac3d["data"]["meta_points"]["residuals"]  # (1, n_markers, n_frames)
+    analog_data = datac3d["data"]["analogs"]
+    analog_labels = tuple(datac3d["parameters"]["ANALOG"]["LABELS"]["value"])
+    analog_units = tuple(datac3d["parameters"]["ANALOG"]["UNITS"]["value"])
+    analog_rate = float(datac3d["parameters"]["ANALOG"]["RATE"]["value"][0])
 
     n_used = datac3d["parameters"]["POINT"]["USED"]["value"][0]
     if n_used <= 0 or not marker_labels:
@@ -52,5 +56,22 @@ def read_c3d(path: str | Path) -> MarkerTrial:
     xyz = point_data[0:3, :, :].transpose(2, 1, 0).astype(np.float64)
     # (1, n_markers, n_frames) -> (n_frames, n_markers)
     res = residuals[0, :, :].T.astype(np.float64)
+    n_frames = xyz.shape[0]
+    n_channels = analog_data.shape[1]
+    n_subsamples = analog_data.shape[2] // n_frames if n_frames and n_channels else 0
+    analog = (
+        analog_data[0].T.reshape(n_frames, n_subsamples, n_channels).astype(np.float64)
+        if n_subsamples
+        else np.zeros((n_frames, 0, 0), dtype=np.float64)
+    )
 
-    return MarkerTrial(labels=tuple(marker_labels), rate_hz=marker_freq, xyz=xyz, residuals=res)
+    return MarkerTrial(
+        labels=tuple(marker_labels),
+        rate_hz=marker_freq,
+        xyz=xyz,
+        residuals=res,
+        analog_labels=analog_labels,
+        analog_units=analog_units,
+        analog_rate_hz=analog_rate,
+        analog=analog,
+    )

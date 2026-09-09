@@ -111,7 +111,7 @@ the table below is a snapshot.
 | `biomech-model` | `openbiomech/model/` | **Done.** Landmarks, segments, Grood & Suntay ISB joint kinematics, Zeni et al. gait events, Dumas/de Leva body segment parameters. |
 | `inverse-dynamics` | `openbiomech/inverse_dynamics/` | **Done.** Force plate types 1-5 + COP, recursive Newton-Euler, joint power, distal-to-proximal segment chain. |
 | `pipeline-cli` | `openbiomech/cli.py` | **Done** (hand-scoped, not the full target pipeline DSL). `info`, `segment`, `view`, `gui`, `blender`, `bvh`, `filter`, `lcs`, `demo`, `dynamics` — see [docs/cli.md](docs/cli.md). |
-| `viewer-core` / `gui-app` | `openbiomech/viewer.{py,html,js}` | **Done.** Zero-dependency HTML5 Canvas 3D viewer: playback, orbit/pan/zoom, distance measurement, real-time charts, force platform/GRF overlays, CSV/HTML export, C3D/CSV/`.3d` upload. |
+| `viewer-core` / `gui-app` | `openbiomech/viewer.{py,html,js}` | **Done.** Zero-dependency HTML5 Canvas 3D viewer: playback, processing, marker-defined quaternion/multi-sequence Euler analysis, inverse-dynamics execution, force platform/GRF overlays, analog-preserving edited C3D export, and complete open `.vaila` project save/reopen. |
 
 ## Project Structure
 
@@ -272,6 +272,7 @@ binary fixtures without checking size.
 
 - **[Documentation Hub](docs/index.md)** ([HTML](docs/index.html)) — start here
 - **[CLI Reference](docs/cli.md)** ([HTML](docs/cli.html)) — every `mkvis3d` command, flags, and examples
+- **[Open `.vaila` Project Format](docs/vaila-format.md)** — versioned ZIP/JSON specification for complete reproducible projects
 - **[Target Architecture](docs/architecture.md)** ([HTML](docs/architecture.html)) — the long-term Rust workspace (7 crates) and the ISB/Kabsch/Butterworth/GCVSPL/force-plate/Newton-Euler math reference
 - **[CLAUDE.md](CLAUDE.md)** — current phase, commands, and Python conventions for AI assistants (also read by Codex/Cursor via [AGENTS.md](AGENTS.md) and Gemini via [GEMINI.md](GEMINI.md))
 

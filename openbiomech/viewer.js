@@ -32,6 +32,7 @@ let currentLCS = { ap: "+Y", axial: "+Z" };
 let activeFilterConfig = null;
 let filterPreviewActive = false;
 let filterPreviewSeries = null;
+let analysisResults = {};
 
 // Force Platforms & Kinetics (Visual3D & Mokka Parity)
 let showForcePlates = true;
@@ -395,6 +396,122 @@ function applySkeletonTemplate(templateObj) {
   return skeletonPairs.length;
 }
 
+const DE_LEVA = {
+  female: {
+    mass: { head: 0.0668, trunk: 0.4257, upper_arm: 0.0255, forearm: 0.0138, hand: 0.0056, thigh: 0.1478, shank: 0.0481, foot: 0.0129 },
+    com: { head: 0.4841, trunk: 0.4964, upper_arm: 0.5754, forearm: 0.4559, hand: 0.7474, thigh: 0.3612, shank: 0.4352, foot: 0.4014 }
+  },
+  male: {
+    mass: { head: 0.0694, trunk: 0.4346, upper_arm: 0.0271, forearm: 0.0162, hand: 0.0061, thigh: 0.1416, shank: 0.0433, foot: 0.0137 },
+    com: { head: 0.5002, trunk: 0.5138, upper_arm: 0.5772, forearm: 0.4574, hand: 0.7900, thigh: 0.4095, shank: 0.4395, foot: 0.4415 }
+  }
+};
+
+function createDeLevaCOM() {
+  if (!trial || !rawLoadedXYZ) return;
+  const template = embeddedTemplates[activeSkeletonTemplate];
+  if (!template || !Array.isArray(template.keypoints) || template.keypoints.length < 70) {
+    status("Load the SAM 3D MHR-70 or Sapiens2 Goliath-308 skeleton before creating de Leva CoM.", true);
+    return;
+  }
+  const normalized = value => String(value).toLowerCase().replaceAll("-", "_");
+  const indices = new Map(template.keypoints.map((name, index) => [normalized(name), index]));
+  const indexOf = (...names) => {
+    for (const name of names) {
+      if (indices.has(name)) return indices.get(name);
+    }
+    return -1;
+  };
+  const ids = {
+    nose: indexOf("nose"),
+    neck: indexOf("neck"),
+    leftShoulder: indexOf("left_shoulder"),
+    rightShoulder: indexOf("right_shoulder"),
+    leftElbow: indexOf("left_elbow"),
+    rightElbow: indexOf("right_elbow"),
+    leftWrist: indexOf("left_wrist"),
+    rightWrist: indexOf("right_wrist"),
+    leftMiddle: indexOf("left_middle_tip", "left_middle_finger4"),
+    rightMiddle: indexOf("right_middle_tip", "right_middle_finger4"),
+    leftHip: indexOf("left_hip"),
+    rightHip: indexOf("right_hip"),
+    leftKnee: indexOf("left_knee"),
+    rightKnee: indexOf("right_knee"),
+    leftAnkle: indexOf("left_ankle"),
+    rightAnkle: indexOf("right_ankle"),
+    leftHeel: indexOf("left_heel"),
+    rightHeel: indexOf("right_heel"),
+    leftBigToe: indexOf("left_big_toe_tip", "left_big_toe"),
+    rightBigToe: indexOf("right_big_toe_tip", "right_big_toe"),
+    leftSmallToe: indexOf("left_small_toe_tip", "left_small_toe"),
+    rightSmallToe: indexOf("right_small_toe_tip", "right_small_toe")
+  };
+  if (Object.values(ids).some(index => index < 0)) {
+    status("The selected skeleton lacks landmarks required by the de Leva whole-body model.", true);
+    return;
+  }
+
+  const sex = $("com-sex")?.value === "female" ? "female" : "male";
+  const coefficients = DE_LEVA[sex];
+  const midpoint = (a, b) => valid(a) && valid(b)
+    ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]
+    : null;
+  const comTrajectory = rawLoadedXYZ.map(points => {
+    const p = key => points[ids[key]];
+    const shoulderMid = midpoint(p("leftShoulder"), p("rightShoulder"));
+    const hipMid = midpoint(p("leftHip"), p("rightHip"));
+    const leftToes = midpoint(p("leftBigToe"), p("leftSmallToe"));
+    const rightToes = midpoint(p("rightBigToe"), p("rightSmallToe"));
+    const segments = [
+      ["head", p("neck"), p("nose")],
+      ["trunk", shoulderMid, hipMid],
+      ["upper_arm", p("leftShoulder"), p("leftElbow")],
+      ["upper_arm", p("rightShoulder"), p("rightElbow")],
+      ["forearm", p("leftElbow"), p("leftWrist")],
+      ["forearm", p("rightElbow"), p("rightWrist")],
+      ["hand", p("leftWrist"), p("leftMiddle")],
+      ["hand", p("rightWrist"), p("rightMiddle")],
+      ["thigh", p("leftHip"), p("leftKnee")],
+      ["thigh", p("rightHip"), p("rightKnee")],
+      ["shank", p("leftKnee"), p("leftAnkle")],
+      ["shank", p("rightKnee"), p("rightAnkle")],
+      ["foot", p("leftHeel"), leftToes],
+      ["foot", p("rightHeel"), rightToes]
+    ];
+    const weighted = [0, 0, 0];
+    let availableMass = 0;
+    for (const [segment, proximal, distal] of segments) {
+      if (!valid(proximal) || !valid(distal)) continue;
+      const fraction = coefficients.com[segment];
+      const mass = coefficients.mass[segment];
+      for (let axis = 0; axis < 3; axis++) {
+        weighted[axis] += mass * (proximal[axis] + fraction * (distal[axis] - proximal[axis]));
+      }
+      availableMass += mass;
+    }
+    return availableMass > 0 ? weighted.map(value => value / availableMass) : null;
+  });
+
+  let comIndex = trial.labels.findIndex(label => label.startsWith("CenterOfMass_deLeva"));
+  const label = `CenterOfMass_deLeva_${sex}`;
+  if (comIndex < 0) {
+    comIndex = trial.labels.length;
+    trial.labels.push(label);
+    rawLoadedXYZ.forEach((points, index) => points.push(comTrajectory[index]));
+  } else {
+    trial.labels[comIndex] = label;
+    rawLoadedXYZ.forEach((points, index) => { points[comIndex] = comTrajectory[index]; });
+  }
+  recomputeTrialXYZ();
+  refreshMarkerSelectors();
+  buildTable();
+  activeMarkerIndex = comIndex;
+  if ($("marker-select")) $("marker-select").value = String(comIndex);
+  applySkeletonTemplate(template);
+  if ($("marker-count-badge")) $("marker-count-badge").textContent = `${trial.labels.length} markers`;
+  status(`Created ${label}; the virtual marker is included in CSV, C3D, Blender, BVH, and HTML exports.`);
+}
+
 function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
   if (!$("bones") || !$("bones").checked || !skeletonPairs.length || !pts) return;
   const boneColor = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
@@ -628,13 +745,14 @@ function drawSceneToContext(targetCtx, w, h) {
   for (const { i, q } of visible) {
     const isAct = i === activeIdx;
     const isA = showDistance && i === a, isB = showDistance && i === b;
+    const isCOM = trial.labels[i]?.startsWith("CenterOfMass_deLeva");
     targetCtx.beginPath();
-    const radius = isAct ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
+    const radius = isAct || isCOM ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
     targetCtx.arc(q[0], q[1], radius, 0, Math.PI * 2);
-    targetCtx.fillStyle = isAct ? actColor : (isA ? actColor : (isB ? bColor : regularColor));
+    targetCtx.fillStyle = isCOM ? "#ec4899" : (isAct ? actColor : (isA ? actColor : (isB ? bColor : regularColor)));
     targetCtx.fill();
 
-    if (isAct) {
+    if (isAct || isCOM) {
       targetCtx.strokeStyle = isLight ? "#0f172a" : "#ffffff";
       targetCtx.lineWidth = Math.max(1.5, baseRadius * 0.4);
       targetCtx.stroke();
@@ -977,10 +1095,9 @@ function seekToMotion() {
   status(`Jumped to motion onset at frame ${frame + 1} (${(frame / trial.rate_hz).toFixed(2)}s).`);
 }
 
-function saveSessionState() {
-  if (!trial) return;
-  try {
-    const state = {
+function collectViewerState() {
+  if (!trial) return {};
+  return {
       trialName: trial.name,
       frame,
       activeMarkerIndex,
@@ -1000,13 +1117,20 @@ function saveSessionState() {
       forceVectorScale,
       forceThreshold,
       speed: $("speed") ? $("speed").value : "1",
+      rateHz: trial.rate_hz,
       theme: currentTheme,
       markerSize,
       markerColor,
       currentLCS,
       activeFilterConfig,
       plotHeight: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--plot-height").trim() : "170px"
-    };
+  };
+}
+
+function saveSessionState() {
+  if (!trial) return;
+  try {
+    const state = collectViewerState();
     sessionStorage.setItem("mkvis3d_session", JSON.stringify(state));
   } catch (e) {
     // Ignore quota errors
@@ -1066,6 +1190,10 @@ function restoreSessionState(data) {
       if ($("force-threshold-val")) $("force-threshold-val").textContent = `${forceThreshold} N`;
     }
     if (state.speed && $("speed")) $("speed").value = state.speed;
+    if (Number.isFinite(state.rateHz) && state.rateHz > 0) {
+      trial.rate_hz = state.rateHz;
+      if ($("rate")) $("rate").value = String(state.rateHz);
+    }
     if (state.theme && (state.theme === "light" || state.theme === "dark")) {
       setTheme(state.theme);
     }
@@ -1092,6 +1220,29 @@ function restoreSessionState(data) {
   }
 }
 
+function refreshMarkerSelectors() {
+  if (!trial) return;
+  for (const key of [
+    "marker-a", "marker-b", "marker-select",
+    "orientation-origin", "orientation-x-point", "orientation-plane-point"
+  ]) {
+    if (!$(key)) continue;
+    const previous = $(key).value;
+    $(key).replaceChildren(...trial.labels.map((label, i) => {
+      const option = document.createElement("option");
+      option.value = String(i);
+      option.textContent = label;
+      return option;
+    }));
+    if (Number(previous) < trial.labels.length) $(key).value = previous;
+  }
+  if ($("marker-b") && trial.labels.length > 1 && $("marker-b").value === "") {
+    $("marker-b").value = "1";
+  }
+  if ($("orientation-x-point") && trial.labels.length > 1) $("orientation-x-point").value = "1";
+  if ($("orientation-plane-point") && trial.labels.length > 2) $("orientation-plane-point").value = "2";
+}
+
 function load(data) {
   trial = data;
   frame = 0;
@@ -1105,24 +1256,18 @@ function load(data) {
   activeFilterConfig = null;
   filterPreviewActive = false;
   filterPreviewSeries = null;
+  analysisResults = {};
 
   $("title").textContent = data.name;
   $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
+  if ($("rate")) $("rate").value = String(data.rate_hz);
   if ($("marker-count-badge")) $("marker-count-badge").textContent = `${data.labels.length} markers`;
   $("welcome").hidden = true;
 
-  for (const key of ["marker-a", "marker-b", "marker-select"]) {
-    if (!$(key)) continue;
-    $(key).replaceChildren(...data.labels.map((label, i) => {
-      const o = document.createElement("option");
-      o.value = String(i);
-      o.textContent = label;
-      return o;
-    }));
-  }
+  refreshMarkerSelectors();
   if ($("marker-b")) $("marker-b").value = String(Math.min(1, data.labels.length - 1));
 
-  for (const id of ["play", "prev", "next", "timeline", "export", "snapshot", "first", "last", "seek-motion", "btn-load-skeleton", "btn-clear-skeleton"]) {
+  for (const id of ["play", "prev", "next", "timeline", "export", "snapshot", "first", "last", "seek-motion", "btn-load-skeleton", "btn-clear-skeleton", "btn-apply-rate", "btn-create-com", "btn-analyze-orientation", "btn-export-analyses"]) {
     if ($(id)) $(id).disabled = false;
   }
   $("timeline").max = String(data.xyz.length - 1);
@@ -1177,6 +1322,7 @@ function load(data) {
   fit();
   measure();
   restoreSessionState(data);
+  $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
   if (currentLCS.ap !== "+Y" || currentLCS.axial !== "+Z" || activeFilterConfig) {
     recomputeTrialXYZ();
   }
@@ -1452,6 +1598,7 @@ async function loadSelectedSkeleton() {
 }
 
 if ($("btn-load-skeleton")) $("btn-load-skeleton").onclick = loadSelectedSkeleton;
+if ($("btn-create-com")) $("btn-create-com").onclick = createDeLevaCOM;
 if ($("btn-clear-skeleton")) {
   $("btn-clear-skeleton").onclick = () => {
     skeletonPairs = [];
@@ -2407,14 +2554,261 @@ document.addEventListener("keydown", e => {
 });
 
 // Download utility
-function download(text, name, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+function download(text, name, type) {
+  downloadBlob(new Blob([text], { type }), name);
+}
+
+async function exportEditedC3D() {
+  if (!trial) {
+    status("Load a trial before exporting C3D.", true);
+    return;
+  }
+  if (!boot.server) {
+    status("C3D export requires the local GUI session; CSV, BVH, Blender, and HTML remain available offline.", true);
+    return;
+  }
+  status("Encoding the currently edited trial as C3D...");
+  try {
+    const response = await fetch("/api/export/c3d", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(trial)
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Failed to export C3D.");
+    }
+    const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    downloadBlob(await response.blob(), `${stem}_edited.c3d`);
+    status(`Saved ${stem}_edited.c3d from the current FPS and edited trajectories.`);
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+if ($("action-export-c3d")) $("action-export-c3d").onclick = exportEditedC3D;
+
+function collectAnalysisResults() {
+  const results = JSON.parse(JSON.stringify(analysisResults || {}));
+  if (trial && trial.labels.length) {
+    const markerA = Math.max(0, Number($("marker-a")?.value || 0));
+    const markerB = Math.max(0, Number($("marker-b")?.value || 0));
+    results.distance = {
+      schema_version: 1,
+      units: "m",
+      rate_hz: trial.rate_hz,
+      markers: [trial.labels[markerA], trial.labels[markerB]],
+      values: distances.map(value => Number.isFinite(value) ? value : null)
+    };
+  }
+  return results;
+}
+
+async function analyzeOrientation() {
+  if (!trial || !boot.server) {
+    status("Orientation analysis requires a loaded trial in the local GUI.", true);
+    return;
+  }
+  const markerAt = id => trial.labels[Number($(id)?.value || 0)];
+  const origin = markerAt("orientation-origin");
+  const xAxisPoint = markerAt("orientation-x-point");
+  const xyPlanePoint = markerAt("orientation-plane-point");
+  if (new Set([origin, xAxisPoint, xyPlanePoint]).size !== 3) {
+    status("Orientation definition requires three distinct markers.", true);
+    return;
+  }
+  const sequences = Array.from(document.querySelectorAll("#orientation-sequences input:checked"))
+    .map(input => input.value);
+  if (!sequences.length) {
+    status("Select at least one Euler/Cardan sequence.", true);
+    return;
+  }
+  status("Computing marker-frame quaternions and Euler/Cardan sequences...");
+  try {
+    const response = await fetch("/api/analyze/orientation", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trial,
+        origin,
+        x_axis_point: xAxisPoint,
+        xy_plane_point: xyPlanePoint,
+        sequences
+      })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Orientation analysis failed.");
+    if (!Array.isArray(analysisResults.orientations)) analysisResults.orientations = [];
+    const key = `${origin}|${xAxisPoint}|${xyPlanePoint}`;
+    analysisResults.orientations = analysisResults.orientations.filter(
+      item => `${item.definition.origin}|${item.definition.x_axis_point}|${item.definition.xy_plane_point}` !== key
+    );
+    analysisResults.orientations.push(result);
+    if ($("orientation-status-badge")) {
+      $("orientation-status-badge").textContent = `${sequences.length} sequences`;
+      $("orientation-status-badge").style.color = "var(--accent)";
+    }
+    if ($("btn-export-analyses")) $("btn-export-analyses").disabled = false;
+    saveSessionState();
+    status(`Orientation saved: scalar-first wxyz quaternions plus ${sequences.join(", ")} Euler/Cardan angles.`);
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+function exportAnalysesJSON() {
+  if (!trial) return;
+  const content = {
+    schema: "openbiomech-analyses",
+    schema_version: 1,
+    trial_name: trial.name,
+    rate_hz: trial.rate_hz,
+    analyses: collectAnalysisResults()
+  };
+  const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  download(JSON.stringify(content, null, 2) + "\n", `${stem}_analyses.json`, "application/json");
+}
+
+if ($("btn-analyze-orientation")) $("btn-analyze-orientation").onclick = analyzeOrientation;
+if ($("btn-export-analyses")) $("btn-export-analyses").onclick = exportAnalysesJSON;
+if ($("btn-attach-analysis")) $("btn-attach-analysis").onclick = () => $("file-analysis")?.click();
+if ($("file-analysis")) {
+  $("file-analysis").onchange = async () => {
+    const file = $("file-analysis").files[0];
+    if (!file) return;
+    try {
+      if (file.size > 64 * 1024 * 1024) throw new Error("Analysis attachment exceeds 64 MiB.");
+      const text = await file.text();
+      const extension = file.name.toLowerCase().split(".").pop();
+      let data;
+      let kind = "analysis";
+      if (extension === "json") {
+        data = JSON.parse(text);
+        if (data?.segments && data?.plate) {
+          kind = "inverse_dynamics_input";
+          if (boot.server) {
+            const response = await fetch("/api/analyze/dynamics", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+              },
+              body: text
+            });
+            const dynamics = await response.json();
+            if (!response.ok) throw new Error(dynamics.error || "Inverse dynamics failed.");
+            analysisResults.inverse_dynamics = {
+              schema_version: 1,
+              units: "SI",
+              source: file.name,
+              row_count: dynamics.row_count,
+              csv: dynamics.csv
+            };
+          }
+        }
+        if (data?.analyses?.inverse_dynamics) kind = "inverse_dynamics_results";
+      } else {
+        data = text;
+        const header = text.split(/\r?\n/, 1)[0];
+        if (header.includes("Fx_N") && header.includes("Mx_Nm")) kind = "inverse_dynamics_results";
+      }
+      if (!Array.isArray(analysisResults.attachments)) analysisResults.attachments = [];
+      analysisResults.attachments = analysisResults.attachments.filter(item => item.name !== file.name);
+      analysisResults.attachments.push({
+        name: file.name,
+        kind,
+        media_type: extension === "json" ? "application/json" : "text/csv",
+        data
+      });
+      if ($("btn-export-analyses")) $("btn-export-analyses").disabled = false;
+      status(`Attached ${file.name} (${kind}); it will be preserved in the .vaila project.`);
+    } catch (error) {
+      status(error.message, true);
+    } finally {
+      $("file-analysis").value = "";
+    }
+  };
+}
+
+async function saveVailaProject() {
+  if (!trial) {
+    status("Load a trial before saving a .vaila project.", true);
+    return;
+  }
+  if (!boot.server) {
+    status("Complete .vaila project save requires the local GUI session.", true);
+    return;
+  }
+  const viewerState = collectViewerState();
+  viewerState.raw_loaded_xyz = rawLoadedXYZ;
+  viewerState.raw_force_plates = rawForcePlates;
+  status("Saving complete open .vaila project...");
+  try {
+    const response = await fetch("/api/export/vaila", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trial,
+        viewer_state: viewerState,
+        analyses: collectAnalysisResults()
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Failed to save .vaila project.");
+    }
+    const stem = (trial.name || "project").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    downloadBlob(await response.blob(), `${stem}.vaila`);
+    status(`Saved ${stem}.vaila with trial, processing state, analyses, analog channels, and source.`);
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+function loadVailaProject(project) {
+  if (!project || !project.trial) throw new Error("Invalid .vaila project response.");
+  load(project.trial);
+  const state = project.viewer_state && typeof project.viewer_state === "object"
+    ? project.viewer_state
+    : {};
+  if (Array.isArray(state.raw_loaded_xyz)) rawLoadedXYZ = state.raw_loaded_xyz;
+  if (Array.isArray(state.raw_force_plates)) rawForcePlates = state.raw_force_plates;
+  analysisResults = project.analyses && typeof project.analyses === "object"
+    ? project.analyses
+    : {};
+  if ($("btn-export-analyses")) $("btn-export-analyses").disabled = false;
+  if ($("orientation-status-badge") && Array.isArray(analysisResults.orientations)) {
+    $("orientation-status-badge").textContent = `${analysisResults.orientations.length} saved`;
+    $("orientation-status-badge").style.color = "var(--accent)";
+  }
+  const restorable = { ...state, trialName: trial.name };
+  sessionStorage.setItem("mkvis3d_session", JSON.stringify(restorable));
+  restoreSessionState(trial);
+  recomputeTrialXYZ();
+  updateLCSUI();
+  updateFilterUI();
+  status(`Project ${trial.name} reopened with processing state and saved analyses.`);
+}
+
+if ($("action-save-vaila")) $("action-save-vaila").onclick = saveVailaProject;
 
 $("export").onclick = () => {
   const rows = ["frame,time_s,distance_m"];
@@ -2440,6 +2834,26 @@ window.addEventListener("drop", async e => {
 });
 
 // File Upload Handler
+function applyTrialRate() {
+  if (!trial || !$("rate")) return;
+  const rateHz = Number($("rate").value);
+  if (!Number.isFinite(rateHz) || rateHz <= 0) {
+    $("rate").value = String(trial.rate_hz);
+    status("Sampling rate must be a finite positive value in Hz.", true);
+    return;
+  }
+  if (Array.isArray(trial.analog) && trial.analog.length && Array.isArray(trial.analog[0])) {
+    trial.analog_rate_hz = rateHz * trial.analog[0].length;
+  }
+  trial.rate_hz = rateHz;
+  if (activeFilterConfig) recomputeTrialXYZ();
+  $("meta").textContent = `${trial.xyz.length} frames · ${trial.labels.length} markers · ${trial.rate_hz} Hz · coordinates in meters`;
+  measure();
+  draw();
+  saveSessionState();
+  status(`Sampling rate applied: ${rateHz} Hz. Playback, time, filters, and exports now use this FPS.`);
+}
+
 async function uploadFile(file) {
   pause();
   status(`Uploading and parsing ${file.name}...`);
@@ -2460,7 +2874,8 @@ async function uploadFile(file) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Failed to open file.");
-    load(data);
+    if (data.project) loadVailaProject(data.project);
+    else load(data);
   } catch (error) {
     status(error.message, true);
   } finally {
@@ -2476,6 +2891,13 @@ if ($("file")) {
     const file = $("file").files[0];
     if (file) uploadFile(file);
   };
+}
+
+if ($("btn-apply-rate")) $("btn-apply-rate").onclick = applyTrialRate;
+if ($("rate")) {
+  $("rate").addEventListener("keydown", e => {
+    if (e.key === "Enter" && trial) applyTrialRate();
+  });
 }
 
 if ($("btn-welcome-select")) {
@@ -3350,8 +3772,10 @@ function initLCSAndFilterControls() {
 
 $("open-panel").hidden = !boot.server;
 
-// Initial loading: check inlined trial, then check server active trial
-if (boot.trial) {
+// Initial loading: restore complete project first, then a plain inlined trial.
+if (boot.project) {
+  loadVailaProject(boot.project);
+} else if (boot.trial) {
   load(boot.trial);
 } else if (boot.server) {
   fetch("/api/current_trial")

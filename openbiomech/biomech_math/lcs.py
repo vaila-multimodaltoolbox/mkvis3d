@@ -165,5 +165,10 @@ def transform_trial_lcs(
         rate_hz=trial.rate_hz,
         xyz=xyz_transformed,
         residuals=trial.residuals.copy(),
+        force_plates=trial.force_plates,
+        analog_labels=trial.analog_labels,
+        analog_units=trial.analog_units,
+        analog_rate_hz=trial.analog_rate_hz,
+        analog=trial.analog.copy(),
     )
     return new_trial, rot_mat, ml_name

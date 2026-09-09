@@ -1,42 +1,31 @@
-# Session Handoff: README rewrite (vailá style) + docs/ help pages
+# Session Handoff: Analog C3D and open .vaila projects
 - **Status:** Completed
 - **Current State:**
-  - `README.md` was a garbled, mislabeled artifact (a raw Python script + its
-    stdout that *generates a CLAUDE.md*, wrapped in a stray ` ```python ` code
-    fence) — not a real project README. Rewritten from scratch in the style of
-    `/home/preto/data/vaila/README.md`: OS/install table, intro, relationship
-    to vailá, current-status crate table, project tree, install/run/build/test
-    sections, data fixture note, documentation links, citing, contribution,
-    license (AGPLv3, matching `pyproject.toml`).
-  - Created `docs/` with both Markdown and HTML help pages, as requested:
-    `docs/index.{md,html}` (hub), `docs/cli.{md,html}` (full `mkvis3d` CLI
-    reference derived from `openbiomech/cli.py`'s `build_parser()`),
-    `docs/architecture.{md,html}` (the long-term Rust workspace + ISB/Kabsch/
-    Butterworth/GCVSPL/force-plate/Newton-Euler math spec that used to live,
-    badly formatted, inside `README.md`).
-  - Updated `CLAUDE.md`'s Provenance section and the two `README.md §3.x`
-    cross-references in Conventions to point at `docs/architecture.md`
-    instead, since the target-architecture content moved out of `README.md`.
-  - Updated `pyproject.toml`'s `[project].description` (same README.md →
-    docs/architecture.md pointer fix).
-  - Added an explicit "Relationship to _vailá_" section to `README.md` per
-    the user's stated future-integration plan.
+  - `MarkerTrial` now carries synchronized calibrated analog samples, labels,
+    units and rate. Native/ezc3d readers, filters and LCS transforms preserve
+    them. Edited C3D export retains them and uses the source C3D as a template
+    to preserve unedited vendor/force-platform parameter groups.
+  - `project_io.py` implements schema-1 `.vaila`: open ZIP + UTF-8 JSON, SHA-256
+    member integrity, source provenance, no pickle/code/encryption/DRM.
+  - GUI and direct `mkvis3d gui work.vaila` save/reopen current/raw trial,
+    analog/force data, FPS, LCS, filter/display state, distance analyses,
+    arbitrary JSON/CSV attachments, and source file.
+  - Marker-defined orientation analysis outputs rotation matrices, scalar-first
+    wxyz quaternions, all six Tait-Bryan sequences and gimbal-lock margins.
+    Dynamics JSON can run through the GUI and its SI CSV is persisted.
+  - Public specification: `docs/vaila-format.md`.
 - **What Worked:**
-  - Read `pyproject.toml`, `openbiomech/cli.py` (full `argparse` surface),
-    `AGENTS.md`, `mkvis3d.spec`/`scripts/build_app.py`/`.github/workflows/
-    build_executables.yml`, and the launcher scripts (`mkvis3d.bat`/
-    `.command`/`_launcher.sh`) to keep the new README's install/build/CLI
-    sections accurate to what actually exists (no fabricated install
-    scripts, version banners, or citations).
-  - No AGPL `LICENSE` file exists in the repo despite `pyproject.toml`
-    declaring `AGPL-3.0-or-later` — README's License section links to the
-    canonical license text rather than a repo-local `LICENSE` file that
-    isn't there; flagged here rather than silently adding one.
-- **Failed Approaches:** none.
-- **Open Questions & Next Steps:**
-  - Consider adding a `LICENSE` file (AGPL-3.0-or-later) at repo root — not
-    added this session since it wasn't asked for and is a licensing decision
-    worth a human nod.
-  - `docs/cli.md`/`.html` should be re-checked whenever `openbiomech/cli.py`'s
-    `build_parser()` gains/changes a subcommand or flag — it is hand-written,
-    not generated from `argparse` help text.
+  - Real `pilot0102_squat03.c3d` round-trip preserved all 24 analog channels,
+    labels, units, samples and `FORCE_PLATFORM:CORNERS`.
+  - Browser smoke verified FPS edit, orientation analysis, CoM, edited C3D and
+    `.vaila` save/reopen with 71 markers and saved analyses.
+  - `uv run pytest -q`: 218 passed in 48.40s; focused persistence/analysis
+    suite: 36 passed.
+  - `uv run ruff check .`, `uv run ty check openbiomech tests`, JavaScript
+    syntax and `git diff --check` passed.
+- **Failed Approaches:** A server test initially used arbitrary bytes as a C3D
+  source template; template-preserving export correctly rejected it. Replaced
+  with a valid generated C3D and pinned the behavior.
+- **Open Questions & Next Steps:** Schema migrations must increment
+  `SCHEMA_VERSION` and retain schema-1 reading compatibility. Unknown analysis
+  keys are intentionally preserved for future biomechanical modules.

@@ -653,6 +653,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="dropdown-item" data-example="rec3d_20260826_121305.3d">Wide 3D Trial (rec3d....3d)</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Export & 3D Interchange</div>
+      <div class="dropdown-item" id="action-save-vaila">Save Complete Project (.vaila)...</div>
+      <div class="dropdown-item" id="action-export-c3d">Save Edited Trial (C3D)...</div>
       <div class="dropdown-item" id="action-export-plot">Export Distance / Plot CSV...</div>
       <div class="dropdown-item" id="action-export-all-csv">Export All Trajectories (CSV)...</div>
       <div class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</div>
@@ -769,14 +771,17 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
     <!-- File Section -->
     <section id="open-panel" class="sidebar-section">
       <div class="sidebar-header">Load Motion File</div>
-      <input id="file" type="file" accept=".c3d,.csv,.3d" aria-label="Motion file input">
+      <input id="file" type="file" accept=".c3d,.csv,.3d,.vaila" aria-label="Motion file input">
       <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-        Supports C3D (Vicon, Qualisys), wide CSV, and .3d formats.
+        Supports C3D, CSV, .3d, and complete .vaila projects.
       </p>
       
       <div style="margin-top: 10px;">
-        <label for="rate">CSV / .3d Sampling Rate (Hz)</label>
+        <label for="rate">Trial Sampling Rate / FPS (Hz)</label>
         <input id="rate" type="number" min="0.01" value="100" step="any">
+        <button id="btn-apply-rate" type="button" style="width: 100%; margin-top: 5px;" disabled>
+          Apply FPS to Current Trial
+        </button>
         
         <label for="units">CSV / .3d Coordinate Units</label>
         <select id="units">
@@ -884,6 +889,51 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
         <button id="btn-load-skeleton" class="primary" style="font-weight: 700;">Carregar Skeleton</button>
         <button id="btn-clear-skeleton">Limpar</button>
       </div>
+      <div style="margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--border-color);">
+        <label for="com-sex">Whole-Body Center of Mass (de Leva 1996)</label>
+        <div class="btn-group">
+          <select id="com-sex" aria-label="Sex-specific de Leva coefficients">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+          <button id="btn-create-com" type="button" disabled>Create CoM</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Marker-defined orientation analysis -->
+    <section class="sidebar-section">
+      <div class="sidebar-header">
+        <span>Orientation Analysis</span>
+        <span id="orientation-status-badge" style="font-size: 10px; color: var(--text-muted);">Not computed</span>
+      </div>
+      <label for="orientation-origin">Origin marker</label>
+      <select id="orientation-origin"></select>
+      <label for="orientation-x-point">Positive X-axis marker</label>
+      <select id="orientation-x-point"></select>
+      <label for="orientation-plane-point">Positive XY-plane marker</label>
+      <select id="orientation-plane-point"></select>
+      <div style="font-size: 10px; color: var(--text-muted); margin-top: 7px;">
+        Euler/Cardan sequences:
+      </div>
+      <div id="orientation-sequences" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 4px;">
+        <label><input type="checkbox" value="xyz" checked>xyz</label>
+        <label><input type="checkbox" value="xzy" checked>xzy</label>
+        <label><input type="checkbox" value="yxz" checked>yxz</label>
+        <label><input type="checkbox" value="yzx" checked>yzx</label>
+        <label><input type="checkbox" value="zxy" checked>zxy</label>
+        <label><input type="checkbox" value="zyx" checked>zyx</label>
+      </div>
+      <button id="btn-analyze-orientation" type="button" style="width: 100%; margin-top: 7px;" disabled>
+        Compute Euler + Quaternions
+      </button>
+      <button id="btn-export-analyses" type="button" style="width: 100%; margin-top: 5px;" disabled>
+        Export Analyses (JSON)
+      </button>
+      <input id="file-analysis" type="file" accept=".json,.csv" hidden>
+      <button id="btn-attach-analysis" type="button" style="width: 100%; margin-top: 5px;">
+        Attach Analysis JSON/CSV
+      </button>
     </section>
 
     <!-- Force Platforms & Kinetics (Visual3D & Mokka Parity) -->

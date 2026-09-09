@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from openbiomech.c3d_io import read_c3d_native
+from openbiomech.c3d_io import read_c3d_native, write_c3d
 from openbiomech.viewer import trial_payload
 
 
@@ -118,8 +118,37 @@ def test_trial_payload_force_plates(squat_c3d):
     decoded = json.loads(serialized)
 
     assert len(decoded["force_plates"]) == 2
+    assert len(decoded["analog_labels"]) == 24
+    assert len(decoded["analog_units"]) == 24
+    assert decoded["analog_rate_hz"] == 1000.0
+    assert np.asarray(decoded["analog"]).shape == (trial.n_frames, 5, 24)
     p1 = decoded["force_plates"][0]
     assert p1["name"] == "FP1"
     assert len(p1["corners"]) == 4
     assert len(p1["cop"]) == trial.n_frames
     assert len(p1["force"]) == trial.n_frames
+
+
+def test_edited_c3d_preserves_real_analog_channels_and_force_plate_parameters(
+    squat_c3d, tmp_path
+):
+    import ezc3d
+
+    trial = read_c3d_native(squat_c3d)
+    trial.xyz = trial.xyz + np.array([0.001, 0.0, 0.0])
+    output = write_c3d(trial, tmp_path / "edited-squat.c3d", template=squat_c3d)
+
+    source = ezc3d.c3d(str(squat_c3d))
+    edited = ezc3d.c3d(str(output))
+    assert edited["data"]["analogs"].shape == source["data"]["analogs"].shape
+    assert np.allclose(edited["data"]["analogs"], source["data"]["analogs"], atol=1e-6)
+    assert edited["parameters"]["ANALOG"]["LABELS"]["value"] == source["parameters"]["ANALOG"][
+        "LABELS"
+    ]["value"]
+    assert edited["parameters"]["ANALOG"]["UNITS"]["value"] == source["parameters"]["ANALOG"][
+        "UNITS"
+    ]["value"]
+    assert np.allclose(
+        edited["parameters"]["FORCE_PLATFORM"]["CORNERS"]["value"],
+        source["parameters"]["FORCE_PLATFORM"]["CORNERS"]["value"],
+    )

@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from openbiomech.cli import main
+from openbiomech.project_io import vaila_project_bytes
 
 FIXTURE_C3D = Path(__file__).parent.parent / "data" / "rec3d_20260826_121305_m.c3d"
 FIXTURE_CSV = Path(__file__).parent.parent / "data" / "rec3d_20260826_121305.csv"
@@ -103,8 +104,16 @@ def test_view_command_supports_default_output(tmp_path):
 def test_direct_file_path_routes_to_gui(monkeypatch):
     called = []
 
-    def mock_serve_viewer(*, port=0, open_browser=True, initial_trial=None, name=""):
-        called.append((name, initial_trial is not None))
+    def mock_serve_viewer(
+        *,
+        port=0,
+        open_browser=True,
+        initial_trial=None,
+        name="",
+        source_path=None,
+        initial_project=None,
+    ):
+        called.append((name, initial_trial is not None, source_path, initial_project))
 
     import openbiomech.viewer
 
@@ -114,3 +123,28 @@ def test_direct_file_path_routes_to_gui(monkeypatch):
     assert len(called) == 1
     assert called[0][0] == FIXTURE_C3D.name
     assert called[0][1] is True
+    assert called[0][2] == FIXTURE_C3D
+
+
+def test_direct_vaila_project_restores_complete_gui_state(monkeypatch, tmp_path):
+    project_path = tmp_path / "work.vaila"
+    project_path.write_bytes(
+        vaila_project_bytes(
+            {"name": "edited.c3d", "labels": ["p1"], "rate_hz": 120.0, "xyz": [[[0, 0, 0]]]},
+            {"currentLCS": {"ap": "+X", "axial": "+Z"}},
+            {"distance": {"values": [0.0]}},
+        )
+    )
+    called = []
+
+    def mock_serve_viewer(**kwargs):
+        called.append(kwargs)
+
+    import openbiomech.viewer
+
+    monkeypatch.setattr(openbiomech.viewer, "serve_viewer", mock_serve_viewer)
+    assert main([str(project_path), "--no-browser"]) == 0
+    assert called[0]["initial_trial"] is None
+    assert called[0]["source_path"] is None
+    assert called[0]["initial_project"].trial["rate_hz"] == 120.0
+    assert called[0]["initial_project"].analyses["distance"]["values"] == [0.0]

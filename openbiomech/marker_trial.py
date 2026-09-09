@@ -55,7 +55,10 @@ class MarkerTrial:
             (e.g. plain CSV) does not carry residual information.
         force_plates: optional list of calibrated ForcePlatform objects.
         analog_labels: optional tuple of analog channel names.
+        analog_units: optional tuple of physical units for analog channels.
         analog_rate_hz: optional analog sampling frequency in Hz.
+        analog: optional `(n_frames, n_subsamples, n_channels)` float64
+            calibrated analog samples synchronized to point frames.
     """
 
     labels: tuple[str, ...]
@@ -64,7 +67,11 @@ class MarkerTrial:
     residuals: np.ndarray
     force_plates: list[ForcePlatform] = field(default_factory=list)
     analog_labels: tuple[str, ...] = ()
+    analog_units: tuple[str, ...] = ()
     analog_rate_hz: float = 0.0
+    analog: np.ndarray = field(
+        default_factory=lambda: np.zeros((0, 0, 0), dtype=np.float64)
+    )
 
     @property
     def n_frames(self) -> int:

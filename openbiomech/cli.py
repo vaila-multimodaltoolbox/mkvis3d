@@ -43,18 +43,26 @@ def _cmd_view(args: argparse.Namespace) -> int:
 
 
 def _cmd_gui(args: argparse.Namespace) -> int:
+    from .project_io import read_vaila_project
     from .viewer import serve_viewer
 
     initial_trial = None
+    initial_project = None
     name = ""
     if args.path:
-        initial_trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
-        name = args.path.name
+        if args.path.suffix.lower() == ".vaila":
+            initial_project = read_vaila_project(args.path)
+            name = str(initial_project.trial.get("name", args.path.name))
+        else:
+            initial_trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
+            name = args.path.name
     serve_viewer(
         port=args.port,
         open_browser=not args.no_browser,
         initial_trial=initial_trial,
         name=name,
+        source_path=args.path if initial_project is None else None,
+        initial_project=initial_project,
     )
     return 0
 
@@ -217,13 +225,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_view.set_defaults(func=_cmd_view)
 
-    p_gui = sub.add_parser("gui", help="open the local visual interface for C3D/CSV/.3d files")
+    p_gui = sub.add_parser(
+        "gui", help="open the local visual interface for C3D/CSV/.3d or .vaila projects"
+    )
     p_gui.add_argument(
         "path",
         type=Path,
         nargs="?",
         default=None,
-        help="optional motion file (.c3d, .csv, .3d) to load immediately",
+        help="optional motion file or complete .vaila project to load immediately",
     )
     p_gui.add_argument("--port", type=int, default=0, help="local port (0 chooses a free port)")
     p_gui.add_argument(

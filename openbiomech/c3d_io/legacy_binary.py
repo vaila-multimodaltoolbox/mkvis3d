@@ -441,6 +441,12 @@ def read_c3d(path: str | Path) -> MarkerTrial:
 
     force_plates = extract_force_platforms(parsed, factor)
     analog_labels = parsed.analog.labels if parsed.analog else ()
+    analog_units_raw = _group_values(parsed.groups, "ANALOG", "UNITS")
+    analog_units = (
+        tuple(str(value).strip() for value in np.atleast_1d(analog_units_raw))
+        if analog_units_raw is not None
+        else tuple("" for _ in analog_labels)
+    )
     analog_rate_hz = float(parsed.analog.rate_hz) if parsed.analog else 0.0
 
     return MarkerTrial(
@@ -450,5 +456,7 @@ def read_c3d(path: str | Path) -> MarkerTrial:
         residuals=np.where(parsed.points.residual < 0, -1.0, parsed.points.residual * factor),
         force_plates=force_plates,
         analog_labels=analog_labels,
+        analog_units=analog_units,
         analog_rate_hz=analog_rate_hz,
+        analog=parsed.analog.values.copy(),
     )

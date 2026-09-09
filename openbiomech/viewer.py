@@ -17,7 +17,11 @@ from urllib.parse import parse_qs, urlsplit
 
 import numpy as np
 
+from .analysis_io import run_dynamics
+from .c3d_io import c3d_bytes
+from .kinematic_analysis import TAIT_BRYAN_SEQUENCES, marker_frame_orientations
 from .marker_trial import MarkerTrial
+from .project_io import VailaProject, read_vaila_project, vaila_project_bytes
 from .trial_io import load_trial
 
 
@@ -79,8 +83,74 @@ def trial_payload(trial: MarkerTrial, name: str) -> dict:
         payload["force_plates"] = force_plates_data
     if getattr(trial, "analog_labels", ()):
         payload["analog_labels"] = list(trial.analog_labels)
+        payload["analog_units"] = list(trial.analog_units)
         payload["analog_rate_hz"] = float(trial.analog_rate_hz)
+        analog = np.asarray(trial.analog, dtype=np.float64)
+        analog_safe = analog.astype(object)
+        analog_safe[~np.isfinite(analog)] = None
+        payload["analog"] = analog_safe.tolist()
     return payload
+
+
+def trial_from_payload(payload: dict) -> MarkerTrial:
+    """Validate browser-edited point data and rebuild a marker trial."""
+    labels = tuple(str(label) for label in payload.get("labels", ()))
+    rate_hz = float(payload.get("rate_hz", 0.0))
+    xyz = np.asarray(payload.get("xyz"), dtype=np.float64)
+    if xyz.ndim != 3 or xyz.shape[1:] != (len(labels), 3):
+        raise ValueError("edited trial xyz must match its marker labels")
+    if not xyz.shape[0] or not labels:
+        raise ValueError("edited trial must contain frames and markers")
+    if not np.isfinite(rate_hz) or rate_hz <= 0:
+        raise ValueError("edited trial rate must be finite and positive")
+    visible = np.isfinite(xyz).all(axis=2)
+    if not visible.any():
+        raise ValueError("edited trial has no visible marker samples")
+    residuals = np.where(visible, 0.0, np.nan)
+    analog_labels = tuple(str(label) for label in payload.get("analog_labels", ()))
+    analog_units = tuple(str(unit) for unit in payload.get("analog_units", ()))
+    analog = np.asarray(payload.get("analog", []), dtype=np.float64)
+    if analog_labels:
+        if analog.ndim != 3 or analog.shape[0] != xyz.shape[0]:
+            raise ValueError("edited trial analog data must align with point frames")
+        if analog.shape[2] != len(analog_labels):
+            raise ValueError("edited trial analog channels must match analog labels")
+        if analog_units and len(analog_units) != len(analog_labels):
+            raise ValueError("edited trial analog units must match analog labels")
+    else:
+        analog = np.zeros((xyz.shape[0], 0, 0), dtype=np.float64)
+    analog_rate_hz = float(payload.get("analog_rate_hz", 0.0))
+    if analog_labels:
+        expected_analog_rate = rate_hz * analog.shape[1]
+        if not np.isclose(analog_rate_hz, expected_analog_rate, rtol=1e-9, atol=1e-9):
+            raise ValueError("edited trial analog rate must equal point rate times subsamples")
+    return MarkerTrial(
+        labels=labels,
+        rate_hz=rate_hz,
+        xyz=xyz,
+        residuals=residuals,
+        analog_labels=analog_labels,
+        analog_units=analog_units,
+        analog_rate_hz=analog_rate_hz,
+        analog=analog,
+    )
+
+
+def json_compatible(value):
+    """Convert NumPy analysis results to strict JSON-compatible values."""
+    if isinstance(value, np.ndarray):
+        if np.issubdtype(value.dtype, np.floating):
+            safe = value.astype(object)
+            safe[~np.isfinite(value)] = None
+            return safe.tolist()
+        return value.tolist()
+    if isinstance(value, dict):
+        return {key: json_compatible(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_compatible(item) for item in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
 
 
 def render_viewer(
@@ -88,12 +158,17 @@ def render_viewer(
     *,
     server: bool = False,
     skeleton_templates: dict[str, dict] | None = None,
+    project: dict | None = None,
 ) -> str:
     directory = Path(__file__).parent
     if skeleton_templates is None:
         skeleton_templates = load_all_skeleton_templates()
     templates_json = json.dumps(skeleton_templates, ensure_ascii=True).replace("<", "\\u003c")
-    data = json.dumps({"server": server, "trial": payload}, ensure_ascii=True, allow_nan=False)
+    data = json.dumps(
+        {"server": server, "trial": payload, "project": project},
+        ensure_ascii=True,
+        allow_nan=False,
+    )
     data = data.replace("<", "\\u003c")
     return (
         (directory / "viewer.html")
@@ -111,11 +186,22 @@ def export_viewer(trial: MarkerTrial, name: str, output: Path) -> None:
 
 
 def create_server(
-    port: int = 0, initial_payload: dict | None = None
+    port: int = 0,
+    initial_payload: dict | None = None,
+    *,
+    initial_source_name: str | None = None,
+    initial_source_bytes: bytes | None = None,
+    initial_project: dict | None = None,
 ) -> tuple[ThreadingHTTPServer, str]:
     """Bind loopback; uploads need a per-session token, never a disk path."""
     token = secrets.token_urlsafe(32)
     current_trial: list[dict | None] = [initial_payload]
+    current_source: list[tuple[str, bytes] | None] = [
+        (initial_source_name, initial_source_bytes)
+        if initial_source_name is not None and initial_source_bytes is not None
+        else None
+    ]
+    current_project: list[dict | None] = [initial_project]
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args) -> None:
@@ -226,12 +312,23 @@ def create_server(
             active_payload = current_trial[0] if current_trial[0] is not None else initial_payload
             self.send_bytes(
                 200,
-                render_viewer(payload=active_payload, server=True).encode(),
+                render_viewer(
+                    payload=active_payload,
+                    server=True,
+                    project=current_project[0],
+                ).encode(),
                 "text/html; charset=utf-8",
             )
 
         def do_POST(self) -> None:
-            if urlsplit(self.path).path != "/api/trial":
+            req_path = urlsplit(self.path).path
+            if req_path not in (
+                "/api/trial",
+                "/api/export/c3d",
+                "/api/export/vaila",
+                "/api/analyze/orientation",
+                "/api/analyze/dynamics",
+            ):
                 self.send_bytes(404, b"Not found", "text/plain")
                 return
             if self.headers.get("Authorization") != f"Bearer {token}":
@@ -241,18 +338,93 @@ def create_server(
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 256 * 1024 * 1024:
                     raise ValueError("file must be nonempty and no larger than 256 MiB")
+                if req_path == "/api/export/c3d":
+                    edited = json.loads(self.rfile.read(length))
+                    template = (
+                        current_source[0][1]
+                        if current_source[0] and Path(current_source[0][0]).suffix.lower() == ".c3d"
+                        else None
+                    )
+                    body = c3d_bytes(trial_from_payload(edited), template=template)
+                    self.send_bytes(200, body, "application/octet-stream")
+                    return
+                if req_path == "/api/export/vaila":
+                    project = json.loads(self.rfile.read(length))
+                    edited = project["trial"]
+                    trial_from_payload(edited)
+                    source_name = current_source[0][0] if current_source[0] else None
+                    source_bytes = current_source[0][1] if current_source[0] else None
+                    body = vaila_project_bytes(
+                        edited,
+                        project.get("viewer_state", {}),
+                        project.get("analyses", {}),
+                        source_name=source_name,
+                        source_bytes=source_bytes,
+                    )
+                    self.send_bytes(200, body, "application/vnd.vaila.project+zip")
+                    return
+                if req_path == "/api/analyze/orientation":
+                    request = json.loads(self.rfile.read(length))
+                    trial = trial_from_payload(request["trial"])
+                    result = marker_frame_orientations(
+                        trial,
+                        str(request["origin"]),
+                        str(request["x_axis_point"]),
+                        str(request["xy_plane_point"]),
+                        sequences=tuple(request.get("sequences", TAIT_BRYAN_SEQUENCES)),
+                    )
+                    self.send_bytes(
+                        200,
+                        json.dumps(json_compatible(result), allow_nan=False).encode(),
+                        "application/json",
+                    )
+                    return
+                if req_path == "/api/analyze/dynamics":
+                    dynamics_input = self.rfile.read(length)
+                    with tempfile.TemporaryDirectory(prefix="openbiomech-dynamics-") as directory:
+                        input_path = Path(directory) / "input.json"
+                        output_path = Path(directory) / "loads.csv"
+                        input_path.write_bytes(dynamics_input)
+                        row_count = run_dynamics(input_path, output_path)
+                        result = {"row_count": row_count, "csv": output_path.read_text()}
+                    self.send_bytes(
+                        200, json.dumps(result, allow_nan=False).encode(), "application/json"
+                    )
+                    return
                 query = parse_qs(urlsplit(self.path).query)
                 name = Path(query.get("name", [""])[0]).name
                 suffix = Path(name).suffix.lower()
-                if suffix not in (".c3d", ".csv", ".3d"):
-                    raise ValueError("expected .c3d, .csv or .3d")
+                if suffix not in (".c3d", ".csv", ".3d", ".vaila"):
+                    raise ValueError("expected .c3d, .csv, .3d or .vaila")
                 rate = float(query.get("rate", ["100"])[0])
                 units = query.get("units", ["m"])[0]
+                uploaded = self.rfile.read(length)
+                if suffix == ".vaila":
+                    project = read_vaila_project(uploaded)
+                    trial_from_payload(project.trial)
+                    current_trial[0] = project.trial
+                    current_project[0] = response_project = {
+                        "trial": project.trial,
+                        "viewer_state": project.viewer_state,
+                        "analyses": project.analyses,
+                    }
+                    current_source[0] = (
+                        (project.source_name, project.source_bytes)
+                        if project.source_name is not None and project.source_bytes is not None
+                        else None
+                    )
+                    response = {"project": response_project}
+                    self.send_bytes(
+                        200, json.dumps(response, allow_nan=False).encode(), "application/json"
+                    )
+                    return
                 with tempfile.TemporaryDirectory(prefix="openbiomech-") as directory:
                     path = Path(directory) / f"trial{suffix}"
-                    path.write_bytes(self.rfile.read(length))
+                    path.write_bytes(uploaded)
                     payload = trial_payload(load_trial(path, rate_hz=rate, units=units), name)
                 current_trial[0] = payload
+                current_project[0] = None
+                current_source[0] = (name, uploaded)
                 self.send_bytes(
                     200, json.dumps(payload, allow_nan=False).encode(), "application/json"
                 )
@@ -269,9 +441,44 @@ def serve_viewer(
     open_browser: bool = True,
     initial_trial: MarkerTrial | None = None,
     name: str = "",
+    source_path: Path | None = None,
+    initial_project: VailaProject | None = None,
 ) -> None:
-    initial_payload = trial_payload(initial_trial, name) if initial_trial else None
-    server, url = create_server(port, initial_payload=initial_payload)
+    initial_project_payload = (
+        {
+            "trial": initial_project.trial,
+            "viewer_state": initial_project.viewer_state,
+            "analyses": initial_project.analyses,
+        }
+        if initial_project
+        else None
+    )
+    initial_payload = (
+        initial_project.trial
+        if initial_project
+        else trial_payload(initial_trial, name)
+        if initial_trial
+        else None
+    )
+    server, url = create_server(
+        port,
+        initial_payload=initial_payload,
+        initial_source_name=(
+            initial_project.source_name
+            if initial_project
+            else source_path.name
+            if source_path
+            else None
+        ),
+        initial_source_bytes=(
+            initial_project.source_bytes
+            if initial_project
+            else source_path.read_bytes()
+            if source_path
+            else None
+        ),
+        initial_project=initial_project_payload,
+    )
     print(f"mkvis3d: {url}", flush=True)
     print("Press Ctrl+C to stop the local viewer.", flush=True)
     if open_browser:

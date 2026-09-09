@@ -179,11 +179,56 @@ if(process.argv[3]){
  assert.equal(await evaluate('document.getElementById("modal-shortcuts").classList.contains("open")'), true);
  await evaluate('document.getElementById("btn-close-shortcuts").click()');
  assert.equal(await evaluate('document.getElementById("modal-shortcuts").classList.contains("open")'), false);
+ await evaluate('document.getElementById("rate").value = "120"; document.getElementById("btn-apply-rate").click();');
+ assert.equal(await evaluate('trial.rate_hz'), 120);
+ assert.match(await evaluate('document.getElementById("meta").textContent'), /120 Hz/);
  await evaluate('document.getElementById("skeleton-template-select").value = "sam3dinov3_mhr70"; document.getElementById("btn-load-skeleton").click();');
- assert.equal(await evaluate('skeletonPairs.length'), 30);
+ assert.equal(await evaluate('skeletonPairs.length'), 88);
+ await evaluate('document.getElementById("btn-analyze-orientation").click();');
+ await until('document.getElementById("orientation-status-badge").textContent.includes("6 sequences")');
+ assert.equal(await evaluate('analysisResults.orientations[0].quaternion_convention'), "scalar-first wxyz");
+ assert.deepEqual(await evaluate('Object.keys(analysisResults.orientations[0].euler).sort()'), ["xyz","xzy","yxz","yzx","zxy","zyx"]);
+ await evaluate('document.getElementById("btn-create-com").click();');
+ assert.equal(await evaluate('trial.labels.at(-1)'), "CenterOfMass_deLeva_male");
+ assert.equal(await evaluate('trial.xyz[0].length'), 71);
+ assert.equal(await evaluate('rawLoadedXYZ[0].length'), 71);
+ const editedC3DBytes = await evaluate(`fetch("/api/export/c3d", {
+   method: "POST",
+   headers: {"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+   body: JSON.stringify(trial)
+ }).then(async r => r.ok ? (await r.arrayBuffer()).byteLength : 0)`);
+ assert.ok(editedC3DBytes > 512);
+ const projectRoundTrip = await evaluate(`(async () => {
+   const viewerState = collectViewerState();
+   viewerState.raw_loaded_xyz = rawLoadedXYZ;
+   viewerState.raw_force_plates = rawForcePlates;
+   const saved = await fetch("/api/export/vaila", {
+     method: "POST",
+     headers: {"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+     body: JSON.stringify({trial, viewer_state: viewerState, analyses: collectAnalysisResults()})
+   });
+   if (!saved.ok) return {ok:false, stage:"save"};
+   const archive = await saved.blob();
+   const reopened = await fetch("/api/trial?name=browser-roundtrip.vaila", {
+     method: "POST",
+     headers: {"Authorization": "Bearer " + token},
+     body: archive
+   });
+   if (!reopened.ok) return {ok:false, stage:"open"};
+   const data = await reopened.json();
+   loadVailaProject(data.project);
+   return {
+     ok: true,
+     rate: trial.rate_hz,
+     markers: trial.labels.length,
+     orientations: analysisResults.orientations.length,
+     filtered: Boolean(activeFilterConfig)
+   };
+ })()`);
+ assert.deepEqual(projectRoundTrip, {ok:true, rate:120, markers:71, orientations:1, filtered:false});
  await evaluate('document.getElementById("btn-clear-skeleton").click()');
  assert.equal(await evaluate('skeletonPairs.length'), 0);
 }
 assert.deepEqual(errors,[]);
-console.log("Browser passed: golden trial, stepping, seek, playback, selection, distance CSV, saved HTML reload, local C3D/CSV/.3d upload, modal close, skeleton template manual load, no JS exceptions.");
+console.log("Browser passed: playback, FPS edit, filtering, exports, de Leva CoM, detailed skeleton, local uploads, and no JS exceptions.");
 ws.close();

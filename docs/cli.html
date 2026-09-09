@@ -76,14 +76,15 @@ no CDN — <code>openbiomech/viewer.py</code>/<code>.html</code>/<code>.js</code
 
 <h2><code>gui</code></h2>
 <p>Start the local, loopback-only web viewer (stdlib <code>http.server</code>) and open
-it in the default browser. Supports C3D/CSV/.3d upload from the browser, playback,
-orbit/pan/zoom, distance measurement, real-time charts, force platform / GRF overlays,
-and CSV/HTML export.</p>
+it in the default browser. Supports C3D/CSV/.3d upload, complete <code>.vaila</code>
+project save/reopen, processing, distance and orientation analysis, inverse dynamics,
+force-platform/GRF overlays, and data export.</p>
 <pre><code>uv run mkvis3d gui                       # empty viewer, pick a file in the browser
 uv run mkvis3d gui data/trial.c3d        # load a file immediately
+uv run mkvis3d gui work.vaila            # restore trial, edits and analyses
 uv run mkvis3d gui --port 8765 --no-browser</code></pre>
 <table>
-  <tr><th>path</th><td>Optional motion file to load immediately</td></tr>
+  <tr><th>path</th><td>Optional motion file or <code>.vaila</code> project to load immediately</td></tr>
   <tr><th>--port</th><td>Local port (<code>0</code> = choose a free port)</td></tr>
   <tr><th>--no-browser</th><td>Print the URL instead of launching a browser</td></tr>
 </table>

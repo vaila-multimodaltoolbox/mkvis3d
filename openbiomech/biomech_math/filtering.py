@@ -333,4 +333,9 @@ def process_marker_trial(
         rate_hz=trial.rate_hz,
         xyz=new_xyz,
         residuals=trial.residuals.copy(),
+        force_plates=trial.force_plates,
+        analog_labels=trial.analog_labels,
+        analog_units=trial.analog_units,
+        analog_rate_hz=trial.analog_rate_hz,
+        analog=trial.analog.copy(),
     )

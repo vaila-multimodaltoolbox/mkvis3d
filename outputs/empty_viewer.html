@@ -653,6 +653,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="dropdown-item" data-example="rec3d_20260826_121305.3d">Wide 3D Trial (rec3d....3d)</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Export & 3D Interchange</div>
+      <div class="dropdown-item" id="action-save-vaila">Save Complete Project (.vaila)...</div>
+      <div class="dropdown-item" id="action-export-c3d">Save Edited Trial (C3D)...</div>
       <div class="dropdown-item" id="action-export-plot">Export Distance / Plot CSV...</div>
       <div class="dropdown-item" id="action-export-all-csv">Export All Trajectories (CSV)...</div>
       <div class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</div>
@@ -769,14 +771,17 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
     <!-- File Section -->
     <section id="open-panel" class="sidebar-section">
       <div class="sidebar-header">Load Motion File</div>
-      <input id="file" type="file" accept=".c3d,.csv,.3d" aria-label="Motion file input">
+      <input id="file" type="file" accept=".c3d,.csv,.3d,.vaila" aria-label="Motion file input">
       <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-        Supports C3D (Vicon, Qualisys), wide CSV, and .3d formats.
+        Supports C3D, CSV, .3d, and complete .vaila projects.
       </p>
       
       <div style="margin-top: 10px;">
-        <label for="rate">CSV / .3d Sampling Rate (Hz)</label>
+        <label for="rate">Trial Sampling Rate / FPS (Hz)</label>
         <input id="rate" type="number" min="0.01" value="100" step="any">
+        <button id="btn-apply-rate" type="button" style="width: 100%; margin-top: 5px;" disabled>
+          Apply FPS to Current Trial
+        </button>
         
         <label for="units">CSV / .3d Coordinate Units</label>
         <select id="units">
@@ -883,6 +888,94 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="btn-group" style="margin-top: 8px;">
         <button id="btn-load-skeleton" class="primary" style="font-weight: 700;">Carregar Skeleton</button>
         <button id="btn-clear-skeleton">Limpar</button>
+      </div>
+      <div style="margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--border-color);">
+        <label for="com-sex">Whole-Body Center of Mass (de Leva 1996)</label>
+        <div class="btn-group">
+          <select id="com-sex" aria-label="Sex-specific de Leva coefficients">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+          <button id="btn-create-com" type="button" disabled>Create CoM</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Marker-defined orientation analysis -->
+    <section class="sidebar-section">
+      <div class="sidebar-header">
+        <span>Orientation Analysis</span>
+        <span id="orientation-status-badge" style="font-size: 10px; color: var(--text-muted);">Not computed</span>
+      </div>
+      <label for="orientation-origin">Origin marker</label>
+      <select id="orientation-origin"></select>
+      <label for="orientation-x-point">Positive X-axis marker</label>
+      <select id="orientation-x-point"></select>
+      <label for="orientation-plane-point">Positive XY-plane marker</label>
+      <select id="orientation-plane-point"></select>
+      <div style="font-size: 10px; color: var(--text-muted); margin-top: 7px;">
+        Euler/Cardan sequences:
+      </div>
+      <div id="orientation-sequences" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 4px;">
+        <label><input type="checkbox" value="xyz" checked>xyz</label>
+        <label><input type="checkbox" value="xzy" checked>xzy</label>
+        <label><input type="checkbox" value="yxz" checked>yxz</label>
+        <label><input type="checkbox" value="yzx" checked>yzx</label>
+        <label><input type="checkbox" value="zxy" checked>zxy</label>
+        <label><input type="checkbox" value="zyx" checked>zyx</label>
+      </div>
+      <button id="btn-analyze-orientation" type="button" style="width: 100%; margin-top: 7px;" disabled>
+        Compute Euler + Quaternions
+      </button>
+      <button id="btn-export-analyses" type="button" style="width: 100%; margin-top: 5px;" disabled>
+        Export Analyses (JSON)
+      </button>
+      <input id="file-analysis" type="file" accept=".json,.csv" hidden>
+      <button id="btn-attach-analysis" type="button" style="width: 100%; margin-top: 5px;">
+        Attach Analysis JSON/CSV
+      </button>
+    </section>
+
+    <!-- Force Platforms & Kinetics (Visual3D & Mokka Parity) -->
+    <section id="force-platforms-section" class="sidebar-section" hidden>
+      <div class="sidebar-header">
+        <span>Force Platforms & GRF</span>
+        <span id="force-plate-count-badge" style="font-size: 10px; color: var(--accent);">0 plates</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+        <label style="display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer;">
+          <input type="checkbox" id="show-force-plates" checked>
+          <span>Show Force Plates</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer;">
+          <input type="checkbox" id="show-force-vectors" checked>
+          <span>Show Force Vectors (GRF)</span>
+        </label>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+        <label for="force-scale-slider" style="margin: 0;">Vector Scale</label>
+        <span id="force-scale-val" style="font-size: 11px; font-weight: 600; color: var(--accent);">1.0 mm/N</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <input type="range" id="force-scale-slider" min="0.2" max="5.0" step="0.1" value="1.0" style="flex: 1;">
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+        <label for="force-threshold-slider" style="margin: 0;">Contact Threshold</label>
+        <span id="force-threshold-val" style="font-size: 11px; font-weight: 600; color: var(--accent);">15 N</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <input type="range" id="force-threshold-slider" min="5" max="100" step="5" value="15" style="flex: 1;">
+      </div>
+
+      <div id="force-readouts-card" style="margin-top: 10px; padding: 8px; border-radius: 6px; background: var(--metric-card-bg); border: 1px solid var(--border-color); font-size: 11px; display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; justify-content: space-between; font-weight: 600;">
+          <span>Active Vertical GRF</span>
+          <span id="total-fz-val" style="color: var(--accent);">0 N</span>
+        </div>
+        <div id="plate-mini-readouts" style="color: var(--text-muted); font-size: 10px; margin-top: 2px;"></div>
       </div>
     </section>
 
@@ -1317,8 +1410,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
   </div>
 </div>
 
-<script type="application/json" id="trial-data">{"server": false, "trial": null}</script>
-<script type="application/json" id="skeleton-templates-data">{"coco_wholebody133": {"schema": "coco_wholebody_133", "num_keypoints": 133, "note": "pN is 1-based index for COCO WholeBody / Sapiens-133: p1..p17=body, p18..p23=feet, p24..p91=face (68), p92..p112=left hand (21), p113..p133=right hand (21).", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel", "face-0", "face-1", "face-2", "face-3", "face-4", "face-5", "face-6", "face-7", "face-8", "face-9", "face-10", "face-11", "face-12", "face-13", "face-14", "face-15", "face-16", "face-17", "face-18", "face-19", "face-20", "face-21", "face-22", "face-23", "face-24", "face-25", "face-26", "face-27", "face-28", "face-29", "face-30", "face-31", "face-32", "face-33", "face-34", "face-35", "face-36", "face-37", "face-38", "face-39", "face-40", "face-41", "face-42", "face-43", "face-44", "face-45", "face-46", "face-47", "face-48", "face-49", "face-50", "face-51", "face-52", "face-53", "face-54", "face-55", "face-56", "face-57", "face-58", "face-59", "face-60", "face-61", "face-62", "face-63", "face-64", "face-65", "face-66", "face-67", "left_hand_root", "left_thumb1", "left_thumb2", "left_thumb3", "left_thumb4", "left_forefinger1", "left_forefinger2", "left_forefinger3", "left_forefinger4", "left_middle_finger1", "left_middle_finger2", "left_middle_finger3", "left_middle_finger4", "left_ring_finger1", "left_ring_finger2", "left_ring_finger3", "left_ring_finger4", "left_pinky_finger1", "left_pinky_finger2", "left_pinky_finger3", "left_pinky_finger4", "right_hand_root", "right_thumb1", "right_thumb2", "right_thumb3", "right_thumb4", "right_forefinger1", "right_forefinger2", "right_forefinger3", "right_forefinger4", "right_middle_finger1", "right_middle_finger2", "right_middle_finger3", "right_middle_finger4", "right_ring_finger1", "right_ring_finger2", "right_ring_finger3", "right_ring_finger4", "right_pinky_finger1", "right_pinky_finger2", "right_pinky_finger3", "right_pinky_finger4"], "connections": [["p16", "p14"], ["p14", "p12"], ["p17", "p15"], ["p15", "p13"], ["p12", "p13"], ["p6", "p12"], ["p7", "p13"], ["p6", "p7"], ["p6", "p8"], ["p7", "p9"], ["p8", "p10"], ["p9", "p11"], ["p2", "p3"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p4", "p6"], ["p5", "p7"], ["p16", "p18"], ["p16", "p19"], ["p16", "p20"], ["p17", "p21"], ["p17", "p22"], ["p17", "p23"], ["p92", "p93"], ["p93", "p94"], ["p94", "p95"], ["p95", "p96"], ["p92", "p97"], ["p97", "p98"], ["p98", "p99"], ["p99", "p100"], ["p92", "p101"], ["p101", "p102"], ["p102", "p103"], ["p103", "p104"], ["p92", "p105"], ["p105", "p106"], ["p106", "p107"], ["p107", "p108"], ["p92", "p109"], ["p109", "p110"], ["p110", "p111"], ["p111", "p112"], ["p113", "p114"], ["p114", "p115"], ["p115", "p116"], ["p116", "p117"], ["p113", "p118"], ["p118", "p119"], ["p119", "p120"], ["p120", "p121"], ["p113", "p122"], ["p122", "p123"], ["p123", "p124"], ["p124", "p125"], ["p113", "p126"], ["p126", "p127"], ["p127", "p128"], ["p128", "p129"], ["p113", "p130"], ["p130", "p131"], ["p131", "p132"], ["p132", "p133"], ["p20", "p18"], ["p20", "p19"], ["p18", "p19"], ["p23", "p21"], ["p23", "p22"], ["p21", "p22"]]}, "fifa_body15": {"schema": "fifa_body_15", "num_keypoints": 15, "note": "pN is 1-based index for FIFA Challenge 2026 Body-15 keypoint set: p1=nose, p2=right_shoulder, p3=left_shoulder, p4=right_elbow, p5=left_elbow, p6=right_wrist, p7=left_wrist, p8=right_hip, p9=left_hip, p10=right_knee, p11=left_knee, p12=right_ankle, p13=left_ankle, p14=right_toe, p15=left_toe.", "keypoints": ["nose", "right_shoulder", "left_shoulder", "right_elbow", "left_elbow", "right_wrist", "left_wrist", "right_hip", "left_hip", "right_knee", "left_knee", "right_ankle", "left_ankle", "right_toe", "left_toe"], "connections": [["p1", "p2"], ["p1", "p3"], ["p2", "p3"], ["p2", "p4"], ["p4", "p6"], ["p3", "p5"], ["p5", "p7"], ["p2", "p8"], ["p3", "p9"], ["p8", "p9"], ["p8", "p10"], ["p10", "p12"], ["p12", "p14"], ["p9", "p11"], ["p11", "p13"], ["p13", "p15"]]}, "halpe26": {"schema": "halpe_26", "num_keypoints": 26, "note": "pN is 1-based index for Halpe 26 (AlphaPose / YOLO-Pose Body+Feet): p1..p17=COCO-17, p18=head, p19=neck, p20=hip, p21..p23=left foot (big_toe, small_toe, heel), p24..p26=right foot (big_toe, small_toe, heel).", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "head", "neck", "hip", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel"], "connections": [["p18", "p1"], ["p1", "p19"], ["p19", "p20"], ["p19", "p6"], ["p19", "p7"], ["p6", "p8"], ["p8", "p10"], ["p7", "p9"], ["p9", "p11"], ["p6", "p12"], ["p7", "p13"], ["p12", "p20"], ["p13", "p20"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p12", "p14"], ["p14", "p16"], ["p16", "p21"], ["p16", "p22"], ["p16", "p23"], ["p21", "p22"], ["p13", "p15"], ["p15", "p17"], ["p17", "p24"], ["p17", "p25"], ["p17", "p26"], ["p24", "p25"]]}, "mediapipe_hand21": {"schema": "mediapipe_hand_21", "num_keypoints": 21, "note": "pN is 1-based index for single hand MediaPipe landmarks: p1=wrist, p2..p5=thumb, p6..p9=index, p10..p13=middle, p14..p17=ring, p18..p21=pinky.", "keypoints": ["wrist", "thumb_cmc", "thumb_mcp", "thumb_ip", "thumb_tip", "index_mcp", "index_pip", "index_dip", "index_tip", "middle_mcp", "middle_pip", "middle_dip", "middle_tip", "ring_mcp", "ring_pip", "ring_dip", "ring_tip", "pinky_mcp", "pinky_pip", "pinky_dip", "pinky_tip"], "connections": [["p1", "p2"], ["p1", "p6"], ["p6", "p10"], ["p10", "p14"], ["p14", "p18"], ["p1", "p18"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p6", "p7"], ["p7", "p8"], ["p8", "p9"], ["p10", "p11"], ["p11", "p12"], ["p12", "p13"], ["p14", "p15"], ["p15", "p16"], ["p16", "p17"], ["p18", "p19"], ["p19", "p20"], ["p20", "p21"]]}, "mediapipe_hands42": {"schema": "mediapipe_hands_42", "num_keypoints": 42, "note": "pN is 1-based index for two-hand MediaPipe landmarks: p1..p21=left hand (wrist..pinky), p22..p42=right hand (wrist..pinky).", "keypoints": ["left_wrist", "left_thumb_cmc", "left_thumb_mcp", "left_thumb_ip", "left_thumb_tip", "left_index_mcp", "left_index_pip", "left_index_dip", "left_index_tip", "left_middle_mcp", "left_middle_pip", "left_middle_dip", "left_middle_tip", "left_ring_mcp", "left_ring_pip", "left_ring_dip", "left_ring_tip", "left_pinky_mcp", "left_pinky_pip", "left_pinky_dip", "left_pinky_tip", "right_wrist", "right_thumb_cmc", "right_thumb_mcp", "right_thumb_ip", "right_thumb_tip", "right_index_mcp", "right_index_pip", "right_index_dip", "right_index_tip", "right_middle_mcp", "right_middle_pip", "right_middle_dip", "right_middle_tip", "right_ring_mcp", "right_ring_pip", "right_ring_dip", "right_ring_tip", "right_pinky_mcp", "right_pinky_pip", "right_pinky_dip", "right_pinky_tip"], "connections": [["p1", "p2"], ["p1", "p6"], ["p6", "p10"], ["p10", "p14"], ["p14", "p18"], ["p1", "p18"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p6", "p7"], ["p7", "p8"], ["p8", "p9"], ["p10", "p11"], ["p11", "p12"], ["p12", "p13"], ["p14", "p15"], ["p15", "p16"], ["p16", "p17"], ["p18", "p19"], ["p19", "p20"], ["p20", "p21"], ["p22", "p23"], ["p22", "p27"], ["p27", "p31"], ["p31", "p35"], ["p35", "p39"], ["p22", "p39"], ["p23", "p24"], ["p24", "p25"], ["p25", "p26"], ["p27", "p28"], ["p28", "p29"], ["p29", "p30"], ["p31", "p32"], ["p32", "p33"], ["p33", "p34"], ["p35", "p36"], ["p36", "p37"], ["p37", "p38"], ["p39", "p40"], ["p40", "p41"], ["p41", "p42"]]}, "mediapipe_holistic75": {"schema": "mediapipe_holistic_75", "num_keypoints": 75, "note": "pN is 1-based index for MediaPipe Holistic Body (33) + Left Hand (21) + Right Hand (21): p1..p33=body pose, p34..p54=left hand, p55..p75=right hand.", "keypoints": ["nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel", "right_heel", "left_foot_index", "right_foot_index", "left_hand_wrist", "left_hand_thumb_cmc", "left_hand_thumb_mcp", "left_hand_thumb_ip", "left_hand_thumb_tip", "left_hand_index_mcp", "left_hand_index_pip", "left_hand_index_dip", "left_hand_index_tip", "left_hand_middle_mcp", "left_hand_middle_pip", "left_hand_middle_dip", "left_hand_middle_tip", "left_hand_ring_mcp", "left_hand_ring_pip", "left_hand_ring_dip", "left_hand_ring_tip", "left_hand_pinky_mcp", "left_hand_pinky_pip", "left_hand_pinky_dip", "left_hand_pinky_tip", "right_hand_wrist", "right_hand_thumb_cmc", "right_hand_thumb_mcp", "right_hand_thumb_ip", "right_hand_thumb_tip", "right_hand_index_mcp", "right_hand_index_pip", "right_hand_index_dip", "right_hand_index_tip", "right_hand_middle_mcp", "right_hand_middle_pip", "right_hand_middle_dip", "right_hand_middle_tip", "right_hand_ring_mcp", "right_hand_ring_pip", "right_hand_ring_dip", "right_hand_ring_tip", "right_hand_pinky_mcp", "right_hand_pinky_pip", "right_hand_pinky_dip", "right_hand_pinky_tip"], "connections": [["p12", "p13"], ["p24", "p25"], ["p12", "p24"], ["p13", "p25"], ["p12", "p25"], ["p13", "p24"], ["p1", "p3"], ["p1", "p6"], ["p3", "p6"], ["p3", "p8"], ["p6", "p9"], ["p10", "p11"], ["p12", "p14"], ["p14", "p16"], ["p16", "p18"], ["p16", "p20"], ["p16", "p22"], ["p13", "p15"], ["p15", "p17"], ["p17", "p19"], ["p17", "p21"], ["p17", "p23"], ["p24", "p26"], ["p26", "p28"], ["p28", "p30"], ["p30", "p32"], ["p28", "p32"], ["p25", "p27"], ["p27", "p29"], ["p29", "p31"], ["p31", "p33"], ["p29", "p33"], ["p34", "p35"], ["p34", "p39"], ["p39", "p43"], ["p43", "p47"], ["p47", "p51"], ["p34", "p51"], ["p35", "p36"], ["p36", "p37"], ["p37", "p38"], ["p39", "p40"], ["p40", "p41"], ["p41", "p42"], ["p43", "p44"], ["p44", "p45"], ["p45", "p46"], ["p47", "p48"], ["p48", "p49"], ["p49", "p50"], ["p51", "p52"], ["p52", "p53"], ["p53", "p54"], ["p16", "p34"], ["p55", "p56"], ["p55", "p60"], ["p60", "p64"], ["p64", "p68"], ["p68", "p72"], ["p55", "p72"], ["p56", "p57"], ["p57", "p58"], ["p58", "p59"], ["p60", "p61"], ["p61", "p62"], ["p62", "p63"], ["p64", "p65"], ["p65", "p66"], ["p66", "p67"], ["p68", "p69"], ["p69", "p70"], ["p70", "p71"], ["p72", "p73"], ["p73", "p74"], ["p74", "p75"], ["p17", "p55"]]}, "mediapipe_pose33": {"schema": "mediapipe_pose_33_pn", "num_keypoints": 33, "note": "pN is 1-based index mapping to MediaPipe: p1=nose(0), p12=left_shoulder(11), p13=right_shoulder(12), p24=left_hip(23), p25=right_hip(24), ..., p33=right_foot_index(32).", "keypoints": ["nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel", "right_heel", "left_foot_index", "right_foot_index"], "connections": [["p12", "p13"], ["p24", "p25"], ["p12", "p24"], ["p13", "p25"], ["p12", "p25"], ["p13", "p24"], ["p1", "p3"], ["p1", "p6"], ["p3", "p6"], ["p3", "p8"], ["p6", "p9"], ["p10", "p11"], ["p12", "p14"], ["p14", "p16"], ["p16", "p18"], ["p16", "p20"], ["p16", "p22"], ["p13", "p15"], ["p15", "p17"], ["p17", "p19"], ["p17", "p21"], ["p17", "p23"], ["p24", "p26"], ["p26", "p28"], ["p28", "p30"], ["p30", "p32"], ["p28", "p32"], ["p25", "p27"], ["p27", "p29"], ["p29", "p31"], ["p31", "p33"], ["p29", "p33"]]}, "openpose_body25": {"schema": "openpose_body_25", "num_keypoints": 25, "note": "pN is 1-based index for standard OpenPose Body-25 format: p1=nose, p2=neck, p3=right_shoulder, p4=right_elbow, p5=right_wrist, p6=left_shoulder, p7=left_elbow, p8=left_wrist, p9=mid_hip, p10=right_hip, p11=right_knee, p12=right_ankle, p13=left_hip, p14=left_knee, p15=left_ankle, p16=right_eye, p17=left_eye, p18=right_ear, p19=left_ear, p20=left_big_toe, p21=left_small_toe, p22=left_heel, p23=right_big_toe, p24=right_small_toe, p25=right_heel.", "keypoints": ["nose", "neck", "right_shoulder", "right_elbow", "right_wrist", "left_shoulder", "left_elbow", "left_wrist", "mid_hip", "right_hip", "right_knee", "right_ankle", "left_hip", "left_knee", "left_ankle", "right_eye", "left_eye", "right_ear", "left_ear", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel"], "connections": [["p1", "p2"], ["p2", "p9"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p2", "p6"], ["p6", "p7"], ["p7", "p8"], ["p9", "p10"], ["p10", "p11"], ["p11", "p12"], ["p12", "p23"], ["p23", "p24"], ["p12", "p25"], ["p9", "p13"], ["p13", "p14"], ["p14", "p15"], ["p15", "p20"], ["p20", "p21"], ["p15", "p22"], ["p1", "p16"], ["p16", "p18"], ["p1", "p17"], ["p17", "p19"]]}, "sam3dinov3_mhr70": {"schema": "sam3dinov3_mhr70", "num_keypoints": 70, "note": "pN is 1-based index into the 70-keypoint MHR order used by sam3dinov3.py/sam3dinov3_visualize.py (p1=nose, p6=left-shoulder, p7=right-shoulder, p10=left-hip, p11=right-hip, ..., p70=neck). Derived programmatically from vaila/sam3dinov3.py.", "keypoints": ["nose", "left-eye", "right-eye", "left-ear", "right-ear", "left-shoulder", "right-shoulder", "left-elbow", "right-elbow", "left-hip", "right-hip", "left-knee", "right-knee", "left-ankle", "right-ankle", "left-big-toe-tip", "left-small-toe-tip", "left-heel", "right-big-toe-tip", "right-small-toe-tip", "right-heel", "right-thumb-tip", "right-thumb-first-joint", "right-thumb-second-joint", "right-thumb-third-joint", "right-index-tip", "right-index-first-joint", "right-index-second-joint", "right-index-third-joint", "right-middle-tip", "right-middle-first-joint", "right-middle-second-joint", "right-middle-third-joint", "right-ring-tip", "right-ring-first-joint", "right-ring-second-joint", "right-ring-third-joint", "right-pinky-tip", "right-pinky-first-joint", "right-pinky-second-joint", "right-pinky-third-joint", "right-wrist", "left-thumb-tip", "left-thumb-first-joint", "left-thumb-second-joint", "left-thumb-third-joint", "left-index-tip", "left-index-first-joint", "left-index-second-joint", "left-index-third-joint", "left-middle-tip", "left-middle-first-joint", "left-middle-second-joint", "left-middle-third-joint", "left-ring-tip", "left-ring-first-joint", "left-ring-second-joint", "left-ring-third-joint", "left-pinky-tip", "left-pinky-first-joint", "left-pinky-second-joint", "left-pinky-third-joint", "left-wrist", "left-olecranon", "right-olecranon", "left-cubital-fossa", "right-cubital-fossa", "left-acromion", "right-acromion", "neck"], "connections": [["p70", "p1"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p70", "p6"], ["p70", "p7"], ["p6", "p8"], ["p8", "p63"], ["p7", "p9"], ["p9", "p42"], ["p6", "p10"], ["p7", "p11"], ["p10", "p11"], ["p10", "p12"], ["p12", "p14"], ["p14", "p18"], ["p14", "p16"], ["p14", "p17"], ["p18", "p16"], ["p18", "p17"], ["p16", "p17"], ["p11", "p13"], ["p13", "p15"], ["p15", "p21"], ["p15", "p19"], ["p15", "p20"], ["p21", "p19"], ["p21", "p20"], ["p19", "p20"]]}, "sapiens2_goliath308": {"schema": "sapiens2_goliath_308", "num_keypoints": 308, "note": "pN is 1-based index into the 308-keypoint Sociopticon/Goliath order used by vaila_sapiens.py/sam3sapiens2.py (p1=nose, p6=left_shoulder, p7=right_shoulder, p10=left_hip, p11=right_hip, ..., p308=last face point). Derived from sapiens/pose/configs/_base_/keypoints308.py.", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel", "right_thumb4", "right_thumb3", "right_thumb2", "right_thumb_third_joint", "right_forefinger4", "right_forefinger3", "right_forefinger2", "right_forefinger_third_joint", "right_middle_finger4", "right_middle_finger3", "right_middle_finger2", "right_middle_finger_third_joint", "right_ring_finger4", "right_ring_finger3", "right_ring_finger2", "right_ring_finger_third_joint", "right_pinky_finger4", "right_pinky_finger3", "right_pinky_finger2", "right_pinky_finger_third_joint", "right_wrist", "left_thumb4", "left_thumb3", "left_thumb2", "left_thumb_third_joint", "left_forefinger4", "left_forefinger3", "left_forefinger2", "left_forefinger_third_joint", "left_middle_finger4", "left_middle_finger3", "left_middle_finger2", "left_middle_finger_third_joint", "left_ring_finger4", "left_ring_finger3", "left_ring_finger2", "left_ring_finger_third_joint", "left_pinky_finger4", "left_pinky_finger3", "left_pinky_finger2", "left_pinky_finger_third_joint", "left_wrist", "left_olecranon", "right_olecranon", "left_cubital_fossa", "right_cubital_fossa", "left_acromion", "right_acromion", "neck", "center_of_glabella", "center_of_nose_root", "tip_of_nose_bridge", "midpoint_1_of_nose_bridge", "midpoint_2_of_nose_bridge", "midpoint_3_of_nose_bridge", "center_of_labiomental_groove", "tip_of_chin", "upper_startpoint_of_r_eyebrow", "lower_startpoint_of_r_eyebrow", "end_of_r_eyebrow", "upper_midpoint_1_of_r_eyebrow", "lower_midpoint_1_of_r_eyebrow", "upper_midpoint_2_of_r_eyebrow", "upper_midpoint_3_of_r_eyebrow", "lower_midpoint_2_of_r_eyebrow", "lower_midpoint_3_of_r_eyebrow", "upper_startpoint_of_l_eyebrow", "lower_startpoint_of_l_eyebrow", "end_of_l_eyebrow", "upper_midpoint_1_of_l_eyebrow", "lower_midpoint_1_of_l_eyebrow", "upper_midpoint_2_of_l_eyebrow", "upper_midpoint_3_of_l_eyebrow", "lower_midpoint_2_of_l_eyebrow", "lower_midpoint_3_of_l_eyebrow", "l_inner_end_of_upper_lash_line", "l_outer_end_of_upper_lash_line", "l_centerpoint_of_upper_lash_line", "l_midpoint_2_of_upper_lash_line", "l_midpoint_1_of_upper_lash_line", "l_midpoint_6_of_upper_lash_line", "l_midpoint_5_of_upper_lash_line", "l_midpoint_4_of_upper_lash_line", "l_midpoint_3_of_upper_lash_line", "l_outer_end_of_upper_eyelid_line", "l_midpoint_6_of_upper_eyelid_line", "l_midpoint_2_of_upper_eyelid_line", "l_midpoint_5_of_upper_eyelid_line", "l_centerpoint_of_upper_eyelid_line", "l_midpoint_4_of_upper_eyelid_line", "l_midpoint_1_of_upper_eyelid_line", "l_midpoint_3_of_upper_eyelid_line", "l_midpoint_6_of_upper_crease_line", "l_midpoint_2_of_upper_crease_line", "l_midpoint_5_of_upper_crease_line", "l_centerpoint_of_upper_crease_line", "l_midpoint_4_of_upper_crease_line", "l_midpoint_1_of_upper_crease_line", "l_midpoint_3_of_upper_crease_line", "r_inner_end_of_upper_lash_line", "r_outer_end_of_upper_lash_line", "r_centerpoint_of_upper_lash_line", "r_midpoint_1_of_upper_lash_line", "r_midpoint_2_of_upper_lash_line", "r_midpoint_3_of_upper_lash_line", "r_midpoint_4_of_upper_lash_line", "r_midpoint_5_of_upper_lash_line", "r_midpoint_6_of_upper_lash_line", "r_outer_end_of_upper_eyelid_line", "r_midpoint_3_of_upper_eyelid_line", "r_midpoint_1_of_upper_eyelid_line", "r_midpoint_4_of_upper_eyelid_line", "r_centerpoint_of_upper_eyelid_line", "r_midpoint_5_of_upper_eyelid_line", "r_midpoint_2_of_upper_eyelid_line", "r_midpoint_6_of_upper_eyelid_line", "r_midpoint_3_of_upper_crease_line", "r_midpoint_1_of_upper_crease_line", "r_midpoint_4_of_upper_crease_line", "r_centerpoint_of_upper_crease_line", "r_midpoint_5_of_upper_crease_line", "r_midpoint_2_of_upper_crease_line", "r_midpoint_6_of_upper_crease_line", "l_inner_end_of_lower_lash_line", "l_outer_end_of_lower_lash_line", "l_centerpoint_of_lower_lash_line", "l_midpoint_2_of_lower_lash_line", "l_midpoint_1_of_lower_lash_line", "l_midpoint_6_of_lower_lash_line", "l_midpoint_5_of_lower_lash_line", "l_midpoint_4_of_lower_lash_line", "l_midpoint_3_of_lower_lash_line", "l_outer_end_of_lower_eyelid_line", "l_midpoint_6_of_lower_eyelid_line", "l_midpoint_2_of_lower_eyelid_line", "l_midpoint_5_of_lower_eyelid_line", "l_centerpoint_of_lower_eyelid_line", "l_midpoint_4_of_lower_eyelid_line", "l_midpoint_1_of_lower_eyelid_line", "l_midpoint_3_of_lower_eyelid_line", "r_inner_end_of_lower_lash_line", "r_outer_end_of_lower_lash_line", "r_centerpoint_of_lower_lash_line", "r_midpoint_1_of_lower_lash_line", "r_midpoint_2_of_lower_lash_line", "r_midpoint_3_of_lower_lash_line", "r_midpoint_4_of_lower_lash_line", "r_midpoint_5_of_lower_lash_line", "r_midpoint_6_of_lower_lash_line", "r_outer_end_of_lower_eyelid_line", "r_midpoint_3_of_lower_eyelid_line", "r_midpoint_1_of_lower_eyelid_line", "r_midpoint_4_of_lower_eyelid_line", "r_centerpoint_of_lower_eyelid_line", "r_midpoint_5_of_lower_eyelid_line", "r_midpoint_2_of_lower_eyelid_line", "r_midpoint_6_of_lower_eyelid_line", "tip_of_nose", "bottom_center_of_nose", "r_outer_corner_of_nose", "l_outer_corner_of_nose", "inner_corner_of_r_nostril", "outer_corner_of_r_nostril", "upper_corner_of_r_nostril", "inner_corner_of_l_nostril", "outer_corner_of_l_nostril", "upper_corner_of_l_nostril", "r_outer_corner_of_mouth", "l_outer_corner_of_mouth", "center_of_cupid_bow", "center_of_lower_outer_lip", "midpoint_1_of_upper_outer_lip", "midpoint_2_of_upper_outer_lip", "midpoint_1_of_lower_outer_lip", "midpoint_2_of_lower_outer_lip", "midpoint_3_of_upper_outer_lip", "midpoint_4_of_upper_outer_lip", "midpoint_5_of_upper_outer_lip", "midpoint_6_of_upper_outer_lip", "midpoint_3_of_lower_outer_lip", "midpoint_4_of_lower_outer_lip", "midpoint_5_of_lower_outer_lip", "midpoint_6_of_lower_outer_lip", "r_inner_corner_of_mouth", "l_inner_corner_of_mouth", "center_of_upper_inner_lip", "center_of_lower_inner_lip", "midpoint_1_of_upper_inner_lip", "midpoint_2_of_upper_inner_lip", "midpoint_1_of_lower_inner_lip", "midpoint_2_of_lower_inner_lip", "midpoint_3_of_upper_inner_lip", "midpoint_4_of_upper_inner_lip", "midpoint_5_of_upper_inner_lip", "midpoint_6_of_upper_inner_lip", "midpoint_3_of_lower_inner_lip", "midpoint_4_of_lower_inner_lip", "midpoint_5_of_lower_inner_lip", "midpoint_6_of_lower_inner_lip", "l_top_end_of_inferior_crus", "l_top_end_of_superior_crus", "l_start_of_antihelix", "l_end_of_antihelix", "l_midpoint_1_of_antihelix", "l_midpoint_1_of_inferior_crus", "l_midpoint_2_of_antihelix", "l_midpoint_3_of_antihelix", "l_point_1_of_inner_helix", "l_point_2_of_inner_helix", "l_point_3_of_inner_helix", "l_point_4_of_inner_helix", "l_point_5_of_inner_helix", "l_point_6_of_inner_helix", "l_point_7_of_inner_helix", "l_highest_point_of_antitragus", "l_bottom_point_of_tragus", "l_protruding_point_of_tragus", "l_top_point_of_tragus", "l_start_point_of_crus_of_helix", "l_deepest_point_of_concha", "l_tip_of_ear_lobe", "l_midpoint_between_22_15", "l_bottom_connecting_point_of_ear_lobe", "l_top_connecting_point_of_helix", "l_point_8_of_inner_helix", "r_top_end_of_inferior_crus", "r_top_end_of_superior_crus", "r_start_of_antihelix", "r_end_of_antihelix", "r_midpoint_1_of_antihelix", "r_midpoint_1_of_inferior_crus", "r_midpoint_2_of_antihelix", "r_midpoint_3_of_antihelix", "r_point_1_of_inner_helix", "r_point_8_of_inner_helix", "r_point_3_of_inner_helix", "r_point_4_of_inner_helix", "r_point_5_of_inner_helix", "r_point_6_of_inner_helix", "r_point_7_of_inner_helix", "r_highest_point_of_antitragus", "r_bottom_point_of_tragus", "r_protruding_point_of_tragus", "r_top_point_of_tragus", "r_start_point_of_crus_of_helix", "r_deepest_point_of_concha", "r_tip_of_ear_lobe", "r_midpoint_between_22_15", "r_bottom_connecting_point_of_ear_lobe", "r_top_connecting_point_of_helix", "r_point_2_of_inner_helix", "l_center_of_iris", "l_border_of_iris_3", "l_border_of_iris_midpoint_1", "l_border_of_iris_12", "l_border_of_iris_midpoint_4", "l_border_of_iris_9", "l_border_of_iris_midpoint_3", "l_border_of_iris_6", "l_border_of_iris_midpoint_2", "r_center_of_iris", "r_border_of_iris_3", "r_border_of_iris_midpoint_1", "r_border_of_iris_12", "r_border_of_iris_midpoint_4", "r_border_of_iris_9", "r_border_of_iris_midpoint_3", "r_border_of_iris_6", "r_border_of_iris_midpoint_2", "l_center_of_pupil", "l_border_of_pupil_3", "l_border_of_pupil_midpoint_1", "l_border_of_pupil_12", "l_border_of_pupil_midpoint_4", "l_border_of_pupil_9", "l_border_of_pupil_midpoint_3", "l_border_of_pupil_6", "l_border_of_pupil_midpoint_2", "r_center_of_pupil", "r_border_of_pupil_3", "r_border_of_pupil_midpoint_1", "r_border_of_pupil_12", "r_border_of_pupil_midpoint_4", "r_border_of_pupil_9", "r_border_of_pupil_midpoint_3", "r_border_of_pupil_6", "r_border_of_pupil_midpoint_2"], "connections": [["p14", "p12"], ["p12", "p10"], ["p15", "p13"], ["p13", "p11"], ["p10", "p11"], ["p6", "p10"], ["p7", "p11"], ["p6", "p7"], ["p6", "p8"], ["p7", "p9"], ["p8", "p63"], ["p9", "p42"], ["p2", "p3"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p4", "p6"], ["p5", "p7"], ["p14", "p16"], ["p14", "p17"], ["p14", "p18"], ["p15", "p19"], ["p15", "p20"], ["p15", "p21"], ["p63", "p46"], ["p46", "p45"], ["p45", "p44"], ["p44", "p43"], ["p63", "p50"], ["p50", "p49"], ["p49", "p48"], ["p48", "p47"], ["p63", "p54"], ["p54", "p53"], ["p53", "p52"], ["p52", "p51"], ["p63", "p58"], ["p58", "p57"], ["p57", "p56"], ["p56", "p55"], ["p63", "p62"], ["p62", "p61"], ["p61", "p60"], ["p60", "p59"], ["p42", "p25"], ["p25", "p24"], ["p24", "p23"], ["p23", "p22"], ["p42", "p29"], ["p29", "p28"], ["p28", "p27"], ["p27", "p26"], ["p42", "p33"], ["p33", "p32"], ["p32", "p31"], ["p31", "p30"], ["p42", "p37"], ["p37", "p36"], ["p36", "p35"], ["p35", "p34"], ["p42", "p41"], ["p41", "p40"], ["p40", "p39"], ["p39", "p38"], ["p18", "p16"], ["p18", "p17"], ["p16", "p17"], ["p21", "p19"], ["p21", "p20"], ["p19", "p20"]]}, "skeleton_pose_fifa": {"schema": "fifa_body_15", "num_keypoints": 15, "note": "pN is 1-based index for FIFA Challenge 2026 Body-15 keypoint set: p1=nose, p2=right_shoulder, p3=left_shoulder, p4=right_elbow, p5=left_elbow, p6=right_wrist, p7=left_wrist, p8=right_hip, p9=left_hip, p10=right_knee, p11=left_knee, p12=right_ankle, p13=left_ankle, p14=right_toe, p15=left_toe.", "keypoints": ["nose", "right_shoulder", "left_shoulder", "right_elbow", "left_elbow", "right_wrist", "left_wrist", "right_hip", "left_hip", "right_knee", "left_knee", "right_ankle", "left_ankle", "right_toe", "left_toe"], "connections": [["p1", "p2"], ["p1", "p3"], ["p2", "p3"], ["p2", "p4"], ["p4", "p6"], ["p3", "p5"], ["p5", "p7"], ["p2", "p8"], ["p3", "p9"], ["p8", "p9"], ["p8", "p10"], ["p10", "p12"], ["p12", "p14"], ["p9", "p11"], ["p11", "p13"], ["p13", "p15"]]}, "skeleton_pose_hand21": {"schema": "mediapipe_hand_21", "num_keypoints": 21, "note": "pN is 1-based index for single hand MediaPipe landmarks: p1=wrist, p2..p5=thumb, p6..p9=index, p10..p13=middle, p14..p17=ring, p18..p21=pinky.", "keypoints": ["wrist", "thumb_cmc", "thumb_mcp", "thumb_ip", "thumb_tip", "index_mcp", "index_pip", "index_dip", "index_tip", "middle_mcp", "middle_pip", "middle_dip", "middle_tip", "ring_mcp", "ring_pip", "ring_dip", "ring_tip", "pinky_mcp", "pinky_pip", "pinky_dip", "pinky_tip"], "connections": [["p1", "p2"], ["p1", "p6"], ["p6", "p10"], ["p10", "p14"], ["p14", "p18"], ["p1", "p18"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p6", "p7"], ["p7", "p8"], ["p8", "p9"], ["p10", "p11"], ["p11", "p12"], ["p12", "p13"], ["p14", "p15"], ["p15", "p16"], ["p16", "p17"], ["p18", "p19"], ["p19", "p20"], ["p20", "p21"]]}, "skeleton_pose_mediapipe": {"schema": "mediapipe_pose_33_pn", "num_keypoints": 33, "note": "pN is 1-based index mapping to MediaPipe: p1=nose(0), p12=left_shoulder(11), p13=right_shoulder(12), p24=left_hip(23), p25=right_hip(24), ..., p33=right_foot_index(32).", "keypoints": ["nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel", "right_heel", "left_foot_index", "right_foot_index"], "connections": [["p12", "p13"], ["p24", "p25"], ["p12", "p24"], ["p13", "p25"], ["p12", "p25"], ["p13", "p24"], ["p1", "p3"], ["p1", "p6"], ["p3", "p6"], ["p3", "p8"], ["p6", "p9"], ["p10", "p11"], ["p12", "p14"], ["p14", "p16"], ["p16", "p18"], ["p16", "p20"], ["p16", "p22"], ["p13", "p15"], ["p15", "p17"], ["p17", "p19"], ["p17", "p21"], ["p17", "p23"], ["p24", "p26"], ["p26", "p28"], ["p28", "p30"], ["p30", "p32"], ["p28", "p32"], ["p25", "p27"], ["p27", "p29"], ["p29", "p31"], ["p31", "p33"], ["p29", "p33"]]}, "skeleton_pose_openpose25": {"schema": "openpose_body_25", "num_keypoints": 25, "note": "pN is 1-based index for standard OpenPose Body-25 format: p1=nose, p2=neck, p3=right_shoulder, p4=right_elbow, p5=right_wrist, p6=left_shoulder, p7=left_elbow, p8=left_wrist, p9=mid_hip, p10=right_hip, p11=right_knee, p12=right_ankle, p13=left_hip, p14=left_knee, p15=left_ankle, p16=right_eye, p17=left_eye, p18=right_ear, p19=left_ear, p20=left_big_toe, p21=left_small_toe, p22=left_heel, p23=right_big_toe, p24=right_small_toe, p25=right_heel.", "keypoints": ["nose", "neck", "right_shoulder", "right_elbow", "right_wrist", "left_shoulder", "left_elbow", "left_wrist", "mid_hip", "right_hip", "right_knee", "right_ankle", "left_hip", "left_knee", "left_ankle", "right_eye", "left_eye", "right_ear", "left_ear", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel"], "connections": [["p1", "p2"], ["p2", "p9"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p2", "p6"], ["p6", "p7"], ["p7", "p8"], ["p9", "p10"], ["p10", "p11"], ["p11", "p12"], ["p12", "p23"], ["p23", "p24"], ["p12", "p25"], ["p9", "p13"], ["p13", "p14"], ["p14", "p15"], ["p15", "p20"], ["p20", "p21"], ["p15", "p22"], ["p1", "p16"], ["p16", "p18"], ["p1", "p17"], ["p17", "p19"]]}, "skeleton_pose_sam3dinov3": {"schema": "sam3dinov3_mhr70", "num_keypoints": 70, "note": "pN is 1-based index into the 70-keypoint MHR order used by sam3dinov3.py/sam3dinov3_visualize.py (p1=nose, p6=left-shoulder, p7=right-shoulder, p10=left-hip, p11=right-hip, ..., p70=neck). Derived programmatically from vaila/sam3dinov3.py.", "keypoints": ["nose", "left-eye", "right-eye", "left-ear", "right-ear", "left-shoulder", "right-shoulder", "left-elbow", "right-elbow", "left-hip", "right-hip", "left-knee", "right-knee", "left-ankle", "right-ankle", "left-big-toe-tip", "left-small-toe-tip", "left-heel", "right-big-toe-tip", "right-small-toe-tip", "right-heel", "right-thumb-tip", "right-thumb-first-joint", "right-thumb-second-joint", "right-thumb-third-joint", "right-index-tip", "right-index-first-joint", "right-index-second-joint", "right-index-third-joint", "right-middle-tip", "right-middle-first-joint", "right-middle-second-joint", "right-middle-third-joint", "right-ring-tip", "right-ring-first-joint", "right-ring-second-joint", "right-ring-third-joint", "right-pinky-tip", "right-pinky-first-joint", "right-pinky-second-joint", "right-pinky-third-joint", "right-wrist", "left-thumb-tip", "left-thumb-first-joint", "left-thumb-second-joint", "left-thumb-third-joint", "left-index-tip", "left-index-first-joint", "left-index-second-joint", "left-index-third-joint", "left-middle-tip", "left-middle-first-joint", "left-middle-second-joint", "left-middle-third-joint", "left-ring-tip", "left-ring-first-joint", "left-ring-second-joint", "left-ring-third-joint", "left-pinky-tip", "left-pinky-first-joint", "left-pinky-second-joint", "left-pinky-third-joint", "left-wrist", "left-olecranon", "right-olecranon", "left-cubital-fossa", "right-cubital-fossa", "left-acromion", "right-acromion", "neck"], "connections": [["p70", "p1"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p70", "p6"], ["p70", "p7"], ["p6", "p8"], ["p8", "p63"], ["p7", "p9"], ["p9", "p42"], ["p6", "p10"], ["p7", "p11"], ["p10", "p11"], ["p10", "p12"], ["p12", "p14"], ["p14", "p18"], ["p14", "p16"], ["p14", "p17"], ["p18", "p16"], ["p18", "p17"], ["p16", "p17"], ["p11", "p13"], ["p13", "p15"], ["p15", "p21"], ["p15", "p19"], ["p15", "p20"], ["p21", "p19"], ["p21", "p20"], ["p19", "p20"]]}, "skeleton_pose_sapiens2": {"schema": "sapiens2_goliath_308", "num_keypoints": 308, "note": "pN is 1-based index into the 308-keypoint Sociopticon/Goliath order used by vaila_sapiens.py/sam3sapiens2.py (p1=nose, p6=left_shoulder, p7=right_shoulder, p10=left_hip, p11=right_hip, ..., p308=last face point). Derived from sapiens/pose/configs/_base_/keypoints308.py.", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel", "right_thumb4", "right_thumb3", "right_thumb2", "right_thumb_third_joint", "right_forefinger4", "right_forefinger3", "right_forefinger2", "right_forefinger_third_joint", "right_middle_finger4", "right_middle_finger3", "right_middle_finger2", "right_middle_finger_third_joint", "right_ring_finger4", "right_ring_finger3", "right_ring_finger2", "right_ring_finger_third_joint", "right_pinky_finger4", "right_pinky_finger3", "right_pinky_finger2", "right_pinky_finger_third_joint", "right_wrist", "left_thumb4", "left_thumb3", "left_thumb2", "left_thumb_third_joint", "left_forefinger4", "left_forefinger3", "left_forefinger2", "left_forefinger_third_joint", "left_middle_finger4", "left_middle_finger3", "left_middle_finger2", "left_middle_finger_third_joint", "left_ring_finger4", "left_ring_finger3", "left_ring_finger2", "left_ring_finger_third_joint", "left_pinky_finger4", "left_pinky_finger3", "left_pinky_finger2", "left_pinky_finger_third_joint", "left_wrist", "left_olecranon", "right_olecranon", "left_cubital_fossa", "right_cubital_fossa", "left_acromion", "right_acromion", "neck", "center_of_glabella", "center_of_nose_root", "tip_of_nose_bridge", "midpoint_1_of_nose_bridge", "midpoint_2_of_nose_bridge", "midpoint_3_of_nose_bridge", "center_of_labiomental_groove", "tip_of_chin", "upper_startpoint_of_r_eyebrow", "lower_startpoint_of_r_eyebrow", "end_of_r_eyebrow", "upper_midpoint_1_of_r_eyebrow", "lower_midpoint_1_of_r_eyebrow", "upper_midpoint_2_of_r_eyebrow", "upper_midpoint_3_of_r_eyebrow", "lower_midpoint_2_of_r_eyebrow", "lower_midpoint_3_of_r_eyebrow", "upper_startpoint_of_l_eyebrow", "lower_startpoint_of_l_eyebrow", "end_of_l_eyebrow", "upper_midpoint_1_of_l_eyebrow", "lower_midpoint_1_of_l_eyebrow", "upper_midpoint_2_of_l_eyebrow", "upper_midpoint_3_of_l_eyebrow", "lower_midpoint_2_of_l_eyebrow", "lower_midpoint_3_of_l_eyebrow", "l_inner_end_of_upper_lash_line", "l_outer_end_of_upper_lash_line", "l_centerpoint_of_upper_lash_line", "l_midpoint_2_of_upper_lash_line", "l_midpoint_1_of_upper_lash_line", "l_midpoint_6_of_upper_lash_line", "l_midpoint_5_of_upper_lash_line", "l_midpoint_4_of_upper_lash_line", "l_midpoint_3_of_upper_lash_line", "l_outer_end_of_upper_eyelid_line", "l_midpoint_6_of_upper_eyelid_line", "l_midpoint_2_of_upper_eyelid_line", "l_midpoint_5_of_upper_eyelid_line", "l_centerpoint_of_upper_eyelid_line", "l_midpoint_4_of_upper_eyelid_line", "l_midpoint_1_of_upper_eyelid_line", "l_midpoint_3_of_upper_eyelid_line", "l_midpoint_6_of_upper_crease_line", "l_midpoint_2_of_upper_crease_line", "l_midpoint_5_of_upper_crease_line", "l_centerpoint_of_upper_crease_line", "l_midpoint_4_of_upper_crease_line", "l_midpoint_1_of_upper_crease_line", "l_midpoint_3_of_upper_crease_line", "r_inner_end_of_upper_lash_line", "r_outer_end_of_upper_lash_line", "r_centerpoint_of_upper_lash_line", "r_midpoint_1_of_upper_lash_line", "r_midpoint_2_of_upper_lash_line", "r_midpoint_3_of_upper_lash_line", "r_midpoint_4_of_upper_lash_line", "r_midpoint_5_of_upper_lash_line", "r_midpoint_6_of_upper_lash_line", "r_outer_end_of_upper_eyelid_line", "r_midpoint_3_of_upper_eyelid_line", "r_midpoint_1_of_upper_eyelid_line", "r_midpoint_4_of_upper_eyelid_line", "r_centerpoint_of_upper_eyelid_line", "r_midpoint_5_of_upper_eyelid_line", "r_midpoint_2_of_upper_eyelid_line", "r_midpoint_6_of_upper_eyelid_line", "r_midpoint_3_of_upper_crease_line", "r_midpoint_1_of_upper_crease_line", "r_midpoint_4_of_upper_crease_line", "r_centerpoint_of_upper_crease_line", "r_midpoint_5_of_upper_crease_line", "r_midpoint_2_of_upper_crease_line", "r_midpoint_6_of_upper_crease_line", "l_inner_end_of_lower_lash_line", "l_outer_end_of_lower_lash_line", "l_centerpoint_of_lower_lash_line", "l_midpoint_2_of_lower_lash_line", "l_midpoint_1_of_lower_lash_line", "l_midpoint_6_of_lower_lash_line", "l_midpoint_5_of_lower_lash_line", "l_midpoint_4_of_lower_lash_line", "l_midpoint_3_of_lower_lash_line", "l_outer_end_of_lower_eyelid_line", "l_midpoint_6_of_lower_eyelid_line", "l_midpoint_2_of_lower_eyelid_line", "l_midpoint_5_of_lower_eyelid_line", "l_centerpoint_of_lower_eyelid_line", "l_midpoint_4_of_lower_eyelid_line", "l_midpoint_1_of_lower_eyelid_line", "l_midpoint_3_of_lower_eyelid_line", "r_inner_end_of_lower_lash_line", "r_outer_end_of_lower_lash_line", "r_centerpoint_of_lower_lash_line", "r_midpoint_1_of_lower_lash_line", "r_midpoint_2_of_lower_lash_line", "r_midpoint_3_of_lower_lash_line", "r_midpoint_4_of_lower_lash_line", "r_midpoint_5_of_lower_lash_line", "r_midpoint_6_of_lower_lash_line", "r_outer_end_of_lower_eyelid_line", "r_midpoint_3_of_lower_eyelid_line", "r_midpoint_1_of_lower_eyelid_line", "r_midpoint_4_of_lower_eyelid_line", "r_centerpoint_of_lower_eyelid_line", "r_midpoint_5_of_lower_eyelid_line", "r_midpoint_2_of_lower_eyelid_line", "r_midpoint_6_of_lower_eyelid_line", "tip_of_nose", "bottom_center_of_nose", "r_outer_corner_of_nose", "l_outer_corner_of_nose", "inner_corner_of_r_nostril", "outer_corner_of_r_nostril", "upper_corner_of_r_nostril", "inner_corner_of_l_nostril", "outer_corner_of_l_nostril", "upper_corner_of_l_nostril", "r_outer_corner_of_mouth", "l_outer_corner_of_mouth", "center_of_cupid_bow", "center_of_lower_outer_lip", "midpoint_1_of_upper_outer_lip", "midpoint_2_of_upper_outer_lip", "midpoint_1_of_lower_outer_lip", "midpoint_2_of_lower_outer_lip", "midpoint_3_of_upper_outer_lip", "midpoint_4_of_upper_outer_lip", "midpoint_5_of_upper_outer_lip", "midpoint_6_of_upper_outer_lip", "midpoint_3_of_lower_outer_lip", "midpoint_4_of_lower_outer_lip", "midpoint_5_of_lower_outer_lip", "midpoint_6_of_lower_outer_lip", "r_inner_corner_of_mouth", "l_inner_corner_of_mouth", "center_of_upper_inner_lip", "center_of_lower_inner_lip", "midpoint_1_of_upper_inner_lip", "midpoint_2_of_upper_inner_lip", "midpoint_1_of_lower_inner_lip", "midpoint_2_of_lower_inner_lip", "midpoint_3_of_upper_inner_lip", "midpoint_4_of_upper_inner_lip", "midpoint_5_of_upper_inner_lip", "midpoint_6_of_upper_inner_lip", "midpoint_3_of_lower_inner_lip", "midpoint_4_of_lower_inner_lip", "midpoint_5_of_lower_inner_lip", "midpoint_6_of_lower_inner_lip", "l_top_end_of_inferior_crus", "l_top_end_of_superior_crus", "l_start_of_antihelix", "l_end_of_antihelix", "l_midpoint_1_of_antihelix", "l_midpoint_1_of_inferior_crus", "l_midpoint_2_of_antihelix", "l_midpoint_3_of_antihelix", "l_point_1_of_inner_helix", "l_point_2_of_inner_helix", "l_point_3_of_inner_helix", "l_point_4_of_inner_helix", "l_point_5_of_inner_helix", "l_point_6_of_inner_helix", "l_point_7_of_inner_helix", "l_highest_point_of_antitragus", "l_bottom_point_of_tragus", "l_protruding_point_of_tragus", "l_top_point_of_tragus", "l_start_point_of_crus_of_helix", "l_deepest_point_of_concha", "l_tip_of_ear_lobe", "l_midpoint_between_22_15", "l_bottom_connecting_point_of_ear_lobe", "l_top_connecting_point_of_helix", "l_point_8_of_inner_helix", "r_top_end_of_inferior_crus", "r_top_end_of_superior_crus", "r_start_of_antihelix", "r_end_of_antihelix", "r_midpoint_1_of_antihelix", "r_midpoint_1_of_inferior_crus", "r_midpoint_2_of_antihelix", "r_midpoint_3_of_antihelix", "r_point_1_of_inner_helix", "r_point_8_of_inner_helix", "r_point_3_of_inner_helix", "r_point_4_of_inner_helix", "r_point_5_of_inner_helix", "r_point_6_of_inner_helix", "r_point_7_of_inner_helix", "r_highest_point_of_antitragus", "r_bottom_point_of_tragus", "r_protruding_point_of_tragus", "r_top_point_of_tragus", "r_start_point_of_crus_of_helix", "r_deepest_point_of_concha", "r_tip_of_ear_lobe", "r_midpoint_between_22_15", "r_bottom_connecting_point_of_ear_lobe", "r_top_connecting_point_of_helix", "r_point_2_of_inner_helix", "l_center_of_iris", "l_border_of_iris_3", "l_border_of_iris_midpoint_1", "l_border_of_iris_12", "l_border_of_iris_midpoint_4", "l_border_of_iris_9", "l_border_of_iris_midpoint_3", "l_border_of_iris_6", "l_border_of_iris_midpoint_2", "r_center_of_iris", "r_border_of_iris_3", "r_border_of_iris_midpoint_1", "r_border_of_iris_12", "r_border_of_iris_midpoint_4", "r_border_of_iris_9", "r_border_of_iris_midpoint_3", "r_border_of_iris_6", "r_border_of_iris_midpoint_2", "l_center_of_pupil", "l_border_of_pupil_3", "l_border_of_pupil_midpoint_1", "l_border_of_pupil_12", "l_border_of_pupil_midpoint_4", "l_border_of_pupil_9", "l_border_of_pupil_midpoint_3", "l_border_of_pupil_6", "l_border_of_pupil_midpoint_2", "r_center_of_pupil", "r_border_of_pupil_3", "r_border_of_pupil_midpoint_1", "r_border_of_pupil_12", "r_border_of_pupil_midpoint_4", "r_border_of_pupil_9", "r_border_of_pupil_midpoint_3", "r_border_of_pupil_6", "r_border_of_pupil_midpoint_2"], "connections": [["p14", "p12"], ["p12", "p10"], ["p15", "p13"], ["p13", "p11"], ["p10", "p11"], ["p6", "p10"], ["p7", "p11"], ["p6", "p7"], ["p6", "p8"], ["p7", "p9"], ["p8", "p63"], ["p9", "p42"], ["p2", "p3"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p4", "p6"], ["p5", "p7"], ["p14", "p16"], ["p14", "p17"], ["p14", "p18"], ["p15", "p19"], ["p15", "p20"], ["p15", "p21"], ["p63", "p46"], ["p46", "p45"], ["p45", "p44"], ["p44", "p43"], ["p63", "p50"], ["p50", "p49"], ["p49", "p48"], ["p48", "p47"], ["p63", "p54"], ["p54", "p53"], ["p53", "p52"], ["p52", "p51"], ["p63", "p58"], ["p58", "p57"], ["p57", "p56"], ["p56", "p55"], ["p63", "p62"], ["p62", "p61"], ["p61", "p60"], ["p60", "p59"], ["p42", "p25"], ["p25", "p24"], ["p24", "p23"], ["p23", "p22"], ["p42", "p29"], ["p29", "p28"], ["p28", "p27"], ["p27", "p26"], ["p42", "p33"], ["p33", "p32"], ["p32", "p31"], ["p31", "p30"], ["p42", "p37"], ["p37", "p36"], ["p36", "p35"], ["p35", "p34"], ["p42", "p41"], ["p41", "p40"], ["p40", "p39"], ["p39", "p38"], ["p18", "p16"], ["p18", "p17"], ["p16", "p17"], ["p21", "p19"], ["p21", "p20"], ["p19", "p20"]]}, "skeleton_pose_yolo": {"schema": "coco_17_keypoints", "num_keypoints": 17, "note": "pN is 1-based index into standard COCO-17 order (p1=nose, p2=left_eye, p3=right_eye, p4=left_ear, p5=right_ear, p6=left_shoulder, p7=right_shoulder, p8=left_elbow, p9=right_elbow, p10=left_wrist, p11=right_wrist, p12=left_hip, p13=right_hip, p14=left_knee, p15=right_knee, p16=left_ankle, p17=right_ankle).", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle"], "connections": [["p6", "p7"], ["p12", "p13"], ["p6", "p8"], ["p8", "p10"], ["p7", "p9"], ["p9", "p11"], ["p12", "p14"], ["p14", "p16"], ["p13", "p15"], ["p15", "p17"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p6", "p12"], ["p7", "p13"]]}, "soccerfield_calib29": {"schema": "soccerfield_calib_29", "num_keypoints": 29, "note": "pN is 1-based index into FIFA 29-point soccer-field calibration reference (models/soccerfield_ref3d_fifa.csv).", "keypoints": ["bottom_left_corner", "top_left_corner", "bottom_right_corner", "top_right_corner", "midfield_left", "midfield_right", "center_field", "center_circle_top_intersection", "center_circle_bottom_intersection", "left_goal_bottom_post", "left_goal_top_post", "right_goal_bottom_post", "right_goal_top_post", "left_penalty_area_top_left", "left_penalty_area_top_right", "left_penalty_area_bottom_left", "left_penalty_area_bottom_right", "left_goal_area_top_left", "left_goal_area_top_right", "left_goal_area_bottom_left", "left_goal_area_bottom_right", "left_penalty_spot", "left_penalty_arc_top", "left_penalty_arc_left_intersection", "left_penalty_arc_right_intersection", "right_penalty_area_top_left", "right_penalty_area_top_right", "right_penalty_area_bottom_left", "right_penalty_area_bottom_right"], "connections": [["p1", "p2"], ["p2", "p6"], ["p6", "p4"], ["p4", "p3"], ["p3", "p5"], ["p5", "p1"], ["p5", "p9"], ["p9", "p7"], ["p7", "p8"], ["p8", "p6"], ["p16", "p14"], ["p14", "p15"], ["p15", "p17"], ["p20", "p18"], ["p18", "p19"], ["p19", "p21"], ["p10", "p11"], ["p24", "p23"], ["p23", "p25"], ["p28", "p26"], ["p26", "p27"], ["p27", "p29"], ["p12", "p13"]]}, "soccerfield_pitch32": {"schema": "soccerfield_pitch_32", "num_keypoints": 32, "note": "pN is 1-based index into FIFA dataset builder 32-point canonical pitch layout: p1..p6=left touchline/goal line, p14..p17=midfield, p25..p30=right touchline/goal line, p7..p13=left boxes, p18..p24=right boxes, p31..p32=center circle.", "keypoints": ["top_left_corner", "left_pen_box_top_outer", "left_goal_area_top_outer", "left_goal_area_bottom_outer", "left_pen_box_bottom_outer", "bottom_left_corner", "left_goal_area_top_inner", "left_goal_area_bottom_inner", "left_penalty_spot", "left_pen_box_top_inner", "left_pen_box_inner_top_at_goal_y", "left_pen_box_inner_bottom_at_goal_y", "left_pen_box_bottom_inner", "midfield_top", "center_circle_top", "center_circle_bottom", "midfield_bottom", "right_pen_box_top_inner", "right_pen_box_inner_top_at_goal_y", "right_pen_box_inner_bottom_at_goal_y", "right_pen_box_bottom_inner", "right_penalty_spot", "right_goal_area_top_inner", "right_goal_area_bottom_inner", "top_right_corner", "right_pen_box_top_outer", "right_goal_area_top_outer", "right_goal_area_bottom_outer", "right_pen_box_bottom_outer", "bottom_right_corner", "center_circle_left", "center_circle_right"], "connections": [["p1", "p14"], ["p14", "p25"], ["p6", "p17"], ["p17", "p30"], ["p1", "p2"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p5", "p6"], ["p25", "p26"], ["p26", "p27"], ["p27", "p28"], ["p28", "p29"], ["p29", "p30"], ["p14", "p15"], ["p15", "p16"], ["p16", "p17"], ["p2", "p10"], ["p10", "p11"], ["p11", "p12"], ["p12", "p13"], ["p13", "p5"], ["p3", "p7"], ["p7", "p8"], ["p8", "p4"], ["p26", "p18"], ["p18", "p19"], ["p19", "p20"], ["p20", "p21"], ["p21", "p29"], ["p27", "p23"], ["p23", "p24"], ["p24", "p28"], ["p15", "p31"], ["p31", "p16"], ["p16", "p32"], ["p32", "p15"]]}, "yolo_coco17": {"schema": "coco_17_keypoints", "num_keypoints": 17, "note": "pN is 1-based index into standard COCO-17 order (p1=nose, p2=left_eye, p3=right_eye, p4=left_ear, p5=right_ear, p6=left_shoulder, p7=right_shoulder, p8=left_elbow, p9=right_elbow, p10=left_wrist, p11=right_wrist, p12=left_hip, p13=right_hip, p14=left_knee, p15=right_knee, p16=left_ankle, p17=right_ankle).", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle"], "connections": [["p6", "p7"], ["p12", "p13"], ["p6", "p8"], ["p8", "p10"], ["p7", "p9"], ["p9", "p11"], ["p12", "p14"], ["p14", "p16"], ["p13", "p15"], ["p15", "p17"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p6", "p12"], ["p7", "p13"]]}}</script>
+<script type="application/json" id="trial-data">{"server": false, "trial": null, "project": null}</script>
+<script type="application/json" id="skeleton-templates-data">{"coco_wholebody133": {"schema": "coco_wholebody_133", "num_keypoints": 133, "note": "pN is 1-based index for COCO WholeBody / Sapiens-133: p1..p17=body, p18..p23=feet, p24..p91=face (68), p92..p112=left hand (21), p113..p133=right hand (21).", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel", "face-0", "face-1", "face-2", "face-3", "face-4", "face-5", "face-6", "face-7", "face-8", "face-9", "face-10", "face-11", "face-12", "face-13", "face-14", "face-15", "face-16", "face-17", "face-18", "face-19", "face-20", "face-21", "face-22", "face-23", "face-24", "face-25", "face-26", "face-27", "face-28", "face-29", "face-30", "face-31", "face-32", "face-33", "face-34", "face-35", "face-36", "face-37", "face-38", "face-39", "face-40", "face-41", "face-42", "face-43", "face-44", "face-45", "face-46", "face-47", "face-48", "face-49", "face-50", "face-51", "face-52", "face-53", "face-54", "face-55", "face-56", "face-57", "face-58", "face-59", "face-60", "face-61", "face-62", "face-63", "face-64", "face-65", "face-66", "face-67", "left_hand_root", "left_thumb1", "left_thumb2", "left_thumb3", "left_thumb4", "left_forefinger1", "left_forefinger2", "left_forefinger3", "left_forefinger4", "left_middle_finger1", "left_middle_finger2", "left_middle_finger3", "left_middle_finger4", "left_ring_finger1", "left_ring_finger2", "left_ring_finger3", "left_ring_finger4", "left_pinky_finger1", "left_pinky_finger2", "left_pinky_finger3", "left_pinky_finger4", "right_hand_root", "right_thumb1", "right_thumb2", "right_thumb3", "right_thumb4", "right_forefinger1", "right_forefinger2", "right_forefinger3", "right_forefinger4", "right_middle_finger1", "right_middle_finger2", "right_middle_finger3", "right_middle_finger4", "right_ring_finger1", "right_ring_finger2", "right_ring_finger3", "right_ring_finger4", "right_pinky_finger1", "right_pinky_finger2", "right_pinky_finger3", "right_pinky_finger4"], "connections": [["p16", "p14"], ["p14", "p12"], ["p17", "p15"], ["p15", "p13"], ["p12", "p13"], ["p6", "p12"], ["p7", "p13"], ["p6", "p7"], ["p6", "p8"], ["p7", "p9"], ["p8", "p10"], ["p9", "p11"], ["p2", "p3"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p4", "p6"], ["p5", "p7"], ["p16", "p18"], ["p16", "p19"], ["p16", "p20"], ["p17", "p21"], ["p17", "p22"], ["p17", "p23"], ["p92", "p93"], ["p93", "p94"], ["p94", "p95"], ["p95", "p96"], ["p92", "p97"], ["p97", "p98"], ["p98", "p99"], ["p99", "p100"], ["p92", "p101"], ["p101", "p102"], ["p102", "p103"], ["p103", "p104"], ["p92", "p105"], ["p105", "p106"], ["p106", "p107"], ["p107", "p108"], ["p92", "p109"], ["p109", "p110"], ["p110", "p111"], ["p111", "p112"], ["p113", "p114"], ["p114", "p115"], ["p115", "p116"], ["p116", "p117"], ["p113", "p118"], ["p118", "p119"], ["p119", "p120"], ["p120", "p121"], ["p113", "p122"], ["p122", "p123"], ["p123", "p124"], ["p124", "p125"], ["p113", "p126"], ["p126", "p127"], ["p127", "p128"], ["p128", "p129"], ["p113", "p130"], ["p130", "p131"], ["p131", "p132"], ["p132", "p133"], ["p20", "p18"], ["p20", "p19"], ["p18", "p19"], ["p23", "p21"], ["p23", "p22"], ["p21", "p22"]]}, "fifa_body15": {"schema": "fifa_body_15", "num_keypoints": 15, "note": "pN is 1-based index for FIFA Challenge 2026 Body-15 keypoint set: p1=nose, p2=right_shoulder, p3=left_shoulder, p4=right_elbow, p5=left_elbow, p6=right_wrist, p7=left_wrist, p8=right_hip, p9=left_hip, p10=right_knee, p11=left_knee, p12=right_ankle, p13=left_ankle, p14=right_toe, p15=left_toe.", "keypoints": ["nose", "right_shoulder", "left_shoulder", "right_elbow", "left_elbow", "right_wrist", "left_wrist", "right_hip", "left_hip", "right_knee", "left_knee", "right_ankle", "left_ankle", "right_toe", "left_toe"], "connections": [["p1", "p2"], ["p1", "p3"], ["p2", "p3"], ["p2", "p4"], ["p4", "p6"], ["p3", "p5"], ["p5", "p7"], ["p2", "p8"], ["p3", "p9"], ["p8", "p9"], ["p8", "p10"], ["p10", "p12"], ["p12", "p14"], ["p9", "p11"], ["p11", "p13"], ["p13", "p15"]]}, "halpe26": {"schema": "halpe_26", "num_keypoints": 26, "note": "pN is 1-based index for Halpe 26 (AlphaPose / YOLO-Pose Body+Feet): p1..p17=COCO-17, p18=head, p19=neck, p20=hip, p21..p23=left foot (big_toe, small_toe, heel), p24..p26=right foot (big_toe, small_toe, heel).", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "head", "neck", "hip", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel"], "connections": [["p18", "p1"], ["p1", "p19"], ["p19", "p20"], ["p19", "p6"], ["p19", "p7"], ["p6", "p8"], ["p8", "p10"], ["p7", "p9"], ["p9", "p11"], ["p6", "p12"], ["p7", "p13"], ["p12", "p20"], ["p13", "p20"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p12", "p14"], ["p14", "p16"], ["p16", "p21"], ["p16", "p22"], ["p16", "p23"], ["p21", "p22"], ["p13", "p15"], ["p15", "p17"], ["p17", "p24"], ["p17", "p25"], ["p17", "p26"], ["p24", "p25"]]}, "mediapipe_hand21": {"schema": "mediapipe_hand_21", "num_keypoints": 21, "note": "pN is 1-based index for single hand MediaPipe landmarks: p1=wrist, p2..p5=thumb, p6..p9=index, p10..p13=middle, p14..p17=ring, p18..p21=pinky.", "keypoints": ["wrist", "thumb_cmc", "thumb_mcp", "thumb_ip", "thumb_tip", "index_mcp", "index_pip", "index_dip", "index_tip", "middle_mcp", "middle_pip", "middle_dip", "middle_tip", "ring_mcp", "ring_pip", "ring_dip", "ring_tip", "pinky_mcp", "pinky_pip", "pinky_dip", "pinky_tip"], "connections": [["p1", "p2"], ["p1", "p6"], ["p6", "p10"], ["p10", "p14"], ["p14", "p18"], ["p1", "p18"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p6", "p7"], ["p7", "p8"], ["p8", "p9"], ["p10", "p11"], ["p11", "p12"], ["p12", "p13"], ["p14", "p15"], ["p15", "p16"], ["p16", "p17"], ["p18", "p19"], ["p19", "p20"], ["p20", "p21"]]}, "mediapipe_hands42": {"schema": "mediapipe_hands_42", "num_keypoints": 42, "note": "pN is 1-based index for two-hand MediaPipe landmarks: p1..p21=left hand (wrist..pinky), p22..p42=right hand (wrist..pinky).", "keypoints": ["left_wrist", "left_thumb_cmc", "left_thumb_mcp", "left_thumb_ip", "left_thumb_tip", "left_index_mcp", "left_index_pip", "left_index_dip", "left_index_tip", "left_middle_mcp", "left_middle_pip", "left_middle_dip", "left_middle_tip", "left_ring_mcp", "left_ring_pip", "left_ring_dip", "left_ring_tip", "left_pinky_mcp", "left_pinky_pip", "left_pinky_dip", "left_pinky_tip", "right_wrist", "right_thumb_cmc", "right_thumb_mcp", "right_thumb_ip", "right_thumb_tip", "right_index_mcp", "right_index_pip", "right_index_dip", "right_index_tip", "right_middle_mcp", "right_middle_pip", "right_middle_dip", "right_middle_tip", "right_ring_mcp", "right_ring_pip", "right_ring_dip", "right_ring_tip", "right_pinky_mcp", "right_pinky_pip", "right_pinky_dip", "right_pinky_tip"], "connections": [["p1", "p2"], ["p1", "p6"], ["p6", "p10"], ["p10", "p14"], ["p14", "p18"], ["p1", "p18"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p6", "p7"], ["p7", "p8"], ["p8", "p9"], ["p10", "p11"], ["p11", "p12"], ["p12", "p13"], ["p14", "p15"], ["p15", "p16"], ["p16", "p17"], ["p18", "p19"], ["p19", "p20"], ["p20", "p21"], ["p22", "p23"], ["p22", "p27"], ["p27", "p31"], ["p31", "p35"], ["p35", "p39"], ["p22", "p39"], ["p23", "p24"], ["p24", "p25"], ["p25", "p26"], ["p27", "p28"], ["p28", "p29"], ["p29", "p30"], ["p31", "p32"], ["p32", "p33"], ["p33", "p34"], ["p35", "p36"], ["p36", "p37"], ["p37", "p38"], ["p39", "p40"], ["p40", "p41"], ["p41", "p42"]]}, "mediapipe_holistic75": {"schema": "mediapipe_holistic_75", "num_keypoints": 75, "note": "pN is 1-based index for MediaPipe Holistic Body (33) + Left Hand (21) + Right Hand (21): p1..p33=body pose, p34..p54=left hand, p55..p75=right hand.", "keypoints": ["nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel", "right_heel", "left_foot_index", "right_foot_index", "left_hand_wrist", "left_hand_thumb_cmc", "left_hand_thumb_mcp", "left_hand_thumb_ip", "left_hand_thumb_tip", "left_hand_index_mcp", "left_hand_index_pip", "left_hand_index_dip", "left_hand_index_tip", "left_hand_middle_mcp", "left_hand_middle_pip", "left_hand_middle_dip", "left_hand_middle_tip", "left_hand_ring_mcp", "left_hand_ring_pip", "left_hand_ring_dip", "left_hand_ring_tip", "left_hand_pinky_mcp", "left_hand_pinky_pip", "left_hand_pinky_dip", "left_hand_pinky_tip", "right_hand_wrist", "right_hand_thumb_cmc", "right_hand_thumb_mcp", "right_hand_thumb_ip", "right_hand_thumb_tip", "right_hand_index_mcp", "right_hand_index_pip", "right_hand_index_dip", "right_hand_index_tip", "right_hand_middle_mcp", "right_hand_middle_pip", "right_hand_middle_dip", "right_hand_middle_tip", "right_hand_ring_mcp", "right_hand_ring_pip", "right_hand_ring_dip", "right_hand_ring_tip", "right_hand_pinky_mcp", "right_hand_pinky_pip", "right_hand_pinky_dip", "right_hand_pinky_tip"], "connections": [["p12", "p13"], ["p24", "p25"], ["p12", "p24"], ["p13", "p25"], ["p12", "p25"], ["p13", "p24"], ["p1", "p3"], ["p1", "p6"], ["p3", "p6"], ["p3", "p8"], ["p6", "p9"], ["p10", "p11"], ["p12", "p14"], ["p14", "p16"], ["p16", "p18"], ["p16", "p20"], ["p16", "p22"], ["p13", "p15"], ["p15", "p17"], ["p17", "p19"], ["p17", "p21"], ["p17", "p23"], ["p24", "p26"], ["p26", "p28"], ["p28", "p30"], ["p30", "p32"], ["p28", "p32"], ["p25", "p27"], ["p27", "p29"], ["p29", "p31"], ["p31", "p33"], ["p29", "p33"], ["p34", "p35"], ["p34", "p39"], ["p39", "p43"], ["p43", "p47"], ["p47", "p51"], ["p34", "p51"], ["p35", "p36"], ["p36", "p37"], ["p37", "p38"], ["p39", "p40"], ["p40", "p41"], ["p41", "p42"], ["p43", "p44"], ["p44", "p45"], ["p45", "p46"], ["p47", "p48"], ["p48", "p49"], ["p49", "p50"], ["p51", "p52"], ["p52", "p53"], ["p53", "p54"], ["p16", "p34"], ["p55", "p56"], ["p55", "p60"], ["p60", "p64"], ["p64", "p68"], ["p68", "p72"], ["p55", "p72"], ["p56", "p57"], ["p57", "p58"], ["p58", "p59"], ["p60", "p61"], ["p61", "p62"], ["p62", "p63"], ["p64", "p65"], ["p65", "p66"], ["p66", "p67"], ["p68", "p69"], ["p69", "p70"], ["p70", "p71"], ["p72", "p73"], ["p73", "p74"], ["p74", "p75"], ["p17", "p55"]]}, "mediapipe_pose33": {"schema": "mediapipe_pose_33_pn", "num_keypoints": 33, "note": "pN is 1-based index mapping to MediaPipe: p1=nose(0), p12=left_shoulder(11), p13=right_shoulder(12), p24=left_hip(23), p25=right_hip(24), ..., p33=right_foot_index(32).", "keypoints": ["nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel", "right_heel", "left_foot_index", "right_foot_index"], "connections": [["p12", "p13"], ["p24", "p25"], ["p12", "p24"], ["p13", "p25"], ["p12", "p25"], ["p13", "p24"], ["p1", "p3"], ["p1", "p6"], ["p3", "p6"], ["p3", "p8"], ["p6", "p9"], ["p10", "p11"], ["p12", "p14"], ["p14", "p16"], ["p16", "p18"], ["p16", "p20"], ["p16", "p22"], ["p13", "p15"], ["p15", "p17"], ["p17", "p19"], ["p17", "p21"], ["p17", "p23"], ["p24", "p26"], ["p26", "p28"], ["p28", "p30"], ["p30", "p32"], ["p28", "p32"], ["p25", "p27"], ["p27", "p29"], ["p29", "p31"], ["p31", "p33"], ["p29", "p33"]]}, "openpose_body25": {"schema": "openpose_body_25", "num_keypoints": 25, "note": "pN is 1-based index for standard OpenPose Body-25 format: p1=nose, p2=neck, p3=right_shoulder, p4=right_elbow, p5=right_wrist, p6=left_shoulder, p7=left_elbow, p8=left_wrist, p9=mid_hip, p10=right_hip, p11=right_knee, p12=right_ankle, p13=left_hip, p14=left_knee, p15=left_ankle, p16=right_eye, p17=left_eye, p18=right_ear, p19=left_ear, p20=left_big_toe, p21=left_small_toe, p22=left_heel, p23=right_big_toe, p24=right_small_toe, p25=right_heel.", "keypoints": ["nose", "neck", "right_shoulder", "right_elbow", "right_wrist", "left_shoulder", "left_elbow", "left_wrist", "mid_hip", "right_hip", "right_knee", "right_ankle", "left_hip", "left_knee", "left_ankle", "right_eye", "left_eye", "right_ear", "left_ear", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel"], "connections": [["p1", "p2"], ["p2", "p9"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p2", "p6"], ["p6", "p7"], ["p7", "p8"], ["p9", "p10"], ["p10", "p11"], ["p11", "p12"], ["p12", "p23"], ["p23", "p24"], ["p12", "p25"], ["p9", "p13"], ["p13", "p14"], ["p14", "p15"], ["p15", "p20"], ["p20", "p21"], ["p15", "p22"], ["p1", "p16"], ["p16", "p18"], ["p1", "p17"], ["p17", "p19"]]}, "sam3dinov3_mhr70": {"schema": "sam3dinov3_mhr70", "num_keypoints": 70, "note": "pN is 1-based index into the 70-keypoint MHR order used by sam3dinov3.py/sam3dinov3_visualize.py (p1=nose, p6=left-shoulder, p7=right-shoulder, p10=left-hip, p11=right-hip, ..., p70=neck). Derived programmatically from vaila/sam3dinov3.py.", "keypoints": ["nose", "left-eye", "right-eye", "left-ear", "right-ear", "left-shoulder", "right-shoulder", "left-elbow", "right-elbow", "left-hip", "right-hip", "left-knee", "right-knee", "left-ankle", "right-ankle", "left-big-toe-tip", "left-small-toe-tip", "left-heel", "right-big-toe-tip", "right-small-toe-tip", "right-heel", "right-thumb-tip", "right-thumb-first-joint", "right-thumb-second-joint", "right-thumb-third-joint", "right-index-tip", "right-index-first-joint", "right-index-second-joint", "right-index-third-joint", "right-middle-tip", "right-middle-first-joint", "right-middle-second-joint", "right-middle-third-joint", "right-ring-tip", "right-ring-first-joint", "right-ring-second-joint", "right-ring-third-joint", "right-pinky-tip", "right-pinky-first-joint", "right-pinky-second-joint", "right-pinky-third-joint", "right-wrist", "left-thumb-tip", "left-thumb-first-joint", "left-thumb-second-joint", "left-thumb-third-joint", "left-index-tip", "left-index-first-joint", "left-index-second-joint", "left-index-third-joint", "left-middle-tip", "left-middle-first-joint", "left-middle-second-joint", "left-middle-third-joint", "left-ring-tip", "left-ring-first-joint", "left-ring-second-joint", "left-ring-third-joint", "left-pinky-tip", "left-pinky-first-joint", "left-pinky-second-joint", "left-pinky-third-joint", "left-wrist", "left-olecranon", "right-olecranon", "left-cubital-fossa", "right-cubital-fossa", "left-acromion", "right-acromion", "neck"], "connections": [["p70", "p1"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p70", "p68"], ["p70", "p69"], ["p68", "p69"], ["p68", "p6"], ["p6", "p7"], ["p7", "p69"], ["p6", "p8"], ["p7", "p9"], ["p68", "p8"], ["p8", "p64"], ["p8", "p66"], ["p64", "p66"], ["p68", "p64"], ["p68", "p66"], ["p64", "p63"], ["p66", "p63"], ["p69", "p9"], ["p9", "p65"], ["p9", "p67"], ["p65", "p67"], ["p69", "p65"], ["p69", "p67"], ["p65", "p42"], ["p67", "p42"], ["p6", "p10"], ["p7", "p11"], ["p10", "p11"], ["p10", "p12"], ["p12", "p14"], ["p14", "p18"], ["p14", "p16"], ["p14", "p17"], ["p18", "p16"], ["p18", "p17"], ["p16", "p17"], ["p11", "p13"], ["p13", "p15"], ["p15", "p21"], ["p15", "p19"], ["p15", "p20"], ["p21", "p19"], ["p21", "p20"], ["p19", "p20"], ["p63", "p46"], ["p46", "p45"], ["p45", "p44"], ["p44", "p43"], ["p63", "p50"], ["p50", "p49"], ["p49", "p48"], ["p48", "p47"], ["p63", "p54"], ["p54", "p53"], ["p53", "p52"], ["p52", "p51"], ["p63", "p58"], ["p58", "p57"], ["p57", "p56"], ["p56", "p55"], ["p63", "p62"], ["p62", "p61"], ["p61", "p60"], ["p60", "p59"], ["p42", "p25"], ["p25", "p24"], ["p24", "p23"], ["p23", "p22"], ["p42", "p29"], ["p29", "p28"], ["p28", "p27"], ["p27", "p26"], ["p42", "p33"], ["p33", "p32"], ["p32", "p31"], ["p31", "p30"], ["p42", "p37"], ["p37", "p36"], ["p36", "p35"], ["p35", "p34"], ["p42", "p41"], ["p41", "p40"], ["p40", "p39"], ["p39", "p38"]]}, "sapiens2_goliath308": {"schema": "sapiens2_goliath_308", "num_keypoints": 308, "note": "pN is 1-based index into the 308-keypoint Sociopticon/Goliath order used by vaila_sapiens.py/sam3sapiens2.py (p1=nose, p6=left_shoulder, p7=right_shoulder, p10=left_hip, p11=right_hip, ..., p308=last face point). Derived from sapiens/pose/configs/_base_/keypoints308.py.", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel", "right_thumb4", "right_thumb3", "right_thumb2", "right_thumb_third_joint", "right_forefinger4", "right_forefinger3", "right_forefinger2", "right_forefinger_third_joint", "right_middle_finger4", "right_middle_finger3", "right_middle_finger2", "right_middle_finger_third_joint", "right_ring_finger4", "right_ring_finger3", "right_ring_finger2", "right_ring_finger_third_joint", "right_pinky_finger4", "right_pinky_finger3", "right_pinky_finger2", "right_pinky_finger_third_joint", "right_wrist", "left_thumb4", "left_thumb3", "left_thumb2", "left_thumb_third_joint", "left_forefinger4", "left_forefinger3", "left_forefinger2", "left_forefinger_third_joint", "left_middle_finger4", "left_middle_finger3", "left_middle_finger2", "left_middle_finger_third_joint", "left_ring_finger4", "left_ring_finger3", "left_ring_finger2", "left_ring_finger_third_joint", "left_pinky_finger4", "left_pinky_finger3", "left_pinky_finger2", "left_pinky_finger_third_joint", "left_wrist", "left_olecranon", "right_olecranon", "left_cubital_fossa", "right_cubital_fossa", "left_acromion", "right_acromion", "neck", "center_of_glabella", "center_of_nose_root", "tip_of_nose_bridge", "midpoint_1_of_nose_bridge", "midpoint_2_of_nose_bridge", "midpoint_3_of_nose_bridge", "center_of_labiomental_groove", "tip_of_chin", "upper_startpoint_of_r_eyebrow", "lower_startpoint_of_r_eyebrow", "end_of_r_eyebrow", "upper_midpoint_1_of_r_eyebrow", "lower_midpoint_1_of_r_eyebrow", "upper_midpoint_2_of_r_eyebrow", "upper_midpoint_3_of_r_eyebrow", "lower_midpoint_2_of_r_eyebrow", "lower_midpoint_3_of_r_eyebrow", "upper_startpoint_of_l_eyebrow", "lower_startpoint_of_l_eyebrow", "end_of_l_eyebrow", "upper_midpoint_1_of_l_eyebrow", "lower_midpoint_1_of_l_eyebrow", "upper_midpoint_2_of_l_eyebrow", "upper_midpoint_3_of_l_eyebrow", "lower_midpoint_2_of_l_eyebrow", "lower_midpoint_3_of_l_eyebrow", "l_inner_end_of_upper_lash_line", "l_outer_end_of_upper_lash_line", "l_centerpoint_of_upper_lash_line", "l_midpoint_2_of_upper_lash_line", "l_midpoint_1_of_upper_lash_line", "l_midpoint_6_of_upper_lash_line", "l_midpoint_5_of_upper_lash_line", "l_midpoint_4_of_upper_lash_line", "l_midpoint_3_of_upper_lash_line", "l_outer_end_of_upper_eyelid_line", "l_midpoint_6_of_upper_eyelid_line", "l_midpoint_2_of_upper_eyelid_line", "l_midpoint_5_of_upper_eyelid_line", "l_centerpoint_of_upper_eyelid_line", "l_midpoint_4_of_upper_eyelid_line", "l_midpoint_1_of_upper_eyelid_line", "l_midpoint_3_of_upper_eyelid_line", "l_midpoint_6_of_upper_crease_line", "l_midpoint_2_of_upper_crease_line", "l_midpoint_5_of_upper_crease_line", "l_centerpoint_of_upper_crease_line", "l_midpoint_4_of_upper_crease_line", "l_midpoint_1_of_upper_crease_line", "l_midpoint_3_of_upper_crease_line", "r_inner_end_of_upper_lash_line", "r_outer_end_of_upper_lash_line", "r_centerpoint_of_upper_lash_line", "r_midpoint_1_of_upper_lash_line", "r_midpoint_2_of_upper_lash_line", "r_midpoint_3_of_upper_lash_line", "r_midpoint_4_of_upper_lash_line", "r_midpoint_5_of_upper_lash_line", "r_midpoint_6_of_upper_lash_line", "r_outer_end_of_upper_eyelid_line", "r_midpoint_3_of_upper_eyelid_line", "r_midpoint_1_of_upper_eyelid_line", "r_midpoint_4_of_upper_eyelid_line", "r_centerpoint_of_upper_eyelid_line", "r_midpoint_5_of_upper_eyelid_line", "r_midpoint_2_of_upper_eyelid_line", "r_midpoint_6_of_upper_eyelid_line", "r_midpoint_3_of_upper_crease_line", "r_midpoint_1_of_upper_crease_line", "r_midpoint_4_of_upper_crease_line", "r_centerpoint_of_upper_crease_line", "r_midpoint_5_of_upper_crease_line", "r_midpoint_2_of_upper_crease_line", "r_midpoint_6_of_upper_crease_line", "l_inner_end_of_lower_lash_line", "l_outer_end_of_lower_lash_line", "l_centerpoint_of_lower_lash_line", "l_midpoint_2_of_lower_lash_line", "l_midpoint_1_of_lower_lash_line", "l_midpoint_6_of_lower_lash_line", "l_midpoint_5_of_lower_lash_line", "l_midpoint_4_of_lower_lash_line", "l_midpoint_3_of_lower_lash_line", "l_outer_end_of_lower_eyelid_line", "l_midpoint_6_of_lower_eyelid_line", "l_midpoint_2_of_lower_eyelid_line", "l_midpoint_5_of_lower_eyelid_line", "l_centerpoint_of_lower_eyelid_line", "l_midpoint_4_of_lower_eyelid_line", "l_midpoint_1_of_lower_eyelid_line", "l_midpoint_3_of_lower_eyelid_line", "r_inner_end_of_lower_lash_line", "r_outer_end_of_lower_lash_line", "r_centerpoint_of_lower_lash_line", "r_midpoint_1_of_lower_lash_line", "r_midpoint_2_of_lower_lash_line", "r_midpoint_3_of_lower_lash_line", "r_midpoint_4_of_lower_lash_line", "r_midpoint_5_of_lower_lash_line", "r_midpoint_6_of_lower_lash_line", "r_outer_end_of_lower_eyelid_line", "r_midpoint_3_of_lower_eyelid_line", "r_midpoint_1_of_lower_eyelid_line", "r_midpoint_4_of_lower_eyelid_line", "r_centerpoint_of_lower_eyelid_line", "r_midpoint_5_of_lower_eyelid_line", "r_midpoint_2_of_lower_eyelid_line", "r_midpoint_6_of_lower_eyelid_line", "tip_of_nose", "bottom_center_of_nose", "r_outer_corner_of_nose", "l_outer_corner_of_nose", "inner_corner_of_r_nostril", "outer_corner_of_r_nostril", "upper_corner_of_r_nostril", "inner_corner_of_l_nostril", "outer_corner_of_l_nostril", "upper_corner_of_l_nostril", "r_outer_corner_of_mouth", "l_outer_corner_of_mouth", "center_of_cupid_bow", "center_of_lower_outer_lip", "midpoint_1_of_upper_outer_lip", "midpoint_2_of_upper_outer_lip", "midpoint_1_of_lower_outer_lip", "midpoint_2_of_lower_outer_lip", "midpoint_3_of_upper_outer_lip", "midpoint_4_of_upper_outer_lip", "midpoint_5_of_upper_outer_lip", "midpoint_6_of_upper_outer_lip", "midpoint_3_of_lower_outer_lip", "midpoint_4_of_lower_outer_lip", "midpoint_5_of_lower_outer_lip", "midpoint_6_of_lower_outer_lip", "r_inner_corner_of_mouth", "l_inner_corner_of_mouth", "center_of_upper_inner_lip", "center_of_lower_inner_lip", "midpoint_1_of_upper_inner_lip", "midpoint_2_of_upper_inner_lip", "midpoint_1_of_lower_inner_lip", "midpoint_2_of_lower_inner_lip", "midpoint_3_of_upper_inner_lip", "midpoint_4_of_upper_inner_lip", "midpoint_5_of_upper_inner_lip", "midpoint_6_of_upper_inner_lip", "midpoint_3_of_lower_inner_lip", "midpoint_4_of_lower_inner_lip", "midpoint_5_of_lower_inner_lip", "midpoint_6_of_lower_inner_lip", "l_top_end_of_inferior_crus", "l_top_end_of_superior_crus", "l_start_of_antihelix", "l_end_of_antihelix", "l_midpoint_1_of_antihelix", "l_midpoint_1_of_inferior_crus", "l_midpoint_2_of_antihelix", "l_midpoint_3_of_antihelix", "l_point_1_of_inner_helix", "l_point_2_of_inner_helix", "l_point_3_of_inner_helix", "l_point_4_of_inner_helix", "l_point_5_of_inner_helix", "l_point_6_of_inner_helix", "l_point_7_of_inner_helix", "l_highest_point_of_antitragus", "l_bottom_point_of_tragus", "l_protruding_point_of_tragus", "l_top_point_of_tragus", "l_start_point_of_crus_of_helix", "l_deepest_point_of_concha", "l_tip_of_ear_lobe", "l_midpoint_between_22_15", "l_bottom_connecting_point_of_ear_lobe", "l_top_connecting_point_of_helix", "l_point_8_of_inner_helix", "r_top_end_of_inferior_crus", "r_top_end_of_superior_crus", "r_start_of_antihelix", "r_end_of_antihelix", "r_midpoint_1_of_antihelix", "r_midpoint_1_of_inferior_crus", "r_midpoint_2_of_antihelix", "r_midpoint_3_of_antihelix", "r_point_1_of_inner_helix", "r_point_8_of_inner_helix", "r_point_3_of_inner_helix", "r_point_4_of_inner_helix", "r_point_5_of_inner_helix", "r_point_6_of_inner_helix", "r_point_7_of_inner_helix", "r_highest_point_of_antitragus", "r_bottom_point_of_tragus", "r_protruding_point_of_tragus", "r_top_point_of_tragus", "r_start_point_of_crus_of_helix", "r_deepest_point_of_concha", "r_tip_of_ear_lobe", "r_midpoint_between_22_15", "r_bottom_connecting_point_of_ear_lobe", "r_top_connecting_point_of_helix", "r_point_2_of_inner_helix", "l_center_of_iris", "l_border_of_iris_3", "l_border_of_iris_midpoint_1", "l_border_of_iris_12", "l_border_of_iris_midpoint_4", "l_border_of_iris_9", "l_border_of_iris_midpoint_3", "l_border_of_iris_6", "l_border_of_iris_midpoint_2", "r_center_of_iris", "r_border_of_iris_3", "r_border_of_iris_midpoint_1", "r_border_of_iris_12", "r_border_of_iris_midpoint_4", "r_border_of_iris_9", "r_border_of_iris_midpoint_3", "r_border_of_iris_6", "r_border_of_iris_midpoint_2", "l_center_of_pupil", "l_border_of_pupil_3", "l_border_of_pupil_midpoint_1", "l_border_of_pupil_12", "l_border_of_pupil_midpoint_4", "l_border_of_pupil_9", "l_border_of_pupil_midpoint_3", "l_border_of_pupil_6", "l_border_of_pupil_midpoint_2", "r_center_of_pupil", "r_border_of_pupil_3", "r_border_of_pupil_midpoint_1", "r_border_of_pupil_12", "r_border_of_pupil_midpoint_4", "r_border_of_pupil_9", "r_border_of_pupil_midpoint_3", "r_border_of_pupil_6", "r_border_of_pupil_midpoint_2"], "connections": [["p14", "p12"], ["p12", "p10"], ["p15", "p13"], ["p13", "p11"], ["p10", "p11"], ["p6", "p10"], ["p7", "p11"], ["p70", "p1"], ["p70", "p68"], ["p70", "p69"], ["p68", "p69"], ["p68", "p6"], ["p6", "p7"], ["p7", "p69"], ["p6", "p8"], ["p7", "p9"], ["p68", "p8"], ["p8", "p64"], ["p8", "p66"], ["p64", "p66"], ["p68", "p64"], ["p68", "p66"], ["p64", "p63"], ["p66", "p63"], ["p69", "p9"], ["p9", "p65"], ["p9", "p67"], ["p65", "p67"], ["p69", "p65"], ["p69", "p67"], ["p65", "p42"], ["p67", "p42"], ["p2", "p3"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p14", "p16"], ["p14", "p17"], ["p14", "p18"], ["p15", "p19"], ["p15", "p20"], ["p15", "p21"], ["p63", "p46"], ["p46", "p45"], ["p45", "p44"], ["p44", "p43"], ["p63", "p50"], ["p50", "p49"], ["p49", "p48"], ["p48", "p47"], ["p63", "p54"], ["p54", "p53"], ["p53", "p52"], ["p52", "p51"], ["p63", "p58"], ["p58", "p57"], ["p57", "p56"], ["p56", "p55"], ["p63", "p62"], ["p62", "p61"], ["p61", "p60"], ["p60", "p59"], ["p42", "p25"], ["p25", "p24"], ["p24", "p23"], ["p23", "p22"], ["p42", "p29"], ["p29", "p28"], ["p28", "p27"], ["p27", "p26"], ["p42", "p33"], ["p33", "p32"], ["p32", "p31"], ["p31", "p30"], ["p42", "p37"], ["p37", "p36"], ["p36", "p35"], ["p35", "p34"], ["p42", "p41"], ["p41", "p40"], ["p40", "p39"], ["p39", "p38"], ["p18", "p16"], ["p18", "p17"], ["p16", "p17"], ["p21", "p19"], ["p21", "p20"], ["p19", "p20"]]}, "skeleton_pose_fifa": {"schema": "fifa_body_15", "num_keypoints": 15, "note": "pN is 1-based index for FIFA Challenge 2026 Body-15 keypoint set: p1=nose, p2=right_shoulder, p3=left_shoulder, p4=right_elbow, p5=left_elbow, p6=right_wrist, p7=left_wrist, p8=right_hip, p9=left_hip, p10=right_knee, p11=left_knee, p12=right_ankle, p13=left_ankle, p14=right_toe, p15=left_toe.", "keypoints": ["nose", "right_shoulder", "left_shoulder", "right_elbow", "left_elbow", "right_wrist", "left_wrist", "right_hip", "left_hip", "right_knee", "left_knee", "right_ankle", "left_ankle", "right_toe", "left_toe"], "connections": [["p1", "p2"], ["p1", "p3"], ["p2", "p3"], ["p2", "p4"], ["p4", "p6"], ["p3", "p5"], ["p5", "p7"], ["p2", "p8"], ["p3", "p9"], ["p8", "p9"], ["p8", "p10"], ["p10", "p12"], ["p12", "p14"], ["p9", "p11"], ["p11", "p13"], ["p13", "p15"]]}, "skeleton_pose_hand21": {"schema": "mediapipe_hand_21", "num_keypoints": 21, "note": "pN is 1-based index for single hand MediaPipe landmarks: p1=wrist, p2..p5=thumb, p6..p9=index, p10..p13=middle, p14..p17=ring, p18..p21=pinky.", "keypoints": ["wrist", "thumb_cmc", "thumb_mcp", "thumb_ip", "thumb_tip", "index_mcp", "index_pip", "index_dip", "index_tip", "middle_mcp", "middle_pip", "middle_dip", "middle_tip", "ring_mcp", "ring_pip", "ring_dip", "ring_tip", "pinky_mcp", "pinky_pip", "pinky_dip", "pinky_tip"], "connections": [["p1", "p2"], ["p1", "p6"], ["p6", "p10"], ["p10", "p14"], ["p14", "p18"], ["p1", "p18"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p6", "p7"], ["p7", "p8"], ["p8", "p9"], ["p10", "p11"], ["p11", "p12"], ["p12", "p13"], ["p14", "p15"], ["p15", "p16"], ["p16", "p17"], ["p18", "p19"], ["p19", "p20"], ["p20", "p21"]]}, "skeleton_pose_mediapipe": {"schema": "mediapipe_pose_33_pn", "num_keypoints": 33, "note": "pN is 1-based index mapping to MediaPipe: p1=nose(0), p12=left_shoulder(11), p13=right_shoulder(12), p24=left_hip(23), p25=right_hip(24), ..., p33=right_foot_index(32).", "keypoints": ["nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel", "right_heel", "left_foot_index", "right_foot_index"], "connections": [["p12", "p13"], ["p24", "p25"], ["p12", "p24"], ["p13", "p25"], ["p12", "p25"], ["p13", "p24"], ["p1", "p3"], ["p1", "p6"], ["p3", "p6"], ["p3", "p8"], ["p6", "p9"], ["p10", "p11"], ["p12", "p14"], ["p14", "p16"], ["p16", "p18"], ["p16", "p20"], ["p16", "p22"], ["p13", "p15"], ["p15", "p17"], ["p17", "p19"], ["p17", "p21"], ["p17", "p23"], ["p24", "p26"], ["p26", "p28"], ["p28", "p30"], ["p30", "p32"], ["p28", "p32"], ["p25", "p27"], ["p27", "p29"], ["p29", "p31"], ["p31", "p33"], ["p29", "p33"]]}, "skeleton_pose_openpose25": {"schema": "openpose_body_25", "num_keypoints": 25, "note": "pN is 1-based index for standard OpenPose Body-25 format: p1=nose, p2=neck, p3=right_shoulder, p4=right_elbow, p5=right_wrist, p6=left_shoulder, p7=left_elbow, p8=left_wrist, p9=mid_hip, p10=right_hip, p11=right_knee, p12=right_ankle, p13=left_hip, p14=left_knee, p15=left_ankle, p16=right_eye, p17=left_eye, p18=right_ear, p19=left_ear, p20=left_big_toe, p21=left_small_toe, p22=left_heel, p23=right_big_toe, p24=right_small_toe, p25=right_heel.", "keypoints": ["nose", "neck", "right_shoulder", "right_elbow", "right_wrist", "left_shoulder", "left_elbow", "left_wrist", "mid_hip", "right_hip", "right_knee", "right_ankle", "left_hip", "left_knee", "left_ankle", "right_eye", "left_eye", "right_ear", "left_ear", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel"], "connections": [["p1", "p2"], ["p2", "p9"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p2", "p6"], ["p6", "p7"], ["p7", "p8"], ["p9", "p10"], ["p10", "p11"], ["p11", "p12"], ["p12", "p23"], ["p23", "p24"], ["p12", "p25"], ["p9", "p13"], ["p13", "p14"], ["p14", "p15"], ["p15", "p20"], ["p20", "p21"], ["p15", "p22"], ["p1", "p16"], ["p16", "p18"], ["p1", "p17"], ["p17", "p19"]]}, "skeleton_pose_sam3dinov3": {"schema": "sam3dinov3_mhr70", "num_keypoints": 70, "note": "pN is 1-based index into the 70-keypoint MHR order used by sam3dinov3.py/sam3dinov3_visualize.py (p1=nose, p6=left-shoulder, p7=right-shoulder, p10=left-hip, p11=right-hip, ..., p70=neck). Derived programmatically from vaila/sam3dinov3.py.", "keypoints": ["nose", "left-eye", "right-eye", "left-ear", "right-ear", "left-shoulder", "right-shoulder", "left-elbow", "right-elbow", "left-hip", "right-hip", "left-knee", "right-knee", "left-ankle", "right-ankle", "left-big-toe-tip", "left-small-toe-tip", "left-heel", "right-big-toe-tip", "right-small-toe-tip", "right-heel", "right-thumb-tip", "right-thumb-first-joint", "right-thumb-second-joint", "right-thumb-third-joint", "right-index-tip", "right-index-first-joint", "right-index-second-joint", "right-index-third-joint", "right-middle-tip", "right-middle-first-joint", "right-middle-second-joint", "right-middle-third-joint", "right-ring-tip", "right-ring-first-joint", "right-ring-second-joint", "right-ring-third-joint", "right-pinky-tip", "right-pinky-first-joint", "right-pinky-second-joint", "right-pinky-third-joint", "right-wrist", "left-thumb-tip", "left-thumb-first-joint", "left-thumb-second-joint", "left-thumb-third-joint", "left-index-tip", "left-index-first-joint", "left-index-second-joint", "left-index-third-joint", "left-middle-tip", "left-middle-first-joint", "left-middle-second-joint", "left-middle-third-joint", "left-ring-tip", "left-ring-first-joint", "left-ring-second-joint", "left-ring-third-joint", "left-pinky-tip", "left-pinky-first-joint", "left-pinky-second-joint", "left-pinky-third-joint", "left-wrist", "left-olecranon", "right-olecranon", "left-cubital-fossa", "right-cubital-fossa", "left-acromion", "right-acromion", "neck"], "connections": [["p70", "p1"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p70", "p68"], ["p70", "p69"], ["p68", "p69"], ["p68", "p6"], ["p6", "p7"], ["p7", "p69"], ["p6", "p8"], ["p7", "p9"], ["p68", "p8"], ["p8", "p64"], ["p8", "p66"], ["p64", "p66"], ["p68", "p64"], ["p68", "p66"], ["p64", "p63"], ["p66", "p63"], ["p69", "p9"], ["p9", "p65"], ["p9", "p67"], ["p65", "p67"], ["p69", "p65"], ["p69", "p67"], ["p65", "p42"], ["p67", "p42"], ["p6", "p10"], ["p7", "p11"], ["p10", "p11"], ["p10", "p12"], ["p12", "p14"], ["p14", "p18"], ["p14", "p16"], ["p14", "p17"], ["p18", "p16"], ["p18", "p17"], ["p16", "p17"], ["p11", "p13"], ["p13", "p15"], ["p15", "p21"], ["p15", "p19"], ["p15", "p20"], ["p21", "p19"], ["p21", "p20"], ["p19", "p20"], ["p63", "p46"], ["p46", "p45"], ["p45", "p44"], ["p44", "p43"], ["p63", "p50"], ["p50", "p49"], ["p49", "p48"], ["p48", "p47"], ["p63", "p54"], ["p54", "p53"], ["p53", "p52"], ["p52", "p51"], ["p63", "p58"], ["p58", "p57"], ["p57", "p56"], ["p56", "p55"], ["p63", "p62"], ["p62", "p61"], ["p61", "p60"], ["p60", "p59"], ["p42", "p25"], ["p25", "p24"], ["p24", "p23"], ["p23", "p22"], ["p42", "p29"], ["p29", "p28"], ["p28", "p27"], ["p27", "p26"], ["p42", "p33"], ["p33", "p32"], ["p32", "p31"], ["p31", "p30"], ["p42", "p37"], ["p37", "p36"], ["p36", "p35"], ["p35", "p34"], ["p42", "p41"], ["p41", "p40"], ["p40", "p39"], ["p39", "p38"]]}, "skeleton_pose_sapiens2": {"schema": "sapiens2_goliath_308", "num_keypoints": 308, "note": "pN is 1-based index into the 308-keypoint Sociopticon/Goliath order used by vaila_sapiens.py/sam3sapiens2.py (p1=nose, p6=left_shoulder, p7=right_shoulder, p10=left_hip, p11=right_hip, ..., p308=last face point). Derived from sapiens/pose/configs/_base_/keypoints308.py.", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_big_toe", "left_small_toe", "left_heel", "right_big_toe", "right_small_toe", "right_heel", "right_thumb4", "right_thumb3", "right_thumb2", "right_thumb_third_joint", "right_forefinger4", "right_forefinger3", "right_forefinger2", "right_forefinger_third_joint", "right_middle_finger4", "right_middle_finger3", "right_middle_finger2", "right_middle_finger_third_joint", "right_ring_finger4", "right_ring_finger3", "right_ring_finger2", "right_ring_finger_third_joint", "right_pinky_finger4", "right_pinky_finger3", "right_pinky_finger2", "right_pinky_finger_third_joint", "right_wrist", "left_thumb4", "left_thumb3", "left_thumb2", "left_thumb_third_joint", "left_forefinger4", "left_forefinger3", "left_forefinger2", "left_forefinger_third_joint", "left_middle_finger4", "left_middle_finger3", "left_middle_finger2", "left_middle_finger_third_joint", "left_ring_finger4", "left_ring_finger3", "left_ring_finger2", "left_ring_finger_third_joint", "left_pinky_finger4", "left_pinky_finger3", "left_pinky_finger2", "left_pinky_finger_third_joint", "left_wrist", "left_olecranon", "right_olecranon", "left_cubital_fossa", "right_cubital_fossa", "left_acromion", "right_acromion", "neck", "center_of_glabella", "center_of_nose_root", "tip_of_nose_bridge", "midpoint_1_of_nose_bridge", "midpoint_2_of_nose_bridge", "midpoint_3_of_nose_bridge", "center_of_labiomental_groove", "tip_of_chin", "upper_startpoint_of_r_eyebrow", "lower_startpoint_of_r_eyebrow", "end_of_r_eyebrow", "upper_midpoint_1_of_r_eyebrow", "lower_midpoint_1_of_r_eyebrow", "upper_midpoint_2_of_r_eyebrow", "upper_midpoint_3_of_r_eyebrow", "lower_midpoint_2_of_r_eyebrow", "lower_midpoint_3_of_r_eyebrow", "upper_startpoint_of_l_eyebrow", "lower_startpoint_of_l_eyebrow", "end_of_l_eyebrow", "upper_midpoint_1_of_l_eyebrow", "lower_midpoint_1_of_l_eyebrow", "upper_midpoint_2_of_l_eyebrow", "upper_midpoint_3_of_l_eyebrow", "lower_midpoint_2_of_l_eyebrow", "lower_midpoint_3_of_l_eyebrow", "l_inner_end_of_upper_lash_line", "l_outer_end_of_upper_lash_line", "l_centerpoint_of_upper_lash_line", "l_midpoint_2_of_upper_lash_line", "l_midpoint_1_of_upper_lash_line", "l_midpoint_6_of_upper_lash_line", "l_midpoint_5_of_upper_lash_line", "l_midpoint_4_of_upper_lash_line", "l_midpoint_3_of_upper_lash_line", "l_outer_end_of_upper_eyelid_line", "l_midpoint_6_of_upper_eyelid_line", "l_midpoint_2_of_upper_eyelid_line", "l_midpoint_5_of_upper_eyelid_line", "l_centerpoint_of_upper_eyelid_line", "l_midpoint_4_of_upper_eyelid_line", "l_midpoint_1_of_upper_eyelid_line", "l_midpoint_3_of_upper_eyelid_line", "l_midpoint_6_of_upper_crease_line", "l_midpoint_2_of_upper_crease_line", "l_midpoint_5_of_upper_crease_line", "l_centerpoint_of_upper_crease_line", "l_midpoint_4_of_upper_crease_line", "l_midpoint_1_of_upper_crease_line", "l_midpoint_3_of_upper_crease_line", "r_inner_end_of_upper_lash_line", "r_outer_end_of_upper_lash_line", "r_centerpoint_of_upper_lash_line", "r_midpoint_1_of_upper_lash_line", "r_midpoint_2_of_upper_lash_line", "r_midpoint_3_of_upper_lash_line", "r_midpoint_4_of_upper_lash_line", "r_midpoint_5_of_upper_lash_line", "r_midpoint_6_of_upper_lash_line", "r_outer_end_of_upper_eyelid_line", "r_midpoint_3_of_upper_eyelid_line", "r_midpoint_1_of_upper_eyelid_line", "r_midpoint_4_of_upper_eyelid_line", "r_centerpoint_of_upper_eyelid_line", "r_midpoint_5_of_upper_eyelid_line", "r_midpoint_2_of_upper_eyelid_line", "r_midpoint_6_of_upper_eyelid_line", "r_midpoint_3_of_upper_crease_line", "r_midpoint_1_of_upper_crease_line", "r_midpoint_4_of_upper_crease_line", "r_centerpoint_of_upper_crease_line", "r_midpoint_5_of_upper_crease_line", "r_midpoint_2_of_upper_crease_line", "r_midpoint_6_of_upper_crease_line", "l_inner_end_of_lower_lash_line", "l_outer_end_of_lower_lash_line", "l_centerpoint_of_lower_lash_line", "l_midpoint_2_of_lower_lash_line", "l_midpoint_1_of_lower_lash_line", "l_midpoint_6_of_lower_lash_line", "l_midpoint_5_of_lower_lash_line", "l_midpoint_4_of_lower_lash_line", "l_midpoint_3_of_lower_lash_line", "l_outer_end_of_lower_eyelid_line", "l_midpoint_6_of_lower_eyelid_line", "l_midpoint_2_of_lower_eyelid_line", "l_midpoint_5_of_lower_eyelid_line", "l_centerpoint_of_lower_eyelid_line", "l_midpoint_4_of_lower_eyelid_line", "l_midpoint_1_of_lower_eyelid_line", "l_midpoint_3_of_lower_eyelid_line", "r_inner_end_of_lower_lash_line", "r_outer_end_of_lower_lash_line", "r_centerpoint_of_lower_lash_line", "r_midpoint_1_of_lower_lash_line", "r_midpoint_2_of_lower_lash_line", "r_midpoint_3_of_lower_lash_line", "r_midpoint_4_of_lower_lash_line", "r_midpoint_5_of_lower_lash_line", "r_midpoint_6_of_lower_lash_line", "r_outer_end_of_lower_eyelid_line", "r_midpoint_3_of_lower_eyelid_line", "r_midpoint_1_of_lower_eyelid_line", "r_midpoint_4_of_lower_eyelid_line", "r_centerpoint_of_lower_eyelid_line", "r_midpoint_5_of_lower_eyelid_line", "r_midpoint_2_of_lower_eyelid_line", "r_midpoint_6_of_lower_eyelid_line", "tip_of_nose", "bottom_center_of_nose", "r_outer_corner_of_nose", "l_outer_corner_of_nose", "inner_corner_of_r_nostril", "outer_corner_of_r_nostril", "upper_corner_of_r_nostril", "inner_corner_of_l_nostril", "outer_corner_of_l_nostril", "upper_corner_of_l_nostril", "r_outer_corner_of_mouth", "l_outer_corner_of_mouth", "center_of_cupid_bow", "center_of_lower_outer_lip", "midpoint_1_of_upper_outer_lip", "midpoint_2_of_upper_outer_lip", "midpoint_1_of_lower_outer_lip", "midpoint_2_of_lower_outer_lip", "midpoint_3_of_upper_outer_lip", "midpoint_4_of_upper_outer_lip", "midpoint_5_of_upper_outer_lip", "midpoint_6_of_upper_outer_lip", "midpoint_3_of_lower_outer_lip", "midpoint_4_of_lower_outer_lip", "midpoint_5_of_lower_outer_lip", "midpoint_6_of_lower_outer_lip", "r_inner_corner_of_mouth", "l_inner_corner_of_mouth", "center_of_upper_inner_lip", "center_of_lower_inner_lip", "midpoint_1_of_upper_inner_lip", "midpoint_2_of_upper_inner_lip", "midpoint_1_of_lower_inner_lip", "midpoint_2_of_lower_inner_lip", "midpoint_3_of_upper_inner_lip", "midpoint_4_of_upper_inner_lip", "midpoint_5_of_upper_inner_lip", "midpoint_6_of_upper_inner_lip", "midpoint_3_of_lower_inner_lip", "midpoint_4_of_lower_inner_lip", "midpoint_5_of_lower_inner_lip", "midpoint_6_of_lower_inner_lip", "l_top_end_of_inferior_crus", "l_top_end_of_superior_crus", "l_start_of_antihelix", "l_end_of_antihelix", "l_midpoint_1_of_antihelix", "l_midpoint_1_of_inferior_crus", "l_midpoint_2_of_antihelix", "l_midpoint_3_of_antihelix", "l_point_1_of_inner_helix", "l_point_2_of_inner_helix", "l_point_3_of_inner_helix", "l_point_4_of_inner_helix", "l_point_5_of_inner_helix", "l_point_6_of_inner_helix", "l_point_7_of_inner_helix", "l_highest_point_of_antitragus", "l_bottom_point_of_tragus", "l_protruding_point_of_tragus", "l_top_point_of_tragus", "l_start_point_of_crus_of_helix", "l_deepest_point_of_concha", "l_tip_of_ear_lobe", "l_midpoint_between_22_15", "l_bottom_connecting_point_of_ear_lobe", "l_top_connecting_point_of_helix", "l_point_8_of_inner_helix", "r_top_end_of_inferior_crus", "r_top_end_of_superior_crus", "r_start_of_antihelix", "r_end_of_antihelix", "r_midpoint_1_of_antihelix", "r_midpoint_1_of_inferior_crus", "r_midpoint_2_of_antihelix", "r_midpoint_3_of_antihelix", "r_point_1_of_inner_helix", "r_point_8_of_inner_helix", "r_point_3_of_inner_helix", "r_point_4_of_inner_helix", "r_point_5_of_inner_helix", "r_point_6_of_inner_helix", "r_point_7_of_inner_helix", "r_highest_point_of_antitragus", "r_bottom_point_of_tragus", "r_protruding_point_of_tragus", "r_top_point_of_tragus", "r_start_point_of_crus_of_helix", "r_deepest_point_of_concha", "r_tip_of_ear_lobe", "r_midpoint_between_22_15", "r_bottom_connecting_point_of_ear_lobe", "r_top_connecting_point_of_helix", "r_point_2_of_inner_helix", "l_center_of_iris", "l_border_of_iris_3", "l_border_of_iris_midpoint_1", "l_border_of_iris_12", "l_border_of_iris_midpoint_4", "l_border_of_iris_9", "l_border_of_iris_midpoint_3", "l_border_of_iris_6", "l_border_of_iris_midpoint_2", "r_center_of_iris", "r_border_of_iris_3", "r_border_of_iris_midpoint_1", "r_border_of_iris_12", "r_border_of_iris_midpoint_4", "r_border_of_iris_9", "r_border_of_iris_midpoint_3", "r_border_of_iris_6", "r_border_of_iris_midpoint_2", "l_center_of_pupil", "l_border_of_pupil_3", "l_border_of_pupil_midpoint_1", "l_border_of_pupil_12", "l_border_of_pupil_midpoint_4", "l_border_of_pupil_9", "l_border_of_pupil_midpoint_3", "l_border_of_pupil_6", "l_border_of_pupil_midpoint_2", "r_center_of_pupil", "r_border_of_pupil_3", "r_border_of_pupil_midpoint_1", "r_border_of_pupil_12", "r_border_of_pupil_midpoint_4", "r_border_of_pupil_9", "r_border_of_pupil_midpoint_3", "r_border_of_pupil_6", "r_border_of_pupil_midpoint_2"], "connections": [["p14", "p12"], ["p12", "p10"], ["p15", "p13"], ["p13", "p11"], ["p10", "p11"], ["p6", "p10"], ["p7", "p11"], ["p70", "p1"], ["p70", "p68"], ["p70", "p69"], ["p68", "p69"], ["p68", "p6"], ["p6", "p7"], ["p7", "p69"], ["p6", "p8"], ["p7", "p9"], ["p68", "p8"], ["p8", "p64"], ["p8", "p66"], ["p64", "p66"], ["p68", "p64"], ["p68", "p66"], ["p64", "p63"], ["p66", "p63"], ["p69", "p9"], ["p9", "p65"], ["p9", "p67"], ["p65", "p67"], ["p69", "p65"], ["p69", "p67"], ["p65", "p42"], ["p67", "p42"], ["p2", "p3"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p14", "p16"], ["p14", "p17"], ["p14", "p18"], ["p15", "p19"], ["p15", "p20"], ["p15", "p21"], ["p63", "p46"], ["p46", "p45"], ["p45", "p44"], ["p44", "p43"], ["p63", "p50"], ["p50", "p49"], ["p49", "p48"], ["p48", "p47"], ["p63", "p54"], ["p54", "p53"], ["p53", "p52"], ["p52", "p51"], ["p63", "p58"], ["p58", "p57"], ["p57", "p56"], ["p56", "p55"], ["p63", "p62"], ["p62", "p61"], ["p61", "p60"], ["p60", "p59"], ["p42", "p25"], ["p25", "p24"], ["p24", "p23"], ["p23", "p22"], ["p42", "p29"], ["p29", "p28"], ["p28", "p27"], ["p27", "p26"], ["p42", "p33"], ["p33", "p32"], ["p32", "p31"], ["p31", "p30"], ["p42", "p37"], ["p37", "p36"], ["p36", "p35"], ["p35", "p34"], ["p42", "p41"], ["p41", "p40"], ["p40", "p39"], ["p39", "p38"], ["p18", "p16"], ["p18", "p17"], ["p16", "p17"], ["p21", "p19"], ["p21", "p20"], ["p19", "p20"]]}, "skeleton_pose_yolo": {"schema": "coco_17_keypoints", "num_keypoints": 17, "note": "pN is 1-based index into standard COCO-17 order (p1=nose, p2=left_eye, p3=right_eye, p4=left_ear, p5=right_ear, p6=left_shoulder, p7=right_shoulder, p8=left_elbow, p9=right_elbow, p10=left_wrist, p11=right_wrist, p12=left_hip, p13=right_hip, p14=left_knee, p15=right_knee, p16=left_ankle, p17=right_ankle).", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle"], "connections": [["p6", "p7"], ["p12", "p13"], ["p6", "p8"], ["p8", "p10"], ["p7", "p9"], ["p9", "p11"], ["p12", "p14"], ["p14", "p16"], ["p13", "p15"], ["p15", "p17"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p6", "p12"], ["p7", "p13"]]}, "soccerfield_calib29": {"schema": "soccerfield_calib_29", "num_keypoints": 29, "note": "pN is 1-based index into FIFA 29-point soccer-field calibration reference (models/soccerfield_ref3d_fifa.csv).", "keypoints": ["bottom_left_corner", "top_left_corner", "bottom_right_corner", "top_right_corner", "midfield_left", "midfield_right", "center_field", "center_circle_top_intersection", "center_circle_bottom_intersection", "left_goal_bottom_post", "left_goal_top_post", "right_goal_bottom_post", "right_goal_top_post", "left_penalty_area_top_left", "left_penalty_area_top_right", "left_penalty_area_bottom_left", "left_penalty_area_bottom_right", "left_goal_area_top_left", "left_goal_area_top_right", "left_goal_area_bottom_left", "left_goal_area_bottom_right", "left_penalty_spot", "left_penalty_arc_top", "left_penalty_arc_left_intersection", "left_penalty_arc_right_intersection", "right_penalty_area_top_left", "right_penalty_area_top_right", "right_penalty_area_bottom_left", "right_penalty_area_bottom_right"], "connections": [["p1", "p2"], ["p2", "p6"], ["p6", "p4"], ["p4", "p3"], ["p3", "p5"], ["p5", "p1"], ["p5", "p9"], ["p9", "p7"], ["p7", "p8"], ["p8", "p6"], ["p16", "p14"], ["p14", "p15"], ["p15", "p17"], ["p20", "p18"], ["p18", "p19"], ["p19", "p21"], ["p10", "p11"], ["p24", "p23"], ["p23", "p25"], ["p28", "p26"], ["p26", "p27"], ["p27", "p29"], ["p12", "p13"]]}, "soccerfield_pitch32": {"schema": "soccerfield_pitch_32", "num_keypoints": 32, "note": "pN is 1-based index into FIFA dataset builder 32-point canonical pitch layout: p1..p6=left touchline/goal line, p14..p17=midfield, p25..p30=right touchline/goal line, p7..p13=left boxes, p18..p24=right boxes, p31..p32=center circle.", "keypoints": ["top_left_corner", "left_pen_box_top_outer", "left_goal_area_top_outer", "left_goal_area_bottom_outer", "left_pen_box_bottom_outer", "bottom_left_corner", "left_goal_area_top_inner", "left_goal_area_bottom_inner", "left_penalty_spot", "left_pen_box_top_inner", "left_pen_box_inner_top_at_goal_y", "left_pen_box_inner_bottom_at_goal_y", "left_pen_box_bottom_inner", "midfield_top", "center_circle_top", "center_circle_bottom", "midfield_bottom", "right_pen_box_top_inner", "right_pen_box_inner_top_at_goal_y", "right_pen_box_inner_bottom_at_goal_y", "right_pen_box_bottom_inner", "right_penalty_spot", "right_goal_area_top_inner", "right_goal_area_bottom_inner", "top_right_corner", "right_pen_box_top_outer", "right_goal_area_top_outer", "right_goal_area_bottom_outer", "right_pen_box_bottom_outer", "bottom_right_corner", "center_circle_left", "center_circle_right"], "connections": [["p1", "p14"], ["p14", "p25"], ["p6", "p17"], ["p17", "p30"], ["p1", "p2"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"], ["p5", "p6"], ["p25", "p26"], ["p26", "p27"], ["p27", "p28"], ["p28", "p29"], ["p29", "p30"], ["p14", "p15"], ["p15", "p16"], ["p16", "p17"], ["p2", "p10"], ["p10", "p11"], ["p11", "p12"], ["p12", "p13"], ["p13", "p5"], ["p3", "p7"], ["p7", "p8"], ["p8", "p4"], ["p26", "p18"], ["p18", "p19"], ["p19", "p20"], ["p20", "p21"], ["p21", "p29"], ["p27", "p23"], ["p23", "p24"], ["p24", "p28"], ["p15", "p31"], ["p31", "p16"], ["p16", "p32"], ["p32", "p15"]]}, "yolo_coco17": {"schema": "coco_17_keypoints", "num_keypoints": 17, "note": "pN is 1-based index into standard COCO-17 order (p1=nose, p2=left_eye, p3=right_eye, p4=left_ear, p5=right_ear, p6=left_shoulder, p7=right_shoulder, p8=left_elbow, p9=right_elbow, p10=left_wrist, p11=right_wrist, p12=left_hip, p13=right_hip, p14=left_knee, p15=right_knee, p16=left_ankle, p17=right_ankle).", "keypoints": ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle"], "connections": [["p6", "p7"], ["p12", "p13"], ["p6", "p8"], ["p8", "p10"], ["p7", "p9"], ["p9", "p11"], ["p12", "p14"], ["p14", "p16"], ["p13", "p15"], ["p15", "p17"], ["p1", "p2"], ["p1", "p3"], ["p2", "p4"], ["p3", "p5"], ["p6", "p12"], ["p7", "p13"]]}}</script>
 <script>"use strict";
 const $ = id => document.getElementById(id);
 const boot = JSON.parse($("trial-data").textContent);
@@ -1348,6 +1441,14 @@ let currentLCS = { ap: "+Y", axial: "+Z" };
 let activeFilterConfig = null;
 let filterPreviewActive = false;
 let filterPreviewSeries = null;
+let analysisResults = {};
+
+// Force Platforms & Kinetics (Visual3D & Mokka Parity)
+let showForcePlates = true;
+let showForceVectors = true;
+let forceVectorScale = 0.001; // 1.0 mm per N (0.001 m/N)
+let forceThreshold = 15.0; // 15 N
+let rawForcePlates = null;
 
 // Marker Appearance Palette (matching /home/preto/data/vaila/vaila/viewc3d.py)
 const MARKER_PALETTE = [
@@ -1532,6 +1633,19 @@ function fit() {
       }
     }
   }
+  // Include force plate corners in scene bounds
+  if (trial.force_plates && trial.force_plates.length && showForcePlates) {
+    for (const fp of trial.force_plates) {
+      if (!fp.corners) continue;
+      for (const corner of fp.corners) {
+        const p = orient(corner);
+        for (let j = 0; j < 3; j++) {
+          lo[j] = Math.min(lo[j], p[j]);
+          hi[j] = Math.max(hi[j], p[j]);
+        }
+      }
+    }
+  }
   center = lo.map((v, j) => (v + hi[j]) / 2);
   span = Math.max(...hi.map((v, j) => v - lo[j]), 0.01);
   zoom = 1;
@@ -1545,6 +1659,21 @@ function getFloorHeight() {
   const option = document.querySelector("[data-floor].active");
   const mode = option ? option.dataset.floor : "auto";
   if (mode === "origin") return 0;
+
+  // If force plates are present, ground surface is at plate level
+  if (trial.force_plates && trial.force_plates.length && showForcePlates) {
+    let minFpZ = Infinity;
+    for (const fp of trial.force_plates) {
+      if (fp.corners) {
+        for (const corner of fp.corners) {
+          const p = orient(corner);
+          minFpZ = Math.min(minFpZ, p[2]);
+        }
+      }
+    }
+    if (Number.isFinite(minFpZ)) return minFpZ;
+  }
+
   let minH = Infinity;
   for (const raw of trial.xyz[frame] || []) {
     if (valid(raw)) {
@@ -1676,6 +1805,122 @@ function applySkeletonTemplate(templateObj) {
   return skeletonPairs.length;
 }
 
+const DE_LEVA = {
+  female: {
+    mass: { head: 0.0668, trunk: 0.4257, upper_arm: 0.0255, forearm: 0.0138, hand: 0.0056, thigh: 0.1478, shank: 0.0481, foot: 0.0129 },
+    com: { head: 0.4841, trunk: 0.4964, upper_arm: 0.5754, forearm: 0.4559, hand: 0.7474, thigh: 0.3612, shank: 0.4352, foot: 0.4014 }
+  },
+  male: {
+    mass: { head: 0.0694, trunk: 0.4346, upper_arm: 0.0271, forearm: 0.0162, hand: 0.0061, thigh: 0.1416, shank: 0.0433, foot: 0.0137 },
+    com: { head: 0.5002, trunk: 0.5138, upper_arm: 0.5772, forearm: 0.4574, hand: 0.7900, thigh: 0.4095, shank: 0.4395, foot: 0.4415 }
+  }
+};
+
+function createDeLevaCOM() {
+  if (!trial || !rawLoadedXYZ) return;
+  const template = embeddedTemplates[activeSkeletonTemplate];
+  if (!template || !Array.isArray(template.keypoints) || template.keypoints.length < 70) {
+    status("Load the SAM 3D MHR-70 or Sapiens2 Goliath-308 skeleton before creating de Leva CoM.", true);
+    return;
+  }
+  const normalized = value => String(value).toLowerCase().replaceAll("-", "_");
+  const indices = new Map(template.keypoints.map((name, index) => [normalized(name), index]));
+  const indexOf = (...names) => {
+    for (const name of names) {
+      if (indices.has(name)) return indices.get(name);
+    }
+    return -1;
+  };
+  const ids = {
+    nose: indexOf("nose"),
+    neck: indexOf("neck"),
+    leftShoulder: indexOf("left_shoulder"),
+    rightShoulder: indexOf("right_shoulder"),
+    leftElbow: indexOf("left_elbow"),
+    rightElbow: indexOf("right_elbow"),
+    leftWrist: indexOf("left_wrist"),
+    rightWrist: indexOf("right_wrist"),
+    leftMiddle: indexOf("left_middle_tip", "left_middle_finger4"),
+    rightMiddle: indexOf("right_middle_tip", "right_middle_finger4"),
+    leftHip: indexOf("left_hip"),
+    rightHip: indexOf("right_hip"),
+    leftKnee: indexOf("left_knee"),
+    rightKnee: indexOf("right_knee"),
+    leftAnkle: indexOf("left_ankle"),
+    rightAnkle: indexOf("right_ankle"),
+    leftHeel: indexOf("left_heel"),
+    rightHeel: indexOf("right_heel"),
+    leftBigToe: indexOf("left_big_toe_tip", "left_big_toe"),
+    rightBigToe: indexOf("right_big_toe_tip", "right_big_toe"),
+    leftSmallToe: indexOf("left_small_toe_tip", "left_small_toe"),
+    rightSmallToe: indexOf("right_small_toe_tip", "right_small_toe")
+  };
+  if (Object.values(ids).some(index => index < 0)) {
+    status("The selected skeleton lacks landmarks required by the de Leva whole-body model.", true);
+    return;
+  }
+
+  const sex = $("com-sex")?.value === "female" ? "female" : "male";
+  const coefficients = DE_LEVA[sex];
+  const midpoint = (a, b) => valid(a) && valid(b)
+    ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]
+    : null;
+  const comTrajectory = rawLoadedXYZ.map(points => {
+    const p = key => points[ids[key]];
+    const shoulderMid = midpoint(p("leftShoulder"), p("rightShoulder"));
+    const hipMid = midpoint(p("leftHip"), p("rightHip"));
+    const leftToes = midpoint(p("leftBigToe"), p("leftSmallToe"));
+    const rightToes = midpoint(p("rightBigToe"), p("rightSmallToe"));
+    const segments = [
+      ["head", p("neck"), p("nose")],
+      ["trunk", shoulderMid, hipMid],
+      ["upper_arm", p("leftShoulder"), p("leftElbow")],
+      ["upper_arm", p("rightShoulder"), p("rightElbow")],
+      ["forearm", p("leftElbow"), p("leftWrist")],
+      ["forearm", p("rightElbow"), p("rightWrist")],
+      ["hand", p("leftWrist"), p("leftMiddle")],
+      ["hand", p("rightWrist"), p("rightMiddle")],
+      ["thigh", p("leftHip"), p("leftKnee")],
+      ["thigh", p("rightHip"), p("rightKnee")],
+      ["shank", p("leftKnee"), p("leftAnkle")],
+      ["shank", p("rightKnee"), p("rightAnkle")],
+      ["foot", p("leftHeel"), leftToes],
+      ["foot", p("rightHeel"), rightToes]
+    ];
+    const weighted = [0, 0, 0];
+    let availableMass = 0;
+    for (const [segment, proximal, distal] of segments) {
+      if (!valid(proximal) || !valid(distal)) continue;
+      const fraction = coefficients.com[segment];
+      const mass = coefficients.mass[segment];
+      for (let axis = 0; axis < 3; axis++) {
+        weighted[axis] += mass * (proximal[axis] + fraction * (distal[axis] - proximal[axis]));
+      }
+      availableMass += mass;
+    }
+    return availableMass > 0 ? weighted.map(value => value / availableMass) : null;
+  });
+
+  let comIndex = trial.labels.findIndex(label => label.startsWith("CenterOfMass_deLeva"));
+  const label = `CenterOfMass_deLeva_${sex}`;
+  if (comIndex < 0) {
+    comIndex = trial.labels.length;
+    trial.labels.push(label);
+    rawLoadedXYZ.forEach((points, index) => points.push(comTrajectory[index]));
+  } else {
+    trial.labels[comIndex] = label;
+    rawLoadedXYZ.forEach((points, index) => { points[comIndex] = comTrajectory[index]; });
+  }
+  recomputeTrialXYZ();
+  refreshMarkerSelectors();
+  buildTable();
+  activeMarkerIndex = comIndex;
+  if ($("marker-select")) $("marker-select").value = String(comIndex);
+  applySkeletonTemplate(template);
+  if ($("marker-count-badge")) $("marker-count-badge").textContent = `${trial.labels.length} markers`;
+  status(`Created ${label}; the virtual marker is included in CSV, C3D, Blender, BVH, and HTML exports.`);
+}
+
 function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
   if (!$("bones") || !$("bones").checked || !skeletonPairs.length || !pts) return;
   const boneColor = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
@@ -1686,12 +1931,177 @@ function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.c
   }
 }
 
+// Draw 3D Physical Force Platforms on Floor
+function drawForcePlates(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
+  if (!trial || !trial.force_plates || !trial.force_plates.length || !showForcePlates) return;
+  const isLight = currentTheme === "light";
+  const fillColor = isLight ? "rgba(203, 213, 225, 0.45)" : "rgba(30, 41, 59, 0.55)";
+  const strokeColor = isLight ? "rgba(100, 116, 139, 0.85)" : "rgba(71, 85, 105, 0.9)";
+  const gridColor = isLight ? "rgba(148, 163, 184, 0.35)" : "rgba(51, 65, 85, 0.45)";
+  const labelColor = isLight ? "#334155" : "#94a3b8";
+
+  for (const fp of trial.force_plates) {
+    if (!fp.corners || fp.corners.length < 4) continue;
+    const c = fp.corners;
+    const p0 = project(c[0], w, h), p1 = project(c[1], w, h);
+    const p2 = project(c[2], w, h), p3 = project(c[3], w, h);
+
+    if (!Number.isFinite(p0[0]) || !Number.isFinite(p1[0]) || !Number.isFinite(p2[0]) || !Number.isFinite(p3[0])) continue;
+
+    // Draw plate surface quad
+    targetCtx.beginPath();
+    targetCtx.moveTo(p0[0], p0[1]);
+    targetCtx.lineTo(p1[0], p1[1]);
+    targetCtx.lineTo(p2[0], p2[1]);
+    targetCtx.lineTo(p3[0], p3[1]);
+    targetCtx.closePath();
+
+    targetCtx.fillStyle = fillColor;
+    targetCtx.fill();
+    targetCtx.strokeStyle = strokeColor;
+    targetCtx.lineWidth = 1.5;
+    targetCtx.stroke();
+
+    // Internal cross markings
+    const midTop = [(c[0][0] + c[1][0]) / 2, (c[0][1] + c[1][1]) / 2, (c[0][2] + c[1][2]) / 2];
+    const midBot = [(c[3][0] + c[2][0]) / 2, (c[3][1] + c[2][1]) / 2, (c[3][2] + c[2][2]) / 2];
+    const midLeft = [(c[0][0] + c[3][0]) / 2, (c[0][1] + c[3][1]) / 2, (c[0][2] + c[3][2]) / 2];
+    const midRight = [(c[1][0] + c[2][0]) / 2, (c[1][1] + c[2][1]) / 2, (c[1][2] + c[2][2]) / 2];
+
+    const pmTop = project(midTop, w, h), pmBot = project(midBot, w, h);
+    const pmLeft = project(midLeft, w, h), pmRight = project(midRight, w, h);
+
+    targetCtx.strokeStyle = gridColor;
+    targetCtx.lineWidth = 1;
+    targetCtx.beginPath();
+    targetCtx.moveTo(pmTop[0], pmTop[1]);
+    targetCtx.lineTo(pmBot[0], pmBot[1]);
+    targetCtx.moveTo(pmLeft[0], pmLeft[1]);
+    targetCtx.lineTo(pmRight[0], pmRight[1]);
+    targetCtx.stroke();
+
+    // Plate Label at center
+    const center3D = [
+      (c[0][0] + c[2][0]) / 2,
+      (c[0][1] + c[2][1]) / 2,
+      (c[0][2] + c[2][2]) / 2,
+    ];
+    const pc = project(center3D, w, h);
+    targetCtx.fillStyle = labelColor;
+    targetCtx.font = "bold 11px system-ui, sans-serif";
+    targetCtx.textAlign = "center";
+    targetCtx.textBaseline = "middle";
+    targetCtx.fillText(fp.name || `FP${fp.id + 1}`, pc[0], pc[1]);
+    targetCtx.textAlign = "left";
+    targetCtx.textBaseline = "alphabetic";
+  }
+}
+
+// Draw Dynamic Ground Reaction Force (GRF) Vectors & COP
+function drawForceVectors(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
+  if (!trial || !trial.force_plates || !trial.force_plates.length || !showForceVectors) return;
+  const isLight = currentTheme === "light";
+  const vectorColor = isLight ? "#ea580c" : "#f97316";
+  const copColor = isLight ? "#eab308" : "#facc15";
+
+  let totalFz = 0;
+  const plateReadouts = [];
+
+  for (const fp of trial.force_plates) {
+    if (!fp.cop || !fp.force) continue;
+    const cop = fp.cop[frame];
+    const force = fp.force[frame];
+    const contact = fp.contact ? fp.contact[frame] : true;
+
+    if (!cop || !valid(cop) || !force || !valid(force) || !contact) continue;
+
+    const fz = force[2];
+    const fMag = Math.hypot(force[0], force[1], force[2]);
+    if (Math.abs(fz) < forceThreshold || fMag < 1.0) continue;
+
+    totalFz += fz;
+    plateReadouts.push(`${fp.name}: ${Math.round(fz)} N`);
+
+    // Project Center of Pressure
+    const pCop = project(cop, w, h);
+
+    // Tip of vector in 3D (meters)
+    const tip3D = [
+      cop[0] + force[0] * forceVectorScale,
+      cop[1] + force[1] * forceVectorScale,
+      cop[2] + force[2] * forceVectorScale,
+    ];
+    const pTip = project(tip3D, w, h);
+
+    if (!Number.isFinite(pCop[0]) || !Number.isFinite(pTip[0])) continue;
+
+    // Draw COP marker on plate surface
+    targetCtx.beginPath();
+    targetCtx.arc(pCop[0], pCop[1], 4.5, 0, Math.PI * 2);
+    targetCtx.fillStyle = copColor;
+    targetCtx.fill();
+    targetCtx.strokeStyle = isLight ? "#0f172a" : "#ffffff";
+    targetCtx.lineWidth = 1.5;
+    targetCtx.stroke();
+
+    // Draw 3D Force Vector Shaft
+    targetCtx.beginPath();
+    targetCtx.moveTo(pCop[0], pCop[1]);
+    targetCtx.lineTo(pTip[0], pTip[1]);
+    targetCtx.strokeStyle = vectorColor;
+    targetCtx.lineWidth = 3.5;
+    targetCtx.stroke();
+
+    // Draw Arrowhead at tip
+    const dx = pTip[0] - pCop[0], dy = pTip[1] - pCop[1];
+    const len = Math.hypot(dx, dy);
+    if (len > 4) {
+      const angle = Math.atan2(dy, dx);
+      const headLen = Math.min(14, len * 0.4);
+      const headAngle = Math.PI / 6;
+
+      targetCtx.beginPath();
+      targetCtx.moveTo(pTip[0], pTip[1]);
+      targetCtx.lineTo(
+        pTip[0] - headLen * Math.cos(angle - headAngle),
+        pTip[1] - headLen * Math.sin(angle - headAngle)
+      );
+      targetCtx.lineTo(
+        pTip[0] - headLen * Math.cos(angle + headAngle),
+        pTip[1] - headLen * Math.sin(angle + headAngle)
+      );
+      targetCtx.closePath();
+      targetCtx.fillStyle = vectorColor;
+      targetCtx.fill();
+    }
+
+    // Force magnitude readout next to arrow tip
+    targetCtx.font = "bold 11px system-ui, sans-serif";
+    targetCtx.fillStyle = isLight ? "#0f172a" : "#f0f6fc";
+    targetCtx.fillText(`${Math.round(fMag)} N`, pTip[0] + 8, pTip[1] - 4);
+  }
+
+  // Update sidebar readouts
+  if ($("total-fz-val")) {
+    $("total-fz-val").textContent = `${Math.round(totalFz)} N`;
+  }
+  if ($("plate-mini-readouts")) {
+    $("plate-mini-readouts").textContent = plateReadouts.length > 0 ? plateReadouts.join(" · ") : "No active contact";
+  }
+}
+
 // Render 3D scene to any canvas context (main scene or detached popout window)
 function drawSceneToContext(targetCtx, w, h) {
   targetCtx.clearRect(0, 0, w, h);
   if (!trial) return;
 
   drawGroundGrid(targetCtx, w, h);
+
+  // Draw Force Platforms on the floor
+  drawForcePlates(targetCtx, w, h);
+
+  // Draw Ground Reaction Force Vectors & Center of Pressure
+  drawForceVectors(targetCtx, w, h);
 
   const pts = trial.xyz[frame] || [];
   const activeIdx = activeMarkerIndex;
@@ -1744,13 +2154,14 @@ function drawSceneToContext(targetCtx, w, h) {
   for (const { i, q } of visible) {
     const isAct = i === activeIdx;
     const isA = showDistance && i === a, isB = showDistance && i === b;
+    const isCOM = trial.labels[i]?.startsWith("CenterOfMass_deLeva");
     targetCtx.beginPath();
-    const radius = isAct ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
+    const radius = isAct || isCOM ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
     targetCtx.arc(q[0], q[1], radius, 0, Math.PI * 2);
-    targetCtx.fillStyle = isAct ? actColor : (isA ? actColor : (isB ? bColor : regularColor));
+    targetCtx.fillStyle = isCOM ? "#ec4899" : (isAct ? actColor : (isA ? actColor : (isB ? bColor : regularColor)));
     targetCtx.fill();
 
-    if (isAct) {
+    if (isAct || isCOM) {
       targetCtx.strokeStyle = isLight ? "#0f172a" : "#ffffff";
       targetCtx.lineWidth = Math.max(1.5, baseRadius * 0.4);
       targetCtx.stroke();
@@ -1862,6 +2273,46 @@ function getSeriesForMode(mode) {
       }
     }
     series.push({ name: "Speed (m/s)", color: colSpeed, values: speedVals });
+  } else if (mode === "fp-all-fz" && trial.force_plates && trial.force_plates.length) {
+    const fpPalette = isLight
+      ? ["#ea580c", "#2563eb", "#059669", "#7c3aed"]
+      : ["#f97316", "#60a5fa", "#34d399", "#a78bfa"];
+    const totalFzVals = new Array(totalFrames).fill(0);
+    trial.force_plates.forEach((fp, idx) => {
+      const col = fpPalette[idx % fpPalette.length];
+      const vals = fp.force.map(f => f ? f[2] : 0);
+      series.push({ name: `${fp.name} Fz (N)`, color: col, values: vals });
+      for (let i = 0; i < totalFrames; i++) {
+        if (Number.isFinite(vals[i])) totalFzVals[i] += vals[i];
+      }
+    });
+    series.unshift({
+      name: "Total Vertical GRF (N)",
+      color: isLight ? "#dc2626" : "#ef4444",
+      values: totalFzVals,
+    });
+  } else if (mode.startsWith("fp-plate-") && trial.force_plates) {
+    const pIdx = Number(mode.replace("fp-plate-", ""));
+    const fp = trial.force_plates[pIdx];
+    if (fp && fp.force) {
+      const colX = isLight ? "#dc2626" : "#ef8686";
+      const colY = isLight ? "#16a34a" : "#82d99d";
+      const colZ = isLight ? "#2563eb" : "#60a5fa";
+      series.push({ name: `${fp.name} Fx (N)`, color: colX, values: fp.force.map(f => f ? f[0] : 0) });
+      series.push({ name: `${fp.name} Fy (N)`, color: colY, values: fp.force.map(f => f ? f[1] : 0) });
+      series.push({ name: `${fp.name} Fz (N)`, color: colZ, values: fp.force.map(f => f ? f[2] : 0) });
+    }
+  } else if (mode === "fp-cop" && trial.force_plates) {
+    const copPalette = isLight
+      ? [["#b45309", "#d97706"], ["#1d4ed8", "#3b82f6"]]
+      : [["#f59e0b", "#fbbf24"], ["#60a5fa", "#93c5fd"]];
+    trial.force_plates.forEach((fp, idx) => {
+      const cols = copPalette[idx % copPalette.length];
+      const copX = fp.cop.map(p => p && Number.isFinite(p[0]) ? p[0] : NaN);
+      const copY = fp.cop.map(p => p && Number.isFinite(p[1]) ? p[1] : NaN);
+      series.push({ name: `${fp.name} COP X (m)`, color: cols[0], values: copX });
+      series.push({ name: `${fp.name} COP Y (m)`, color: cols[1], values: copY });
+    });
   }
   return series;
 }
@@ -2053,10 +2504,9 @@ function seekToMotion() {
   status(`Jumped to motion onset at frame ${frame + 1} (${(frame / trial.rate_hz).toFixed(2)}s).`);
 }
 
-function saveSessionState() {
-  if (!trial) return;
-  try {
-    const state = {
+function collectViewerState() {
+  if (!trial) return {};
+  return {
       trialName: trial.name,
       frame,
       activeMarkerIndex,
@@ -2071,14 +2521,25 @@ function saveSessionState() {
       bones: $("bones") ? $("bones").checked : true,
       loop: $("loop") ? $("loop").checked : true,
       showDistance,
+      showForcePlates,
+      showForceVectors,
+      forceVectorScale,
+      forceThreshold,
       speed: $("speed") ? $("speed").value : "1",
+      rateHz: trial.rate_hz,
       theme: currentTheme,
       markerSize,
       markerColor,
       currentLCS,
       activeFilterConfig,
       plotHeight: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--plot-height").trim() : "170px"
-    };
+  };
+}
+
+function saveSessionState() {
+  if (!trial) return;
+  try {
+    const state = collectViewerState();
     sessionStorage.setItem("mkvis3d_session", JSON.stringify(state));
   } catch (e) {
     // Ignore quota errors
@@ -2119,7 +2580,29 @@ function restoreSessionState(data) {
     if (typeof state.bones === "boolean" && $("bones")) $("bones").checked = state.bones;
     if (typeof state.loop === "boolean" && $("loop")) $("loop").checked = state.loop;
     if (typeof state.showDistance === "boolean") setDistanceVisible(state.showDistance);
+    if (typeof state.showForcePlates === "boolean") {
+      showForcePlates = state.showForcePlates;
+      if ($("show-force-plates")) $("show-force-plates").checked = showForcePlates;
+    }
+    if (typeof state.showForceVectors === "boolean") {
+      showForceVectors = state.showForceVectors;
+      if ($("show-force-vectors")) $("show-force-vectors").checked = showForceVectors;
+    }
+    if (Number.isFinite(state.forceVectorScale)) {
+      forceVectorScale = state.forceVectorScale;
+      if ($("force-scale-slider")) $("force-scale-slider").value = String((forceVectorScale * 1000).toFixed(1));
+      if ($("force-scale-val")) $("force-scale-val").textContent = `${(forceVectorScale * 1000).toFixed(1)} mm/N`;
+    }
+    if (Number.isFinite(state.forceThreshold)) {
+      forceThreshold = state.forceThreshold;
+      if ($("force-threshold-slider")) $("force-threshold-slider").value = String(forceThreshold);
+      if ($("force-threshold-val")) $("force-threshold-val").textContent = `${forceThreshold} N`;
+    }
     if (state.speed && $("speed")) $("speed").value = state.speed;
+    if (Number.isFinite(state.rateHz) && state.rateHz > 0) {
+      trial.rate_hz = state.rateHz;
+      if ($("rate")) $("rate").value = String(state.rateHz);
+    }
     if (state.theme && (state.theme === "light" || state.theme === "dark")) {
       setTheme(state.theme);
     }
@@ -2146,6 +2629,29 @@ function restoreSessionState(data) {
   }
 }
 
+function refreshMarkerSelectors() {
+  if (!trial) return;
+  for (const key of [
+    "marker-a", "marker-b", "marker-select",
+    "orientation-origin", "orientation-x-point", "orientation-plane-point"
+  ]) {
+    if (!$(key)) continue;
+    const previous = $(key).value;
+    $(key).replaceChildren(...trial.labels.map((label, i) => {
+      const option = document.createElement("option");
+      option.value = String(i);
+      option.textContent = label;
+      return option;
+    }));
+    if (Number(previous) < trial.labels.length) $(key).value = previous;
+  }
+  if ($("marker-b") && trial.labels.length > 1 && $("marker-b").value === "") {
+    $("marker-b").value = "1";
+  }
+  if ($("orientation-x-point") && trial.labels.length > 1) $("orientation-x-point").value = "1";
+  if ($("orientation-plane-point") && trial.labels.length > 2) $("orientation-plane-point").value = "2";
+}
+
 function load(data) {
   trial = data;
   frame = 0;
@@ -2159,33 +2665,73 @@ function load(data) {
   activeFilterConfig = null;
   filterPreviewActive = false;
   filterPreviewSeries = null;
+  analysisResults = {};
 
   $("title").textContent = data.name;
   $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
+  if ($("rate")) $("rate").value = String(data.rate_hz);
   if ($("marker-count-badge")) $("marker-count-badge").textContent = `${data.labels.length} markers`;
   $("welcome").hidden = true;
 
-  for (const key of ["marker-a", "marker-b", "marker-select"]) {
-    if (!$(key)) continue;
-    $(key).replaceChildren(...data.labels.map((label, i) => {
-      const o = document.createElement("option");
-      o.value = String(i);
-      o.textContent = label;
-      return o;
-    }));
-  }
+  refreshMarkerSelectors();
   if ($("marker-b")) $("marker-b").value = String(Math.min(1, data.labels.length - 1));
 
-  for (const id of ["play", "prev", "next", "timeline", "export", "snapshot", "first", "last", "seek-motion", "btn-load-skeleton", "btn-clear-skeleton"]) {
+  for (const id of ["play", "prev", "next", "timeline", "export", "snapshot", "first", "last", "seek-motion", "btn-load-skeleton", "btn-clear-skeleton", "btn-apply-rate", "btn-create-com", "btn-analyze-orientation", "btn-export-analyses"]) {
     if ($(id)) $(id).disabled = false;
   }
   $("timeline").max = String(data.xyz.length - 1);
 
   initSkeleton(data.labels);
   buildTable();
+
+  // Handle Force Plates
+  rawForcePlates = data.force_plates ? JSON.parse(JSON.stringify(data.force_plates)) : null;
+  const hasForcePlates = Array.isArray(data.force_plates) && data.force_plates.length > 0;
+  if ($("force-platforms-section")) {
+    $("force-platforms-section").hidden = !hasForcePlates;
+    if (hasForcePlates && $("force-plate-count-badge")) {
+      $("force-plate-count-badge").textContent = `${data.force_plates.length} plates`;
+    }
+  }
+
+  // Update plot modes dropdowns with force plate options if present
+  for (const plotSelectId of ["plot1-mode", "plot2-mode"]) {
+    const sel = $(plotSelectId);
+    if (!sel) continue;
+    Array.from(sel.querySelectorAll(".fp-opt-group, option[value^='fp-']")).forEach(opt => opt.remove());
+    if (hasForcePlates) {
+      const optGroup = document.createElement("optgroup");
+      optGroup.label = "── Force Plates & GRF ──";
+      optGroup.className = "fp-opt-group";
+
+      const optFz = document.createElement("option");
+      optFz.value = "fp-all-fz";
+      optFz.textContent = "Ground Reaction Force · Vertical (Fz - Total & Plates)";
+      optGroup.appendChild(optFz);
+
+      data.force_plates.forEach((fp, idx) => {
+        const optP = document.createElement("option");
+        optP.value = `fp-plate-${idx}`;
+        optP.textContent = `${fp.name} · 3D Forces (Fx, Fy, Fz)`;
+        optGroup.appendChild(optP);
+      });
+
+      const optCop = document.createElement("option");
+      optCop.value = "fp-cop";
+      optCop.textContent = "Center of Pressure · (COP X & Y)";
+      optGroup.appendChild(optCop);
+
+      sel.appendChild(optGroup);
+    }
+  }
+  if (hasForcePlates && $("plot1-mode")) {
+    $("plot1-mode").value = "fp-all-fz";
+  }
+
   fit();
   measure();
   restoreSessionState(data);
+  $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
   if (currentLCS.ap !== "+Y" || currentLCS.axial !== "+Z" || activeFilterConfig) {
     recomputeTrialXYZ();
   }
@@ -2334,6 +2880,39 @@ if ($("marker-select")) {
 if ($("plot1-mode")) $("plot1-mode").onchange = draw;
 if ($("plot2-mode")) $("plot2-mode").onchange = draw;
 
+if ($("show-force-plates")) {
+  $("show-force-plates").onchange = e => {
+    showForcePlates = e.target.checked;
+    draw();
+    saveSessionState();
+  };
+}
+if ($("show-force-vectors")) {
+  $("show-force-vectors").onchange = e => {
+    showForceVectors = e.target.checked;
+    draw();
+    saveSessionState();
+  };
+}
+if ($("force-scale-slider")) {
+  $("force-scale-slider").oninput = e => {
+    const val = Number(e.target.value);
+    forceVectorScale = val * 0.001;
+    if ($("force-scale-val")) $("force-scale-val").textContent = `${val.toFixed(1)} mm/N`;
+    draw();
+  };
+  $("force-scale-slider").onchange = saveSessionState;
+}
+if ($("force-threshold-slider")) {
+  $("force-threshold-slider").oninput = e => {
+    const val = Number(e.target.value);
+    forceThreshold = val;
+    if ($("force-threshold-val")) $("force-threshold-val").textContent = `${val} N`;
+    draw();
+  };
+  $("force-threshold-slider").onchange = saveSessionState;
+}
+
 // Layout Presets
 function setLayout(name) {
   const container = $("windows-container");
@@ -2428,6 +3007,7 @@ async function loadSelectedSkeleton() {
 }
 
 if ($("btn-load-skeleton")) $("btn-load-skeleton").onclick = loadSelectedSkeleton;
+if ($("btn-create-com")) $("btn-create-com").onclick = createDeLevaCOM;
 if ($("btn-clear-skeleton")) {
   $("btn-clear-skeleton").onclick = () => {
     skeletonPairs = [];
@@ -3383,14 +3963,261 @@ document.addEventListener("keydown", e => {
 });
 
 // Download utility
-function download(text, name, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+function download(text, name, type) {
+  downloadBlob(new Blob([text], { type }), name);
+}
+
+async function exportEditedC3D() {
+  if (!trial) {
+    status("Load a trial before exporting C3D.", true);
+    return;
+  }
+  if (!boot.server) {
+    status("C3D export requires the local GUI session; CSV, BVH, Blender, and HTML remain available offline.", true);
+    return;
+  }
+  status("Encoding the currently edited trial as C3D...");
+  try {
+    const response = await fetch("/api/export/c3d", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(trial)
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Failed to export C3D.");
+    }
+    const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    downloadBlob(await response.blob(), `${stem}_edited.c3d`);
+    status(`Saved ${stem}_edited.c3d from the current FPS and edited trajectories.`);
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+if ($("action-export-c3d")) $("action-export-c3d").onclick = exportEditedC3D;
+
+function collectAnalysisResults() {
+  const results = JSON.parse(JSON.stringify(analysisResults || {}));
+  if (trial && trial.labels.length) {
+    const markerA = Math.max(0, Number($("marker-a")?.value || 0));
+    const markerB = Math.max(0, Number($("marker-b")?.value || 0));
+    results.distance = {
+      schema_version: 1,
+      units: "m",
+      rate_hz: trial.rate_hz,
+      markers: [trial.labels[markerA], trial.labels[markerB]],
+      values: distances.map(value => Number.isFinite(value) ? value : null)
+    };
+  }
+  return results;
+}
+
+async function analyzeOrientation() {
+  if (!trial || !boot.server) {
+    status("Orientation analysis requires a loaded trial in the local GUI.", true);
+    return;
+  }
+  const markerAt = id => trial.labels[Number($(id)?.value || 0)];
+  const origin = markerAt("orientation-origin");
+  const xAxisPoint = markerAt("orientation-x-point");
+  const xyPlanePoint = markerAt("orientation-plane-point");
+  if (new Set([origin, xAxisPoint, xyPlanePoint]).size !== 3) {
+    status("Orientation definition requires three distinct markers.", true);
+    return;
+  }
+  const sequences = Array.from(document.querySelectorAll("#orientation-sequences input:checked"))
+    .map(input => input.value);
+  if (!sequences.length) {
+    status("Select at least one Euler/Cardan sequence.", true);
+    return;
+  }
+  status("Computing marker-frame quaternions and Euler/Cardan sequences...");
+  try {
+    const response = await fetch("/api/analyze/orientation", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trial,
+        origin,
+        x_axis_point: xAxisPoint,
+        xy_plane_point: xyPlanePoint,
+        sequences
+      })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Orientation analysis failed.");
+    if (!Array.isArray(analysisResults.orientations)) analysisResults.orientations = [];
+    const key = `${origin}|${xAxisPoint}|${xyPlanePoint}`;
+    analysisResults.orientations = analysisResults.orientations.filter(
+      item => `${item.definition.origin}|${item.definition.x_axis_point}|${item.definition.xy_plane_point}` !== key
+    );
+    analysisResults.orientations.push(result);
+    if ($("orientation-status-badge")) {
+      $("orientation-status-badge").textContent = `${sequences.length} sequences`;
+      $("orientation-status-badge").style.color = "var(--accent)";
+    }
+    if ($("btn-export-analyses")) $("btn-export-analyses").disabled = false;
+    saveSessionState();
+    status(`Orientation saved: scalar-first wxyz quaternions plus ${sequences.join(", ")} Euler/Cardan angles.`);
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+function exportAnalysesJSON() {
+  if (!trial) return;
+  const content = {
+    schema: "openbiomech-analyses",
+    schema_version: 1,
+    trial_name: trial.name,
+    rate_hz: trial.rate_hz,
+    analyses: collectAnalysisResults()
+  };
+  const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  download(JSON.stringify(content, null, 2) + "\n", `${stem}_analyses.json`, "application/json");
+}
+
+if ($("btn-analyze-orientation")) $("btn-analyze-orientation").onclick = analyzeOrientation;
+if ($("btn-export-analyses")) $("btn-export-analyses").onclick = exportAnalysesJSON;
+if ($("btn-attach-analysis")) $("btn-attach-analysis").onclick = () => $("file-analysis")?.click();
+if ($("file-analysis")) {
+  $("file-analysis").onchange = async () => {
+    const file = $("file-analysis").files[0];
+    if (!file) return;
+    try {
+      if (file.size > 64 * 1024 * 1024) throw new Error("Analysis attachment exceeds 64 MiB.");
+      const text = await file.text();
+      const extension = file.name.toLowerCase().split(".").pop();
+      let data;
+      let kind = "analysis";
+      if (extension === "json") {
+        data = JSON.parse(text);
+        if (data?.segments && data?.plate) {
+          kind = "inverse_dynamics_input";
+          if (boot.server) {
+            const response = await fetch("/api/analyze/dynamics", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+              },
+              body: text
+            });
+            const dynamics = await response.json();
+            if (!response.ok) throw new Error(dynamics.error || "Inverse dynamics failed.");
+            analysisResults.inverse_dynamics = {
+              schema_version: 1,
+              units: "SI",
+              source: file.name,
+              row_count: dynamics.row_count,
+              csv: dynamics.csv
+            };
+          }
+        }
+        if (data?.analyses?.inverse_dynamics) kind = "inverse_dynamics_results";
+      } else {
+        data = text;
+        const header = text.split(/\r?\n/, 1)[0];
+        if (header.includes("Fx_N") && header.includes("Mx_Nm")) kind = "inverse_dynamics_results";
+      }
+      if (!Array.isArray(analysisResults.attachments)) analysisResults.attachments = [];
+      analysisResults.attachments = analysisResults.attachments.filter(item => item.name !== file.name);
+      analysisResults.attachments.push({
+        name: file.name,
+        kind,
+        media_type: extension === "json" ? "application/json" : "text/csv",
+        data
+      });
+      if ($("btn-export-analyses")) $("btn-export-analyses").disabled = false;
+      status(`Attached ${file.name} (${kind}); it will be preserved in the .vaila project.`);
+    } catch (error) {
+      status(error.message, true);
+    } finally {
+      $("file-analysis").value = "";
+    }
+  };
+}
+
+async function saveVailaProject() {
+  if (!trial) {
+    status("Load a trial before saving a .vaila project.", true);
+    return;
+  }
+  if (!boot.server) {
+    status("Complete .vaila project save requires the local GUI session.", true);
+    return;
+  }
+  const viewerState = collectViewerState();
+  viewerState.raw_loaded_xyz = rawLoadedXYZ;
+  viewerState.raw_force_plates = rawForcePlates;
+  status("Saving complete open .vaila project...");
+  try {
+    const response = await fetch("/api/export/vaila", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trial,
+        viewer_state: viewerState,
+        analyses: collectAnalysisResults()
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Failed to save .vaila project.");
+    }
+    const stem = (trial.name || "project").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    downloadBlob(await response.blob(), `${stem}.vaila`);
+    status(`Saved ${stem}.vaila with trial, processing state, analyses, analog channels, and source.`);
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+function loadVailaProject(project) {
+  if (!project || !project.trial) throw new Error("Invalid .vaila project response.");
+  load(project.trial);
+  const state = project.viewer_state && typeof project.viewer_state === "object"
+    ? project.viewer_state
+    : {};
+  if (Array.isArray(state.raw_loaded_xyz)) rawLoadedXYZ = state.raw_loaded_xyz;
+  if (Array.isArray(state.raw_force_plates)) rawForcePlates = state.raw_force_plates;
+  analysisResults = project.analyses && typeof project.analyses === "object"
+    ? project.analyses
+    : {};
+  if ($("btn-export-analyses")) $("btn-export-analyses").disabled = false;
+  if ($("orientation-status-badge") && Array.isArray(analysisResults.orientations)) {
+    $("orientation-status-badge").textContent = `${analysisResults.orientations.length} saved`;
+    $("orientation-status-badge").style.color = "var(--accent)";
+  }
+  const restorable = { ...state, trialName: trial.name };
+  sessionStorage.setItem("mkvis3d_session", JSON.stringify(restorable));
+  restoreSessionState(trial);
+  recomputeTrialXYZ();
+  updateLCSUI();
+  updateFilterUI();
+  status(`Project ${trial.name} reopened with processing state and saved analyses.`);
+}
+
+if ($("action-save-vaila")) $("action-save-vaila").onclick = saveVailaProject;
 
 $("export").onclick = () => {
   const rows = ["frame,time_s,distance_m"];
@@ -3416,6 +4243,23 @@ window.addEventListener("drop", async e => {
 });
 
 // File Upload Handler
+function applyTrialRate() {
+  if (!trial || !$("rate")) return;
+  const rateHz = Number($("rate").value);
+  if (!Number.isFinite(rateHz) || rateHz <= 0) {
+    $("rate").value = String(trial.rate_hz);
+    status("Sampling rate must be a finite positive value in Hz.", true);
+    return;
+  }
+  trial.rate_hz = rateHz;
+  if (activeFilterConfig) recomputeTrialXYZ();
+  $("meta").textContent = `${trial.xyz.length} frames · ${trial.labels.length} markers · ${trial.rate_hz} Hz · coordinates in meters`;
+  measure();
+  draw();
+  saveSessionState();
+  status(`Sampling rate applied: ${rateHz} Hz. Playback, time, filters, and exports now use this FPS.`);
+}
+
 async function uploadFile(file) {
   pause();
   status(`Uploading and parsing ${file.name}...`);
@@ -3436,7 +4280,8 @@ async function uploadFile(file) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Failed to open file.");
-    load(data);
+    if (data.project) loadVailaProject(data.project);
+    else load(data);
   } catch (error) {
     status(error.message, true);
   } finally {
@@ -3452,6 +4297,13 @@ if ($("file")) {
     const file = $("file").files[0];
     if (file) uploadFile(file);
   };
+}
+
+if ($("btn-apply-rate")) $("btn-apply-rate").onclick = applyTrialRate;
+if ($("rate")) {
+  $("rate").addEventListener("keydown", e => {
+    if (e.key === "Enter" && trial) applyTrialRate();
+  });
 }
 
 if ($("btn-welcome-select")) {
@@ -3958,7 +4810,30 @@ function recomputeTrialXYZ() {
     const lcsRes = computeLCSMatrix(currentLCS.ap, currentLCS.axial);
     if (lcsRes.valid) {
       workingXYZ = applyLCSToXYZ(workingXYZ, lcsRes.R);
+      if (rawForcePlates) {
+        const R = lcsRes.R;
+        trial.force_plates = rawForcePlates.map(fp => ({
+          ...fp,
+          corners: fp.corners.map(c => [
+            R[0][0] * c[0] + R[0][1] * c[1] + R[0][2] * c[2],
+            R[1][0] * c[0] + R[1][1] * c[1] + R[1][2] * c[2],
+            R[2][0] * c[0] + R[2][1] * c[1] + R[2][2] * c[2],
+          ]),
+          cop: fp.cop.map(p => p ? [
+            R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2],
+            R[1][0] * p[0] + R[1][1] * p[1] + R[1][2] * p[2],
+            R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2],
+          ] : null),
+          force: fp.force.map(f => f ? [
+            R[0][0] * f[0] + R[0][1] * f[1] + R[0][2] * f[2],
+            R[1][0] * f[0] + R[1][1] * f[1] + R[1][2] * f[2],
+            R[2][0] * f[0] + R[2][1] * f[1] + R[2][2] * f[2],
+          ] : [0, 0, 0]),
+        }));
+      }
     }
+  } else if (rawForcePlates) {
+    trial.force_plates = JSON.parse(JSON.stringify(rawForcePlates));
   }
 
   // Apply Filter
@@ -4303,8 +5178,10 @@ function initLCSAndFilterControls() {
 
 $("open-panel").hidden = !boot.server;
 
-// Initial loading: check inlined trial, then check server active trial
-if (boot.trial) {
+// Initial loading: restore complete project first, then a plain inlined trial.
+if (boot.project) {
+  loadVailaProject(boot.project);
+} else if (boot.trial) {
   load(boot.trial);
 } else if (boot.server) {
   fetch("/api/current_trial")

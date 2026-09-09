@@ -63,19 +63,20 @@ uv run mkvis3d view data/trial.c3d --output trial_viewer.html
 ## `gui`
 
 Start the local, loopback-only web viewer (stdlib `http.server`) and open it
-in the default browser. Supports C3D/CSV/.3d file upload from the browser,
-playback, orbit/pan/zoom, distance measurement, real-time charts, force
-platform / GRF overlays, and CSV/HTML export.
+in the default browser. Supports C3D/CSV/.3d upload, complete `.vaila`
+project save/reopen, playback, processing, distance and orientation analysis,
+inverse dynamics, force-platform/GRF overlays, and data export.
 
 ```bash
 uv run mkvis3d gui                       # empty viewer, pick a file in the browser
 uv run mkvis3d gui data/trial.c3d        # load a file immediately
+uv run mkvis3d gui work.vaila            # restore trial, edits and analyses
 uv run mkvis3d gui --port 8765 --no-browser
 ```
 
 | Argument | Description |
 |---|---|
-| `path` | Optional motion file to load immediately |
+| `path` | Optional motion file or `.vaila` project to load immediately |
 | `--port` | Local port (`0` = choose a free port) |
 | `--no-browser` | Print the URL instead of launching a browser |
 

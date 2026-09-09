@@ -12,8 +12,10 @@ import pandas as pd
 import pytest
 from numpy.testing import assert_allclose
 
+from openbiomech.c3d_io import write_c3d
 from openbiomech.cli import main
 from openbiomech.marker_trial import MarkerTrial
+from openbiomech.project_io import read_vaila_project
 from openbiomech.trial_io import load_trial
 from openbiomech.viewer import create_server, render_viewer, trial_payload
 
@@ -151,6 +153,27 @@ def test_local_gui_upload_matches_cli_and_rejects_missing_token(tmp_path):
         current_data = json.loads(response.read())
         assert current_data["name"] == "trial.csv"
 
+        # Export the browser-edited state as C3D, including the modified FPS.
+        current_data["rate_hz"] = 120.0
+        current_data["xyz"][0][0] = [1.25, 2.5, 3.75]
+        edited_body = json.dumps(current_data).encode()
+        connection.request(
+            "POST",
+            "/api/export/c3d",
+            body=edited_body,
+            headers={
+                "Authorization": f"Bearer {url.split('#')[1]}",
+                "Content-Type": "application/json",
+            },
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        edited_path = tmp_path / "edited.c3d"
+        edited_path.write_bytes(response.read())
+        edited_trial = load_trial(edited_path)
+        assert edited_trial.rate_hz == 120.0
+        assert_allclose(edited_trial.xyz[0, 0], [1.25, 2.5, 3.75])
+
         # Test /api/skeleton_templates
         connection.request("GET", "/api/skeleton_templates")
         response = connection.getresponse()
@@ -166,7 +189,7 @@ def test_local_gui_upload_matches_cli_and_rejects_missing_token(tmp_path):
         assert response.status == 200
         sam_data = json.loads(response.read())
         assert sam_data["num_keypoints"] == 70
-        assert len(sam_data["connections"]) == 30
+        assert len(sam_data["connections"]) == 88
 
         # Test GET / retains active trial on reload/reflash
         connection.request("GET", "/")
@@ -174,6 +197,129 @@ def test_local_gui_upload_matches_cli_and_rejects_missing_token(tmp_path):
         assert response.status == 200
         html_content = response.read().decode("utf-8")
         assert "trial.csv" in html_content
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_gui_vaila_project_round_trip_and_analog_c3d_export(tmp_path):
+    trial = MarkerTrial(
+        labels=("p1",),
+        rate_hz=100.0,
+        xyz=np.array([[[0.0, 0.0, 0.0]], [[1.0, 2.0, 3.0]]], dtype=np.float64),
+        residuals=np.zeros((2, 1), dtype=np.float64),
+        analog_labels=("EMG",),
+        analog_units=("V",),
+        analog_rate_hz=200.0,
+        analog=np.array([[[0.1], [0.2]], [[0.3], [0.4]]], dtype=np.float64),
+    )
+    payload = trial_payload(trial, "source.c3d")
+    source_bytes = write_c3d(trial, tmp_path / "source.c3d").read_bytes()
+    server, url = create_server(
+        initial_payload=payload,
+        initial_source_name="source.c3d",
+        initial_source_bytes=source_bytes,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    token = url.split("#")[1]
+    project_request = {
+        "trial": payload,
+        "viewer_state": {
+            "currentLCS": {"ap": "+X", "axial": "+Z"},
+            "activeFilterConfig": {"smooth": "butterworth", "cutoff": 6.0},
+        },
+        "analyses": {
+            "distance": {"values": [1.0, 2.0]},
+            "orientations": {
+                "quaternions": [[1.0, 0.0, 0.0, 0.0]],
+                "euler": {"xyz": [[0.0, 0.0, 0.0]], "zyx": [[0.0, 0.0, 0.0]]},
+            },
+            "inverse_dynamics": {"units": "SI", "forces": [[0.0, 0.0, 100.0]]},
+        },
+    }
+    try:
+        body = json.dumps(project_request).encode()
+        connection.request(
+            "POST",
+            "/api/export/vaila",
+            body=body,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        archive_bytes = response.read()
+        project = read_vaila_project(archive_bytes)
+        assert project.trial == payload
+        assert project.viewer_state == project_request["viewer_state"]
+        assert project.analyses == project_request["analyses"]
+        assert project.source_bytes == source_bytes
+
+        connection.request(
+            "POST",
+            "/api/trial?name=work.vaila",
+            body=archive_bytes,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        reopened = json.loads(response.read())["project"]
+        assert reopened == {
+            "trial": payload,
+            "viewer_state": project_request["viewer_state"],
+            "analyses": project_request["analyses"],
+        }
+
+        connection.request(
+            "POST",
+            "/api/export/c3d",
+            body=json.dumps(reopened["trial"]).encode(),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        c3d_path = tmp_path / "edited-with-analog.c3d"
+        c3d_path.write_bytes(response.read())
+        recovered = load_trial(c3d_path)
+        assert recovered.analog_labels == ("EMG",)
+        assert recovered.analog_units == ("V",)
+        assert recovered.analog_rate_hz == 200.0
+        assert_allclose(recovered.analog, trial.analog)
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_gui_inverse_dynamics_analysis_endpoint(tmp_path):
+    from openbiomech.analysis_io import write_demo
+
+    input_path = tmp_path / "dynamics.json"
+    write_demo(input_path)
+    server, url = create_server()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    try:
+        connection.request(
+            "POST",
+            "/api/analyze/dynamics",
+            body=input_path.read_bytes(),
+            headers={
+                "Authorization": f"Bearer {url.split('#')[1]}",
+                "Content-Type": "application/json",
+            },
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        result = json.loads(response.read())
+        assert result["row_count"] == 40
+        assert result["csv"].startswith("frame,time_s,segment,Fx_N")
+        assert "pelvis" in result["csv"]
     finally:
         connection.close()
         server.shutdown()

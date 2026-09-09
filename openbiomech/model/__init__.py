@@ -27,6 +27,7 @@ Corresponds to README.md's `biomech-model` crate. Scoped to Phase 3 of
 """
 
 from .bsp import com_fraction_from_proximal, mass_fraction
+from .center_of_mass import de_leva_com_fraction, de_leva_mass_fraction, whole_body_com
 from .events import detect_gait_events
 from .isb_joints import decompose_joint_angular_velocity, joint_floating_axis
 from .landmark import Landmark, landmark_from_trial, virtual_midpoint
@@ -42,4 +43,7 @@ __all__ = [
     "detect_gait_events",
     "mass_fraction",
     "com_fraction_from_proximal",
+    "de_leva_com_fraction",
+    "de_leva_mass_fraction",
+    "whole_body_com",
 ]
