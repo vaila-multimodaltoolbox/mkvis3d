@@ -13,7 +13,22 @@ from typing import Any
 
 import numpy as np
 
+from .biomech_math.lcs import compute_lcs_matrix
 from .marker_trial import MarkerTrial
+
+# mkvis3d/vailá trials use the ISB laboratory convention (X=ML, Y=AP/forward,
+# Z=vertical/up) — see biomech_math.lcs.LCS_PRESETS["isb_default"]. The BVH
+# format (and Blender's native BVH importer) instead expects Y=up, Z=forward,
+# X=right. Writing ISB xyz straight into Xposition/Yposition/Zposition
+# channels put the subject's vertical axis into BVH's forward channel, so the
+# mocap loaded on its side / facing the wrong way in Blender's 3D viewport.
+# Reuse the LCS rotation machinery to convert ISB -> BVH axes before writing,
+# instead of re-deriving the mapping. This is a -90 degree rotation about X
+# (x, y, z) -> (x, z, -y): X unchanged, ISB's up (Z) becomes BVH's up (Y),
+# ISB's forward (Y) becomes BVH's forward (Z) with the sign flip needed to
+# keep the rotation right-handed. Cross-checked against data/rec3d_*.bvh, a
+# same-trial reference export already known to load correctly in Blender.
+_ISB_TO_BVH_ROTATION, _ = compute_lcs_matrix(ap_direction="+Z", axial_direction="-Y")
 
 
 def generate_blender_python_script(
@@ -210,6 +225,12 @@ def export_bvh(
     """Export motion trial to standard Biovision Hierarchy (.bvh) mocap file.
 
     Blender can import this natively via `bpy.ops.import_anim.bvh(filepath=...)`.
+
+    Trial coordinates are assumed to be in the ISB laboratory convention
+    (X=ML, Y=AP/forward, Z=up — see `biomech_math.lcs.LCS_PRESETS`) and are
+    rotated to the BVH convention (X=right, Y=up, Z=forward) before being
+    written, so the file's Xposition/Yposition/Zposition channels land the
+    subject upright and facing forward when imported into Blender.
     """
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -218,6 +239,7 @@ def export_bvh(
     rate_hz = float(trial.rate_hz) if np.isfinite(trial.rate_hz) and trial.rate_hz > 0 else 100.0
     frame_time = 1.0 / rate_hz
     num_frames = len(trial.xyz)
+    xyz_bvh = np.einsum("ij,fmj->fmi", _ISB_TO_BVH_ROTATION, trial.xyz)
 
     lines = ["HIERARCHY"]
     for label in labels:
@@ -238,12 +260,12 @@ def export_bvh(
     # Track last known valid position for markers with missing frames
     last_valid = [np.array([0.0, 0.0, 0.0], dtype=np.float64) for _ in labels]
     # Initialize with first valid
-    for frame_pts in trial.xyz:
+    for frame_pts in xyz_bvh:
         for idx, pt in enumerate(frame_pts):
             if np.all(np.isfinite(pt)):
                 last_valid[idx] = np.array(pt, dtype=np.float64)
 
-    for frame_pts in trial.xyz:
+    for frame_pts in xyz_bvh:
         frame_vals = []
         for idx, pt in enumerate(frame_pts):
             if np.all(np.isfinite(pt)):

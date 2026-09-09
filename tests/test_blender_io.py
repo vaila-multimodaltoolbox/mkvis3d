@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from openbiomech.blender_io import export_blender_script, export_bvh, generate_blender_python_script
@@ -55,6 +56,53 @@ def test_export_bvh(tmp_path):
     assert "ROOT p70" in content
     assert "MOTION" in content
     assert "Frames: 631" in content
+
+
+def test_export_bvh_converts_isb_axes_to_bvh_up_axes(tmp_path):
+    """ISB trials are X=ML, Y=AP/forward, Z=up; BVH files are X=right, Y=up,
+    Z=forward. A raw pass-through would put the subject's vertical axis into
+    BVH's forward channel, so the exported motion opens on its side / facing
+    the wrong way in Blender."""
+    from openbiomech.marker_trial import MarkerTrial
+
+    trial = MarkerTrial(
+        labels=("p1",),
+        rate_hz=100.0,
+        xyz=np.array([[[1.0, 2.0, 3.0]]]),  # ML=1, AP/forward=2, up=3
+        residuals=np.zeros((1, 1)),
+    )
+    out_bvh = tmp_path / "single_point.bvh"
+    export_bvh(trial, out_bvh)
+
+    motion_line = out_bvh.read_text(encoding="utf-8").splitlines()[-1]
+    x, y, z = (float(v) for v in motion_line.split())
+    assert (x, y, z) == pytest.approx((1.0, 3.0, -2.0))
+
+
+def test_export_bvh_matches_golden_vaila_bvh_axes(tmp_path):
+    """`data/rec3d_20260826_121305.bvh` is the same trial exported by vailá's
+    own (already Blender-correct) BVH writer. Our export must reproduce its
+    axis convention on marker p1's first frame, not just be internally
+    consistent."""
+
+    def first_motion_xyz(path: Path) -> tuple[float, float, float]:
+        line = next(
+            ln
+            for ln in path.read_text(encoding="utf-8").splitlines()
+            if ln and ln[0] in "-0123456789"
+        )
+        x, y, z = (float(v) for v in line.split()[:3])
+        return x, y, z
+
+    golden_bvh = FIXTURE_C3D.with_name("rec3d_20260826_121305.bvh")
+    golden_p1 = first_motion_xyz(golden_bvh)
+
+    trial = load_trial(FIXTURE_C3D)
+    out_bvh = tmp_path / "axis_check.bvh"
+    export_bvh(trial, out_bvh)
+    our_p1 = first_motion_xyz(out_bvh)
+
+    assert our_p1 == pytest.approx(golden_p1, abs=1e-4)
 
 
 @pytest.mark.skipif(
