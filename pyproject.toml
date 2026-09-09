@@ -1,7 +1,7 @@
 [project]
 name = "openbiomech"
 version = "0.0.1"
-description = "OpenBiomech (mkvis3d) — open-source Visual3D/Mokka alternative. Python prototype phase; see README.md for the long-term Rust architecture and CLAUDE.md for current status."
+description = "OpenBiomech (mkvis3d) — open-source Visual3D/Mokka alternative. Python prototype phase; see docs/architecture.md for the long-term Rust architecture and CLAUDE.md for current status."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "AGPL-3.0-or-later" }

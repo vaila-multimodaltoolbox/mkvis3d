@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mkvis3d CLI Reference</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#1a1a1a; --muted:#5a5a5a; --border:#ddd;
+    --code-bg:#f5f5f5; --accent:#8a2be2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14141a; --fg:#eaeaea; --muted:#a0a0a8; --border:#333; --code-bg:#1f1f28; --accent:#c084fc; }
+  }
+  body { background:var(--bg); color:var(--fg); font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    max-width:880px; margin:0 auto; padding:2rem 1.25rem 4rem; line-height:1.6; }
+  h1 { font-size:1.7rem; border-bottom:2px solid var(--accent); padding-bottom:.4rem; }
+  h2 { font-size:1.15rem; margin-top:2.2rem; }
+  h2 code { font-size:1rem; }
+  code, pre { font-family:"SF Mono", Menlo, Consolas, monospace; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px; font-size:.9em; }
+  pre { background:var(--code-bg); padding:.9rem 1rem; border-radius:8px; overflow-x:auto; font-size:.85em; }
+  pre code { background:none; padding:0; }
+  table { border-collapse:collapse; width:100%; margin:.6rem 0 1.2rem; font-size:.9em; }
+  th, td { border:1px solid var(--border); padding:.35rem .6rem; text-align:left; vertical-align:top; }
+  th { background:var(--code-bg); width:22%; }
+  a { color:var(--accent); }
+  nav { font-size:.9em; margin-bottom:1.5rem; }
+  .lead { color:var(--muted); }
+</style>
+</head>
+<body>
+
+<nav><a href="index.html">Docs home</a> · <a href="architecture.html">Target architecture</a> · <a href="../README.md">README</a></nav>
+
+<h1>mkvis3d CLI Reference</h1>
+
+<p class="lead">Entry point: <code>openbiomech/cli.py</code> (<code>build_parser()</code>).
+Installed as two console scripts (same code): <code>mkvis3d</code> and <code>openbiomech</code>.</p>
+
+<pre><code>uv run mkvis3d &lt;command&gt; [args...]
+# equivalent:
+uv run openbiomech &lt;command&gt; [args...]
+uv run python -m openbiomech.cli &lt;command&gt; [args...]
+</code></pre>
+
+<p>All commands accept <code>.c3d</code>, <code>.csv</code>, or <code>.3d</code> (wide
+per-marker CSV) trial files. <code>info</code>, <code>segment</code>, <code>view</code>,
+<code>gui</code>, <code>blender</code>, and <code>bvh</code> additionally accept
+<code>--rate</code> (Hz, default <code>100.0</code>) and <code>--units</code>
+(<code>m</code>/<code>cm</code>/<code>mm</code>, default <code>m</code>) for
+<strong>CSV/.3d</strong> input — a C3D file's own header metadata is used instead and
+these two flags are ignored for it.</p>
+
+<h2><code>info</code></h2>
+<p>Print trial metadata: frame count, marker count, sampling rate, marker labels.</p>
+<pre><code>uv run mkvis3d info data/rec3d_20260826_121305_m.c3d</code></pre>
+<table><tr><th>path</th><td>Trial file (<code>.c3d</code>, <code>.csv</code>, <code>.3d</code>)</td></tr></table>
+
+<h2><code>segment</code></h2>
+<p>Compute segment length and longitudinal axis for one proximal/distal marker pair
+(<code>openbiomech/model/segment.py</code>).</p>
+<pre><code>uv run mkvis3d segment data/trial.c3d p1 p5</code></pre>
+<table>
+  <tr><th>path</th><td>Trial file</td></tr>
+  <tr><th>proximal</th><td>Proximal marker label, e.g. <code>p1</code></td></tr>
+  <tr><th>distal</th><td>Distal marker label, e.g. <code>p5</code></td></tr>
+</table>
+
+<h2><code>view</code></h2>
+<p>Export a standalone, self-contained interactive HTML movement viewer (no server,
+no CDN — <code>openbiomech/viewer.py</code>/<code>.html</code>/<code>.js</code>).</p>
+<pre><code>uv run mkvis3d view data/trial.c3d --output trial_viewer.html</code></pre>
+<table>
+  <tr><th>path</th><td>Trial file</td></tr>
+  <tr><th>--output, -o</th><td>Output HTML path (default: <code>&lt;input&gt;_viewer.html</code>)</td></tr>
+</table>
+
+<h2><code>gui</code></h2>
+<p>Start the local, loopback-only web viewer (stdlib <code>http.server</code>) and open
+it in the default browser. Supports C3D/CSV/.3d upload from the browser, playback,
+orbit/pan/zoom, distance measurement, real-time charts, force platform / GRF overlays,
+and CSV/HTML export.</p>
+<pre><code>uv run mkvis3d gui                       # empty viewer, pick a file in the browser
+uv run mkvis3d gui data/trial.c3d        # load a file immediately
+uv run mkvis3d gui --port 8765 --no-browser</code></pre>
+<table>
+  <tr><th>path</th><td>Optional motion file to load immediately</td></tr>
+  <tr><th>--port</th><td>Local port (<code>0</code> = choose a free port)</td></tr>
+  <tr><th>--no-browser</th><td>Print the URL instead of launching a browser</td></tr>
+</table>
+
+<h2><code>blender</code></h2>
+<p>Export the trial to an executable Blender Python script that reconstructs the
+animated markers/skeleton when run inside Blender (<code>Scripting</code> tab, or
+<code>blender --background --python out.py</code>). See
+<code>blender_addon/openbiomech_blender.py</code> and <code>skeleton_templates/</code>.</p>
+<pre><code>uv run mkvis3d blender data/trial.c3d --output trial_blender.py --skeleton mediapipe_pose33</code></pre>
+<table>
+  <tr><th>path</th><td>Trial file</td></tr>
+  <tr><th>--output, -o</th><td>Output <code>.py</code> script path (required)</td></tr>
+  <tr><th>--skeleton, -s</th><td>Skeleton template name (see <code>skeleton_templates/</code>)</td></tr>
+</table>
+
+<h2><code>bvh</code></h2>
+<p>Export the trial to a standard Biovision Hierarchy (<code>.bvh</code>) file.</p>
+<pre><code>uv run mkvis3d bvh data/trial.c3d --output trial.bvh</code></pre>
+<table>
+  <tr><th>path</th><td>Trial file</td></tr>
+  <tr><th>--output, -o</th><td>Output BVH path (required)</td></tr>
+</table>
+
+<h2><code>demo</code></h2>
+<p>Write a synthetic four-segment inverse-dynamics trial (SI-unit JSON) for testing
+<code>dynamics</code> without real capture data.</p>
+<pre><code>uv run mkvis3d demo --output demo_trial.json</code></pre>
+<table><tr><th>--output, -o</th><td>Output JSON path (required)</td></tr></table>
+
+<h2><code>dynamics</code></h2>
+<p>Run recursive Newton-Euler inverse dynamics from a synchronized SI-unit JSON trial
+and export a CSV of per-frame kinetics.</p>
+<pre><code>uv run mkvis3d dynamics demo_trial.json --output dynamics.csv</code></pre>
+<table>
+  <tr><th>path</th><td>Input JSON trial</td></tr>
+  <tr><th>--output, -o</th><td>Output CSV path (required)</td></tr>
+</table>
+
+<h2><code>lcs</code></h2>
+<p>Transform a trial into the canonical Visual3D-style Laboratory Coordinate System,
+given its actual anteroposterior and axial (vertical) directions.</p>
+<pre><code>uv run mkvis3d lcs data/trial.c3d --ap +Y --axial +Z --output trial_lcs.csv
+uv run mkvis3d lcs data/trial.c3d --ap +Y --axial +Z --output trial_lcs.html   # viewer export instead</code></pre>
+<table>
+  <tr><th>path</th><td>Input trial file</td></tr>
+  <tr><th>--ap</th><td>AP (progression) direction, e.g. <code>+Y</code>, <code>+Z</code>, <code>+X</code> (default <code>+Y</code>)</td></tr>
+  <tr><th>--axial</th><td>Axial (vertical-up) direction, e.g. <code>+Z</code>, <code>+Y</code> (default <code>+Z</code>)</td></tr>
+  <tr><th>--output, -o</th><td>Output path (required); <code>.html</code>/<code>.htm</code> exports a viewer, anything else writes wide CSV</td></tr>
+</table>
+
+<h2><code>filter</code></h2>
+<p>Gap-fill and smooth trial trajectories.</p>
+<pre><code>uv run mkvis3d filter data/trial.c3d --interp linear --smooth butterworth --cutoff 6.0 --output trial_filtered.csv</code></pre>
+<table>
+  <tr><th>path</th><td>Input trial file</td></tr>
+  <tr><th>--interp</th><td><code>none</code>, <code>linear</code>, <code>cubic</code>, <code>nearest</code> (default <code>linear</code>)</td></tr>
+  <tr><th>--max-gap</th><td>Max consecutive frames to interpolate (default <code>10</code>)</td></tr>
+  <tr><th>--smooth</th><td><code>none</code>, <code>butterworth</code>, <code>median</code>, <code>moving_average</code>, <code>hampel</code> (default <code>butterworth</code>)</td></tr>
+  <tr><th>--cutoff</th><td>Butterworth cutoff frequency, Hz (default <code>6.0</code>)</td></tr>
+  <tr><th>--order</th><td>Butterworth filter order (default <code>4</code>)</td></tr>
+  <tr><th>--window</th><td>Window size for median/moving-average/Hampel (default <code>5</code>)</td></tr>
+  <tr><th>--output, -o</th><td>Output file path (required)</td></tr>
+</table>
+
+<hr>
+<p class="lead">See <a href="architecture.html">architecture.html</a> for the math
+each command implements, and <a href="../README.md">../README.md</a> for
+install/build instructions.</p>
+
+</body>
+</html>

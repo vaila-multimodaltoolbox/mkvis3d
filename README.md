@@ -1,479 +1,320 @@
-```python
-claude_md_content = """# CLAUDE.md - OpenBiomech (Open-Source Visual3D & Mokka Alternative)
+# mkvis3d — OpenBiomech
 
-## 1. Project Overview & High-Level Architecture
-OpenBiomech is an ultra-high-performance, cross-platform (Linux, macOS Apple Silicon / Intel) biomechanical analysis engine and 3D visualization suite designed as an open-source, reproducible alternative to C-Motion Visual3D and BTK Mokka.
+**Package version:** `0.0.1` (see `[project].version` in `pyproject.toml`). **Python:** 3.12.x (pinned in-repo for `uv`).
 
-The system is decoupled into four modular layers:
-1. **Core Data Structures & Binary I/O Engine**: High-throughput zero-copy parser/writer for standard biomechanical formats (.c3d, .csv, .trc, .mot, .anc).
-2. **Computational Biomechanics Engine**: Numerically stable linear algebra, dual-pass filtering, rigid-body 6DoF tracking, ISB Joint Coordinate Systems (JCS), recursive Newton-Euler inverse dynamics, and anthropometric segment modeling.
-3. **Hardware-Accelerated 3D Viewport & UI**: Cross-platform rendering via `wgpu` (Metal on macOS, Vulkan on Linux) paired with an immediate-mode UI (`egui` or `Qt6/cxx-qt`) and high-fps synchronized 2D telemetry plotting.
-4. **Automation, Scripting & IPC Pipeline**: Direct Python bindings via `PyO3` / `maturin` allowing batch CLI processing matching Visual3D pipeline scripts (`.v3s`) and interoperability with scientific Python (NumPy, SciPy, Polars).
+**Last updated:** 2026-09-08
 
-### Modular Workspace Directory Structure
-```text
-openbiomech/
-├── Cargo.toml                     # Cargo workspace definition
-├── CLAUDE.md                      # AI coding instructions and conventions
-├── LICENSE-APACHE / LICENSE-MIT
-├── README.md
-├── crates/
-│   ├── c3d-io/                    # Binary C3D parser/writer (IEEE Little-Endian, DEC VAX, Big-Endian)
-│   │   ├── src/
-│   │   │   ├── header.rs          # 512-byte block 1 header decoding
-│   │   │   ├── parameters.rs      # Parameter blocks (Groups, Items, Dimensions)
-│   │   │   ├── data_blocks.rs     # 3D points (Real/Int16) & analog multichannel frames
-│   │   │   ├── vax.rs             # DEC VAX floating-point converter
-│   │   │   └── lib.rs
-│   │   └── tests/
-│   ├── biomech-math/              # Core kinematics, filters, and linear algebra
-│   │   ├── src/
-│   │   │   ├── filtering.rs       # 4th order zero-lag Butterworth, GCVSPL splines
-│   │   │   ├── rigid_body.rs      # SVD / Kabsch-Umeyama optimal registration algorithm
-│   │   │   ├── quaternions.rs     # Unit quaternion continuous orientation & SLERP
-│   │   │   ├── euler_angles.rs    # Cardan/Euler decomposition (ZXY, XYZ, YXZ, etc.)
-│   │   │   └── lib.rs
-│   │   └── tests/
-│   ├── biomech-model/             # Segmental model, landmarks, and anthropometry
-│   │   ├── src/
-│   │   │   ├── segment.rs         # Rigid segment definition (ACS, TCS, mass, CoM, inertia tensor)
-│   │   │   ├── landmark.rs        # Static/dynamic calibration landmarks & virtual targets
-│   │   │   ├── isb_joints.rs      # ISB standards (Pelvis, Hip, Knee, Ankle, Spine, Shoulder, Elbow, Wrist)
-│   │   │   ├── bsp.rs             # Body Segment Parameters (Dempster, de Leva, Dumas)
-│   │   │   ├── events.rs          # Gait event detection (Heel Strike, Toe Off via GRF / kinematics)
-│   │   │   └── lib.rs
-│   │   └── tests/
-│   ├── inverse-dynamics/          # Force plate calibration, COP, and kinetic calculations
-│   │   ├── src/
-│   │   │   ├── force_plate.rs     # Force platform types 1, 2 (6x6 matrix), 3, 4, 5
-│   │   │   ├── cop.rs             # Center of pressure and Free Moment computation
-│   │   │   ├── newton_euler.rs    # Recursive bottom-up/top-down 3D Newton-Euler equations
-│   │   │   ├── joint_power.rs     # 3D joint power (P = M · omega) and energetic work
-│   │   │   └── lib.rs
-│   │   └── tests/
-│   ├── viewer-core/               # wgpu rendering pipelines and 3D scene graph
-│   │   ├── src/
-│   │   │   ├── camera.rs          # Arcball / Orbit 3D camera with view projections
-│   │   │   ├── pipeline_points.rs # Instanced sphere rendering for 3D trajectory markers
-│   │   │   ├── pipeline_vectors.rs# Dynamic arrows for GRF, segment axes, and COP
-│   │   │   ├── pipeline_mesh.rs   # Bone geometries and segmental reference meshes
-│   │   │   ├── pipeline_grid.rs   # Calibrated ground planes and force plate bounding boxes
-│   │   │   └── lib.rs
-│   ├── gui-app/                   # Desktop frontend (egui or cxx-qt)
-│   │   ├── src/
-│   │   │   ├── transport.rs       # Timeline playback, scrub, looping, sub-frame interpolation
-│   │   │   ├── plots.rs           # Real-time multi-channel 2D graph plots synchronized to 3D
-│   │   │   ├── model_tree.rs      # Interactive segment hierarchy and marker assignment
-│   │   │   └── main.rs
-│   └── pipeline-cli/              # Headless CLI for batch execution of automated scripts
-│       └── src/main.rs
-├── py-openbiomech/                 # High-level Python package via PyO3
-│   ├── Cargo.toml
-│   ├── pyproject.toml
-│   └── src/lib.rs
-└── tests/
-    └── fixtures/                  # Real-world validation C3D files (Vicon, Qualisys, Charnwood)
+<div align="center">
+  <table>
+    <tr>
+      <th>Operating System</th>
+      <th>Installation Method</th>
+      <th>Status</th>
+    </tr>
+    <tr>
+      <td><strong>🪟 Windows</strong></td>
+      <td>uv (Recommended)</td>
+      <td>✅ Ready</td>
+    </tr>
+    <tr>
+      <td><strong>🐧 Linux</strong></td>
+      <td>uv (Recommended)</td>
+      <td>✅ Ready</td>
+    </tr>
+    <tr>
+      <td><strong>🍎 macOS</strong></td>
+      <td>uv (Recommended)</td>
+      <td>✅ Ready</td>
+    </tr>
+  </table>
+</div>
 
+## ⚡ Install Now
+
+```bash
+git clone https://github.com/paulopreto/mkvis3d
+cd mkvis3d
+uv sync
+uv run mkvis3d gui
 ```
+
+That's the whole install: `mkvis3d` is a pure-Python prototype (NumPy/SciPy/
+pandas/`ezc3d`), so there is no separate `install_*.sh` step like a
+GPU-enabled project needs — `uv sync` resolves and locks everything from
+`pyproject.toml`/`uv.lock`. See
+[Installation and Setup](#installation-and-setup) below for double-click
+launchers and standalone-binary builds.
+
+## Introduction
+
+Analysis of human movement is fundamental in health and sports biomechanics.
+Commercial suites such as C-Motion **Visual3D** and BTK **Mokka** are the
+de-facto standard for C3D-based motion capture review and processing, but
+they are closed-source and license-gated. **mkvis3d** (Python package name
+`openbiomech`) is an open-source, reproducible alternative: a C3D/CSV/`.3d`
+motion viewer plus the underlying biomechanics math — rigid-body
+registration, filtering, ISB joint kinematics, body segment parameters, gait
+events, and inverse dynamics with force plates.
+
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Relationship to _vailá_](#relationship-to-vailá)
+- [Current Status](#current-status)
+- [Project Structure](#project-structure)
+- [Installation and Setup](#installation-and-setup)
+- [Running mkvis3d](#running-mkvis3d)
+- [Building Standalone Executables](#building-standalone-executables)
+- [Automated Testing](#automated-testing)
+- [Data](#data)
+- [Documentation](#documentation)
+- [Citing](#citing)
+- [Contribution](#contribution)
+- [License](#license)
 
 ---
 
-## 2. Essential Development Commands
+## Relationship to _vailá_
 
-### Toolchain & Dependencies
+mkvis3d is developed by the same author as
+**[_vailá_ — Multimodal Toolbox](https://github.com/vaila-multimodaltoolbox/vaila)**
+and is built to eventually be integrated into it as vailá's dedicated 3D
+viewer and biomechanics-core module (Frame C → **Visualization**, alongside
+`Show C3D` / `Show CSV 3D`). Concretely, that means:
 
-* **Rust**: Rust 1.80+ (stable).
-* **Package Management**: `uv` for Python environments and `cargo` for Rust.
-* **macOS Prerequisites**: Xcode Command Line Tools (`xcode-select --install`).
-* **Linux Prerequisites**: `libxcb`, `libxkbcommon`, `vulkan-loader`, `libasound2-dev`, `pkg-config`.
+- Every math module ported from `vailá` cites its exact source file and
+  function in its own docstring — see
+  [CLAUDE.md § Reused from vailá](CLAUDE.md#reused-from-vailá). Math already
+  tested in `vailá` production is reused here, not silently re-derived.
+- Shared visual identity: `assets/icons/` reuses the `vailá` app icon
+  (`vaila.png`/`.ico`/`.icns`) across all three platforms' launchers/binaries.
+- The `data/` golden fixture is one real `vailá` `rec3d` export (see
+  [Data](#data)), used to cross-validate the native C3D reader against
+  `vailá`'s own CSV output.
+- Until integration lands, mkvis3d ships and runs standalone (its own `uv`
+  project, its own CLI, its own GUI) — it does not require a `vailá`
+  checkout to build or run.
 
-### Compilation & Build
+## Current Status
 
-```bash
-# Debug compilation for all crates
-cargo build --workspace
+mkvis3d is in its **Python prototype** phase: de-risking the core math (C3D
+parsing, rigid-body registration, filtering, inverse dynamics) in Python
+before committing to the long-term Rust rewrite described in
+[docs/architecture.md](docs/architecture.md). See
+**[CLAUDE.md](CLAUDE.md)** for the authoritative, up-to-date phase statement;
+the table below is a snapshot.
 
-# Optimized release build with native CPU vectorization (AVX2 / NEON)
-RUSTFLAGS="-C target-cpu=native" cargo build --workspace --release
+| Target Rust crate | Python module (today) | Status |
+|---|---|---|
+| `c3d-io` | `openbiomech/c3d_io/` | **Done.** Native NumPy binary parser (header, parameters, 3D + analog data, SoA layout) for Intel/VAX/MIPS, int16 and float storage. `POINT:UNITS` normalized to SI metres. Matches `ezc3d` bit-for-bit on the golden fixture. |
+| `biomech-math` | `openbiomech/biomech_math/` | **Done.** Butterworth filtering, Kabsch rigid-body registration, scalar-first quaternions + Cardan extraction + SLERP, GCV smoothing splines. |
+| `biomech-model` | `openbiomech/model/` | **Done.** Landmarks, segments, Grood & Suntay ISB joint kinematics, Zeni et al. gait events, Dumas/de Leva body segment parameters. |
+| `inverse-dynamics` | `openbiomech/inverse_dynamics/` | **Done.** Force plate types 1-5 + COP, recursive Newton-Euler, joint power, distal-to-proximal segment chain. |
+| `pipeline-cli` | `openbiomech/cli.py` | **Done** (hand-scoped, not the full target pipeline DSL). `info`, `segment`, `view`, `gui`, `blender`, `bvh`, `filter`, `lcs`, `demo`, `dynamics` — see [docs/cli.md](docs/cli.md). |
+| `viewer-core` / `gui-app` | `openbiomech/viewer.{py,html,js}` | **Done.** Zero-dependency HTML5 Canvas 3D viewer: playback, orbit/pan/zoom, distance measurement, real-time charts, force platform/GRF overlays, CSV/HTML export, C3D/CSV/`.3d` upload. |
 
-# Rapid type check and syntax verification across the workspace
-cargo check --workspace --all-targets --all-features
-
-```
-
-### Testing, Benchmarking & Validation
-
-```bash
-# Run all unit and integration tests across all workspace crates
-cargo test --workspace
-
-# Run math-specific tests with detailed stdout
-cargo test -p biomech-math -- --nocapture
-
-# Run Criterion benchmarks for high-throughput routines (SVD, C3D streaming, Newton-Euler)
-cargo bench --workspace
-
-# Validate numerical parity against baseline C3D datasets
-cargo test --test integration_visual3d_validation
-
-```
-
-### Linting & Formatting Enforcement
-
-```bash
-# Strict clippy linting (zero warnings permitted in CI)
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-# Code formatting compliance
-cargo fmt --all -- --check
-
-```
-
-### Python Bindings (Maturin + uv)
+## Project Structure
 
 ```bash
-# Initialize isolated Python environment
-uv venv
-source .venv/bin/activate
-
-# Build and install PyO3 extension in editable development mode
-uv run maturin develop -m py-openbiomech/Cargo.toml --release
-
-# Run Python integration test suite
-uv run pytest tests/python/
-
+mkvis3d
+├── CLAUDE.md / AGENTS.md / GEMINI.md   # AI assistant instructions (current phase, conventions)
+├── .ai-memory/                          # Git-backed cross-harness memory (PROTOCOL.md, HANDOFF.md)
+├── docs/                                # Project docs (this hub, CLI reference, target architecture)
+├── mkvis3d.py                           # Main entry point (CLI + GUI; self-bootstraps into .venv)
+├── run_app.py                           # Thin compatibility wrapper around mkvis3d.py
+├── mkvis3d.bat / .command / _launcher.sh  # Double-clickable OS launchers
+├── mkvis3d.spec                         # PyInstaller spec for standalone binaries
+├── pyproject.toml / uv.lock             # uv-managed dependencies (NumPy, SciPy, pandas, ezc3d)
+├── openbiomech/                         # The Python package (see table above)
+│   ├── c3d_io/                          # Native C3D binary reader
+│   ├── biomech_math/                    # Filtering, rigid body, rotations, splines
+│   ├── model/                           # Landmarks, segments, ISB joints, events, BSP
+│   ├── inverse_dynamics/                # Force plates, Newton-Euler, joint power
+│   ├── cli.py                           # `mkvis3d` / `openbiomech` console script
+│   ├── viewer.py / .html / .js          # Local GUI viewer (stdlib HTTP + Canvas)
+│   ├── trial_io.py / csv_io.py          # File-format dispatch and CSV I/O
+│   └── blender_io.py                    # Blender Python script export
+├── blender_addon/                       # Standalone Blender import add-on
+├── skeleton_templates/                  # Marker-set → skeleton templates (MediaPipe, COCO, OpenPose, ...)
+├── scripts/                             # Build/launcher helper scripts (PyInstaller, desktop entries)
+├── data/                                # Golden fixture (see Data below)
+├── tests/                               # pytest suite
+└── vendor/                              # Gitignored read-only reference checkouts (e.g. BTKCore)
 ```
+
+**Developer quick reference:** [CLAUDE.md](CLAUDE.md) (current phase, commands,
+conventions), [AGENTS.md](AGENTS.md) (memory protocol, harness-agnostic).
 
 ---
 
-## 3. Mathematical & Biomechanical Standards
-
-Implementations MUST adhere to international standards (International Society of Biomechanics - ISB) and formal analytical formulations.
-
-### 3.1. Coordinate System & Triad Conventions
-
-1. **Right-Handed Orthogonal System**: All global systems and local segment coordinate systems (SCS) must satisfy:
-
-$$\mathbf{e}_x \times \mathbf{e}_y = \mathbf{e}_z, \quad \Vert{}\mathbf{e}_x\Vert{} = \Vert{}\mathbf{e}_y\Vert{} = \Vert{}\mathbf{e}_z\Vert{} = 1$$
-
-
-2. **ISB Standard Axes Assignment**:
-* $\mathbf{Z}$: Longitudinal / Superior axis directed proximally.
-* $\mathbf{X}$: Anteroposterior axis directed anteriorly (or laterally depending on specific joint standard, e.g., ISB Knee vs Hip).
-* $\mathbf{Y}$: Mediolateral axis directed laterally/medially according to the specific ISB segment specification.
-
-
-3. **Unit Quaternions for Singularity-Free Rotations**:
-Orientation must be maintained as unit quaternions $\mathbf{q} = [w, x, y, z]^T \in \mathbb{H}, \Vert{}\mathbf{q}\Vert{} = 1$.
-Conversion to Cardan/Euler angles must occur strictly as an extraction step to avoid gimbal lock during intermediate tracking.
-
-### 3.2. 6DoF Rigid Body Optimal Registration (Kabsch-Umeyama SVD)
-
-For each frame, determine optimal rotation matrix $\mathbf{R} \in \mathrm{SO}(3)$ and translation vector $\mathbf{p} \in \mathbb{R}^3$ aligning technical cluster markers $\mathbf{x}_i^{\text{local}}$ to measured 3D trajectories $\mathbf{y}_i^{\text{global}}$ ($i = 1, \dots, N$):
-
-1. Compute centroids:
-
-$$\mathbf{c}_x = \frac{1}{N} \sum_{i=1}^N \mathbf{x}_i^{\text{local}}, \quad \mathbf{c}_y = \frac{1}{N} \sum_{i=1}^N \mathbf{y}_i^{\text{global}}$$
-
-
-2. Construct centered cross-covariance dispersion matrix:
-
-$$\mathbf{H} = \sum_{i=1}^N (\mathbf{x}_i^{\text{local}} - \mathbf{c}_x) (\mathbf{y}_i^{\text{global}} - \mathbf{c}_y)^T$$
-
-
-3. Perform Singular Value Decomposition (SVD):
-
-$$\mathbf{H} = \mathbf{U} \mathbf{\Sigma} \mathbf{V}^T$$
-
-
-4. Compute rotation matrix ensuring proper rotation ($\det(\mathbf{R}) = +1$):
-
-$$\mathbf{d} = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & \det(\mathbf{V}\mathbf{U}^T) \end{bmatrix}, \quad \mathbf{R} = \mathbf{V} \mathbf{d} \mathbf{U}^T$$
-
-
-5. Compute translation vector:
-
-$$\mathbf{p} = \mathbf{c}_y - \mathbf{R} \mathbf{c}_x$$
-
-
-
-### 3.3. Joint Coordinate System (JCS) Kinematics
-
-Joint kinematics must follow Grood & Suntay / ISB parameterization:
-
-* Proximal coordinate system $\mathbf{P} = [\mathbf{e}_1, \mathbf{e}_2, \mathbf{e}_3]$, Distal coordinate system $\mathbf{D} = [\mathbf{f}_1, \mathbf{f}_2, \mathbf{f}_3]$.
-* Proximal axis: $\mathbf{e}_{\text{flex}} = \mathbf{e}_1$.
-* Distal axis: $\mathbf{e}_{\text{rot}} = \mathbf{f}_3$.
-* Floating axis (perpendicular to both):
-
-$$\mathbf{e}_{\text{float}} = \frac{\mathbf{e}_{\text{flex}} \times \mathbf{e}_{\text{rot}}}{\Vert{}\mathbf{e}_{\text{flex}} \times \mathbf{e}_{\text{rot}}\Vert{}}$$
-
-
-* Joint angular velocity vector:
-
-$$\boldsymbol{\omega}_{\text{joint}} = \dot{\alpha} \mathbf{e}_{\text{flex}} + \dot{\beta} \mathbf{e}_{\text{float}} + \dot{\gamma} \mathbf{e}_{\text{rot}}$$
-
-
-
-### 3.4. Signal Processing & Numerical Differentiation
-
-1. **Butterworth Dual-Pass Filter**:
-* 4th-order low-pass digital filter.
-* Forward-backward zero-phase lag filtering ($f_{\text{effective}} = \frac{f_c}{(2^{1/n} - 1)^{1/4}}$ cut-off adjustment).
-
-
-2. **GCVSPL (Generalized Cross-Validatory Splines)**:
-* Cubic or quintic smoothing splines to produce continuous, smooth first ($\mathbf{v}, \boldsymbol{\omega}$) and second ($\mathbf{a}, \dot{\boldsymbol{\omega}}$) derivatives directly without amplification of high-frequency digitizing noise.
-
-
-
-### 3.5. Force Plate Mechanics & Center of Pressure (COP)
-
-Support Type 1, 2, 3, 4, 5 platforms.
-For standard Hall-effect or strain-gauge type platforms (Type 2 with $6 \times 6$ calibration matrix $\mathbf{C}$):
-
-1. Compute channel forces and moments from raw voltage signals:
-
-$$\mathbf{F}_{\text{raw}} = \mathbf{C} \cdot \mathbf{V}_{\text{analog}}$$
-
-
-2. Correct moments for geometric sensor origin offset $(x_0, y_0, z_0)$:
-
-$$M_x' = M_x + F_y \cdot z_0 - F_z \cdot y_0$$
-
-
-$$M_y' = M_y - F_x \cdot z_0 + F_z \cdot x_0$$
-
-
-3. Calculate instantaneous Center of Pressure (COP) in platform coordinates:
-
-$$x_{\text{cop}} = \frac{-M_y'}{F_z}, \quad y_{\text{cop}} = \frac{M_x'}{F_z}, \quad z_{\text{cop}} = 0$$
-
-
-4. Vertical Ground Reaction Force Threshold:
-If $F_z < F_{\text{threshold}}$ (default: $15.0\,\text{N}$), set $\mathrm{COP} = \mathbf{0}$, $\mathbf{F} = \mathbf{0}$, and $\mathbf{M} = \mathbf{0}$ to eliminate non-contact singularities.
-5. Transform COP and reaction forces from local plate coordinates to the global 3D laboratory coordinate system using the 4 corner calibration parameters (`CORNERS`).
-
-### 3.6. 3D Inverse Dynamics (Recursive Newton-Euler)
-
-Executed recursively from distal to proximal segment:
-
-1. **Linear Momentum Balance**:
-
-$$\mathbf{F}_{\text{proximal}} = m_i (\mathbf{a}_{\text{com}, i} - \mathbf{g}) - \mathbf{F}_{\text{distal}}$$
-
-
-
-where $\mathbf{g} = [0, 0, -9.80665]^T\,\text{m/s}^2$.
-2. **Angular Momentum Balance**:
-
-$$\mathbf{M}_{\text{proximal}} = \mathbf{I}_i \dot{\boldsymbol{\omega}}_i + \boldsymbol{\omega}_i \times (\mathbf{I}_i \boldsymbol{\omega}_i) - \mathbf{M}_{\text{distal}} - (\mathbf{r}_{\text{distal}} \times \mathbf{F}_{\text{distal}}) - (\mathbf{r}_{\text{proximal}} \times \mathbf{F}_{\text{proximal}})$$
-
-
-
-where:
-* $\mathbf{I}_i = \mathbf{R}_i \mathbf{I}_{i, \text{local}} \mathbf{R}_i^T$ is the instantaneous inertia tensor in the global frame.
-* $\mathbf{r}_{\text{proximal}} = \mathbf{p}_{\text{joint, prox}} - \mathbf{p}_{\text{com}, i}$.
-* $\mathbf{r}_{\text{distal}} = \mathbf{p}_{\text{joint, dist}} - \mathbf{p}_{\text{com}, i}$.
-
-
-3. **Joint Power**:
-
-$$P_{\text{joint}} = \mathbf{M}_{\text{joint}} \cdot (\boldsymbol{\omega}_{\text{distal}} - \boldsymbol{\omega}_{\text{proximal}})$$
-
-
+## Installation and Setup
+
+### ⚡ Engine: Powered by _uv_
+
+mkvis3d uses **[uv](https://github.com/astral-sh/uv)**, an extremely fast
+Python package installer and resolver written in Rust — the same toolchain
+as `vailá`. No separate Python distribution is required; `uv` manages Python
+3.12 for you, and `uv.lock` guarantees what runs on one machine runs on
+another.
+
+```bash
+# Install uv (skip if already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh        # Linux / macOS
+# Windows PowerShell:
+# irm https://astral.sh/uv/install.ps1 | iex
+
+git clone https://github.com/paulopreto/mkvis3d
+cd mkvis3d
+uv sync            # creates .venv, installs numpy/scipy/pandas/ezc3d + dev tools
+uv run mkvis3d gui
+```
+
+### Double-click launchers
+
+Portable launcher scripts are checked into the repo root, so you don't need
+to remember `uv run` once `uv sync` has run once:
+
+- 🐧 `./mkvis3d_launcher.sh`
+- 🍎 `./mkvis3d.command`
+- 🪟 `mkvis3d.bat`
+
+Each one prefers a standalone `dist/mkvis3d` binary if one has been built
+(see [Building Standalone Executables](#building-standalone-executables)),
+falls back to `uv run mkvis3d gui`, and finally to a bare `python3 -m
+openbiomech.cli gui` if `uv` isn't on `PATH`.
 
 ---
 
-## 4. C3D File Format Specification & Parsing Rules
+## Running mkvis3d
 
-The C3D format consists of raw 512-byte blocks. The parser must guarantee zero-copy performance where feasible and handle historical format anomalies.
+### GUI (recommended)
 
-### 4.1. Header Block (Block 1)
+```bash
+uv run mkvis3d gui                     # open the local viewer, pick a file in the browser
+uv run mkvis3d gui data/trial.c3d      # load a file immediately
+```
 
-* **Byte 1**: Pointer to first parameter block (typically 2).
-* **Byte 2**: Magic key `0x50` (decimal 80).
-* **Word 2 (Bytes 3-4)**: Number of 3D points per frame ($N_{\text{points}}$).
-* **Word 3 (Bytes 5-6)**: Total analog measurements per 3D frame ($N_{\text{analog\_samples}} = N_{\text{channels}} \times N_{\text{subsamples}}$).
-* **Word 4 (Bytes 7-8)**: 1-based index of first frame.
-* **Word 5 (Bytes 9-10)**: 1-based index of last frame.
-* **Word 6 (Bytes 11-12)**: Maximum interpolation gap.
-* **Words 7-8 (Bytes 13-16)**: 3D scale factor (floating point):
-* `scale < 0.0`: 3D points are stored as 32-bit floating-point numbers.
-* `scale > 0.0`: 3D points are stored as 16-bit signed integers; coordinates must be scaled by $\vert\text{scale}\vert$.
+`gui` starts a **loopback-only** local web server (stdlib `http.server`, no
+external dependency) and opens it in your default browser: playback,
+orbit/pan/zoom, distance measurement, real-time synced charts, force
+platform / GRF vector overlays, and CSV/HTML export. C3D, CSV, and `.3d`
+files can also be uploaded directly from the browser.
 
+### CLI
 
-* **Word 9 (Bytes 17-18)**: Pointer to starting 512-byte block of 3D/analog data.
-* **Word 10 (Bytes 19-20)**: Number of analog samples per video frame ($N$).
-* **Words 11-12 (Bytes 21-24)**: Frame rate (video sample frequency in Hz, float).
+```bash
+uv run mkvis3d info data/rec3d_20260826_121305_m.c3d
+uv run mkvis3d view data/trial.c3d --output trial_viewer.html
+uv run mkvis3d filter data/trial.c3d --smooth butterworth --cutoff 6.0 --output trial_filtered.csv
+uv run mkvis3d dynamics demo_trial.json --output dynamics.csv
+```
 
-### 4.2. Processor Architecture Flags
+Both `mkvis3d` and `openbiomech` are installed as console scripts (same
+code) by `uv sync`. For the full command reference — every flag, default,
+and example — see:
 
-Found at Byte 4 of the first parameter block (Header of Parameter Section):
+- **[CLI Reference (Markdown)](docs/cli.md)** · **[CLI Reference (HTML)](docs/cli.html)**
 
-* **Processor 84 (`0x54`)**: Intel Little-Endian (Standard IEEE-754 Float).
-* **Processor 85 (`0x55`)**: DEC VAX (VAX F-Float / D-Float format: Sign bit, 8-bit exponent with bias 128, 23-bit mantissa with swapped 16-bit words).
-* **Processor 86 (`0x56`)**: MIPS / Sun Big-Endian (IEEE-754 Float, byte-swapped).
+---
 
-The parser must detect and decode DEC VAX bit-patterns without relying on hardware VAX emulation:
+## Building Standalone Executables
 
-```rust
-pub fn vax_to_ieee_f32(vax_bits: u32) -> f32 {
-    let word0 = (vax_bits & 0xFFFF) as u16;
-    let word1 = ((vax_bits >> 16) & 0xFFFF) as u16;
-    if word0 == 0 { return 0.0; }
-    let sign = (word0 >> 15) & 0x01;
-    let exponent = (word0 >> 7) & 0xFF;
-    let fraction = (((word0 & 0x7F) as u32) << 16) | (word1 as u32);
-    if exponent == 0 && sign == 0 { return 0.0; }
-    let ieee_exp = (exponent as i32) - 128 + 127 - 1;
-    let ieee_bits = ((sign as u32) << 31) | ((ieee_exp as u32) << 23) | fraction;
-    f32::from_bits(ieee_bits)
+For distributing mkvis3d to machines without Python/`uv`, a PyInstaller spec
+(`mkvis3d.spec`) bundles the app (including `viewer.html`/`.js`, skeleton
+templates, and icons) into a single-file binary:
+
+```bash
+uv run python scripts/build_app.py
+# Linux   -> dist/mkvis3d
+# macOS   -> dist/mkvis3d.app
+# Windows -> dist/mkvis3d.exe
+```
+
+`.github/workflows/build_executables.yml` runs the same script on
+`ubuntu-latest`/`macos-latest`/`windows-latest` for every push to `main` and
+every `v*` tag, uploading `mkvis3d-linux-x86_64`,
+`mkvis3d-windows-x86_64.exe`, and `mkvis3d-macos-app.zip` as build artifacts.
+
+---
+
+## Automated Testing
+
+```bash
+uv run pytest -v              # full suite
+uv run pytest -m "not browser" -v   # skip Selenium cross-browser tests
+uv run ruff check .            # lint
+uv run ruff format .           # format
+uv run ty check                # type check
+```
+
+The suite covers native C3D parsing against the `ezc3d` oracle and the
+golden CSV fixture, every `biomech_math`/`model`/`inverse_dynamics` module
+against synthetic ground truth, CLI subcommands, Blender/BVH export, and (as
+`browser`-marked tests) the GUI viewer across Chrome/Chromium/Firefox via
+Selenium.
+
+---
+
+## Data
+
+`data/` holds one real `vailá` `rec3d` export in four parallel formats (same
+trial): `.csv`/`.3d` (wide per-marker CSV, identical to each other), `.bvh`,
+and `_m.c3d` (binary C3D, 70 markers `p1..p70`, 631 frames, 100 Hz, no
+analog channels), plus `pilot0102_squat03.c3d` (a force-plate trial used to
+test the inverse-dynamics/GRF pipeline). This is the golden fixture that
+cross-validates the C3D reader against the CSV — see
+`tests/test_c3d_io_golden.py`. Do not modify these files; do not add large
+binary fixtures without checking size.
+
+---
+
+## Documentation
+
+- **[Documentation Hub](docs/index.md)** ([HTML](docs/index.html)) — start here
+- **[CLI Reference](docs/cli.md)** ([HTML](docs/cli.html)) — every `mkvis3d` command, flags, and examples
+- **[Target Architecture](docs/architecture.md)** ([HTML](docs/architecture.html)) — the long-term Rust workspace (7 crates) and the ISB/Kabsch/Butterworth/GCVSPL/force-plate/Newton-Euler math reference
+- **[CLAUDE.md](CLAUDE.md)** — current phase, commands, and Python conventions for AI assistants (also read by Codex/Cursor via [AGENTS.md](AGENTS.md) and Gemini via [GEMINI.md](GEMINI.md))
+
+---
+
+## Citing
+
+mkvis3d does not yet have a standalone citation — it is a pre-integration
+prototype for _vailá_. Until it is merged into and released as part of
+_vailá_, please cite the parent toolbox if you use mkvis3d in research:
+
+```bibtex
+@misc{vaila2024,
+  title={vailá - Versatile Anarcho Integrated Liberation Ánalysis in Multimodal Toolbox},
+  author={Paulo Roberto Pereira Santiago and Guilherme Manna Cesar and Ligia Yumi Mochida and Juan Aceros and others},
+  year={2024},
+  eprint={2410.07238},
+  archivePrefix={arXiv},
+  primaryClass={cs.HC},
+  url={https://arxiv.org/abs/2410.07238}
 }
-
 ```
 
-### 4.3. Data Storage Layout
+See **[vailá on GitHub](https://github.com/vaila-multimodaltoolbox/vaila)** and
+**[vailá on arXiv](https://arxiv.org/abs/2410.07238)** for the full citation list.
 
-* Struct-of-Arrays (SoA) layout in memory:
-* Markers: `x: Vec<f32>`, `y: Vec<f32>`, `z: Vec<f32>`, `residual: Vec<f32>`, `camera_mask: Vec<u16>` to enable contiguous AVX-512/NEON vectorization.
-* Analog: contiguous buffer flattened as `[Frame][Subsample][Channel]`.
+## Contribution
 
+Contributions are welcome. Fork the repository, branch for your change, and
+open a pull request. Before submitting: run `uv run pytest -v`,
+`uv run ruff check .`, `uv run ruff format .`, and `uv run ty check`. Follow
+the memory protocol in [`.ai-memory/PROTOCOL.md`](.ai-memory/PROTOCOL.md) and
+the conventions in [`CLAUDE.md`](CLAUDE.md) — in particular, never silently
+duplicate math already tested in `vailá` (check
+`/home/preto/data/vaila/vaila/` first, or the public
+[_vailá_ repository](https://github.com/vaila-multimodaltoolbox/vaila) if you
+don't have a local checkout).
 
+## License
 
----
+This project is licensed under the GNU Affero General Public License v3.0
+(AGPLv3), matching `pyproject.toml`'s `license = "AGPL-3.0-or-later"`. This
+license ensures that any use of mkvis3d, including network/server usage,
+maintains the freedom of the software and requires source code availability.
 
-## 5. Code Style & Engineering Guidelines
-
-### 5.1. Rust Idioms & Safety
-
-1. **Zero Unchecked Panics**: No calls to `unwrap()`, `expect()`, or array slicing with bare brackets in library crates. Always propagate errors using a custom typed enum:
-```rust
-#[derive(thiserror::Error, Debug)]
-pub enum BiomechError {
-    #[error("Invalid C3D header: {0}")]
-    InvalidHeader(String),
-    #[error("Singular matrix encountered in SVD registration")]
-    SingularMatrix,
-    #[error("Analog channel mismatch: expected {expected}, found {found}")]
-    ChannelMismatch { expected: usize, found: usize },
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-```
-
-
-2. **Precision Discipline**:
-* Intermediate kinematics, SVD decompositions, and numerical integration must use `f64`.
-* Downcast to `f32` exclusively when packing vertex/instance buffers for `wgpu` rendering.
-
-
-3. **Allocation Rules**:
-* Zero heap allocations inside per-frame processing loops.
-* Pre-allocate frame buffers using arena or scratchpad memory (`Vec::with_capacity`).
-
-
-
-### 5.2. Testing & Parity Verification
-
-1. **Unit Tests**:
-* Every mathematical function (Kabsch, Butterworth filter, COP calculation) must have verified ground-truth tests.
-
-
-2. **Synthetic Validation**:
-* Synthetic rigid-body motion with known sinusoidal angular trajectories to verify angular velocity, acceleration, and inverse dynamics torques.
-
-
-3. **Cross-Engine Tolerance**:
-* Output angles and moments must match Visual3D baseline exports within tolerance:
-* Kinematic angles: $\le 10^{-4}\,\text{degrees}$.
-* Joint moments: $\le 10^{-3}\,\text{N}\cdot\text{m}$.
-* COP coordinates: $\le 10^{-2}\,\text{mm}$.
-
-
-
-
-
----
-
-## 6. Automation Pipeline & Python Interoperability
-
-To fully replace Visual3D pipeline scripts (`.v3s`), the engine exposes high-level declarative commands via Python and JSON/YAML task specifications:
-
-### Python Pipeline Example
-
-```python
-import openbiomech as ob
-
-# 1. Load motion capture file
-trial = ob.load_c3d("subject01_walk.c3d")
-
-# 2. Filter 3D trajectories and analog signals
-trial.filter_markers(cutoff_hz=6.0, order=4)
-trial.filter_analog(cutoff_hz=20.0, order=4)
-
-# 3. Apply static calibration & build biomechanical model
-model = ob.BiomechanicalModel.from_static(
-    static_c3d="subject01_static.c3d",
-    template="isb_lower_limb.yaml"
-)
-
-# 4. Compute 6DoF Kinematics & Inverse Dynamics
-results = model.process_dynamic_trial(
-    trial,
-    kinematic_standard="ISB",
-    bsp_model="Dumas2007"
-)
-
-# 5. Extract temporal gait events
-events = results.detect_gait_events(method="ForcePlateThreshold", threshold_n=15.0)
-
-# 6. Export tabular time-series
-results.export_csv("kinematics_kinetics_output.csv")
-
-```
-
-"""
-
-with open("CLAUDE.md", "w", encoding="utf-8") as f:
-f.write(claude_md_content)
-
-print(f"Successfully generated CLAUDE.md ({len(claude_md_content)} bytes)")
-
-```
-
-```text?code_stdout&code_event_index=1
-Successfully generated CLAUDE.md (17866 bytes)
-
-
-```
-
-Your Markdown file is ready
-
-
-### Summary of `CLAUDE.md` Specification
-
-The generated `CLAUDE.md` (17,866 bytes) provides an exhaustive configuration and engineering guideline written entirely in technical English to optimize token usage when working with Claude Code. It covers:
-
-1. **Architecture & Modular Workspace**:
-* Decoupled 7-crate Rust workspace (`c3d-io`, `biomech-math`, `biomech-model`, `inverse-dynamics`, `viewer-core`, `gui-app`, `pipeline-cli`) plus PyO3/maturin bindings (`py-openbiomech`).
-* Struct-of-Arrays (SoA) layout for AVX-512 / ARM NEON SIMD vectorization.
-
-
-2. **Core Mathematical & Biomechanical Standards**:
-* **Rigid Body 6DoF Registration**: Closed-form SVD / Kabsch-Umeyama algorithm with reflection rejection ($\det(\mathbf{R}) = +1$).
-* **Kinematics**: ISB Joint Coordinate System (JCS) / Grood & Suntay conventions, unit quaternion continuous integration ($\Vert{}\mathbf{q}\Vert{} = 1$), and gimbal-lock-free Cardan angle extractions.
-* **Signal Processing**: 4th-order dual-pass zero-phase Butterworth digital filtering and GCVSPL quintic splines for continuous derivatives ($\mathbf{v}, \mathbf{a}, \boldsymbol{\omega}, \dot{\boldsymbol{\omega}}$).
-* **Kinetics & Force Plates**: Types 1–5 force platform calibrations, sensor origin offset corrections, vertical ground reaction force thresholding ($F_z \ge 15.0\,\text{N}$), and Center of Pressure (COP) calculation.
-* **Inverse Dynamics**: Full recursive bottom-up Newton-Euler 3D equations of motion, time-varying inertia tensor transformation ($\mathbf{I} = \mathbf{R} \mathbf{I}_0 \mathbf{R}^T$), and joint power computations ($P = \mathbf{M} \cdot \boldsymbol{\omega}_{\text{rel}}$).
-
-
-3. **C3D Specification & Parsing**:
-* Detailed 512-byte header decoding, parameter group layouts, and signed integer / real coordinate scaling.
-* Native DEC VAX F-Float / D-Float IEEE-754 converter routine for historical motion capture datasets.
-
-
-4. **Engineering Guidelines, Error Handling & Numerical Tolerances**:
-* `f64` numerical pipeline with strict zero-panic error enums (`thiserror`).
-* Exact numerical validation parity criteria against Visual3D (kinematics $\le 10^{-4}{^\circ}$, moments $\le 10^{-3}\,\text{N}\cdot\text{m}$, COP $\le 10^{-2}\,\text{mm}$).
+See <https://www.gnu.org/licenses/agpl-3.0.html> for the full license text.

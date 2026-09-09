@@ -1,24 +1,42 @@
-# Session Handoff: Force Platform & Ground Reaction Force (GRF) Visualization (Visual3D & Mokka Parity)
+# Session Handoff: README rewrite (vailá style) + docs/ help pages
 - **Status:** Completed
 - **Current State:**
-  - `openbiomech/c3d_io/parameters.py`: Numeric parameter arrays reshaped in Fortran column-major order (`order="F"`), resolving dimensional transposition for `CORNERS`, `ORIGIN`, and `CHANNEL`.
-  - `openbiomech/c3d_io/legacy_binary.py`: Added `extract_force_platforms(parsed, point_factor, f_threshold=15.0)` calculating Bertec/AMTI Type 2 force plates, physical corners, moment origin compensation (`Nmm` to `N*m`), Shimba/BTK Center of Pressure (COP), local-to-global coordinate rotation, and vertical reaction forces ($+Z$).
-  - `openbiomech/marker_trial.py`: `ForcePlatform` dataclass added; `MarkerTrial` extended with `force_plates`, `analog_labels`, and `analog_rate_hz`.
-  - `openbiomech/viewer.py`: `trial_payload` updated with NaN-safe JSON serialization for force platforms.
-  - `openbiomech/cli.py`: Subcommand `info` reports physical dimensions, plate type, and active contact frames.
-  - `openbiomech/viewer.html` & `openbiomech/viewer.js`: Interactive "Force Platforms & GRF" section with checkboxes, vector scale, contact threshold sliders, and real-time vertical GRF readout. Viewport renders physical floor plates, labels, and dynamic 3D GRF vectors at COP. Plot selector includes vertical GRF and 3D force components.
-  - `tests/test_c3d_force_plates.py`: 4 deterministic tests verifying plate geometry, channels, COP bounds, and barbell squat loading (~966 N total vertical force).
-  - `tests/test_cross_browser.py`: Extended to verify force plates UI, controls, and default kinetics charts across Google Chrome, Chromium, and Firefox.
-  - Rebuilt Linux standalone binary `dist/mkvis3d` with PyInstaller.
+  - `README.md` was a garbled, mislabeled artifact (a raw Python script + its
+    stdout that *generates a CLAUDE.md*, wrapped in a stray ` ```python ` code
+    fence) — not a real project README. Rewritten from scratch in the style of
+    `/home/preto/data/vaila/README.md`: OS/install table, intro, relationship
+    to vailá, current-status crate table, project tree, install/run/build/test
+    sections, data fixture note, documentation links, citing, contribution,
+    license (AGPLv3, matching `pyproject.toml`).
+  - Created `docs/` with both Markdown and HTML help pages, as requested:
+    `docs/index.{md,html}` (hub), `docs/cli.{md,html}` (full `mkvis3d` CLI
+    reference derived from `openbiomech/cli.py`'s `build_parser()`),
+    `docs/architecture.{md,html}` (the long-term Rust workspace + ISB/Kabsch/
+    Butterworth/GCVSPL/force-plate/Newton-Euler math spec that used to live,
+    badly formatted, inside `README.md`).
+  - Updated `CLAUDE.md`'s Provenance section and the two `README.md §3.x`
+    cross-references in Conventions to point at `docs/architecture.md`
+    instead, since the target-architecture content moved out of `README.md`.
+  - Updated `pyproject.toml`'s `[project].description` (same README.md →
+    docs/architecture.md pointer fix).
+  - Added an explicit "Relationship to _vailá_" section to `README.md` per
+    the user's stated future-integration plan.
 - **What Worked:**
-  - Multi-dimensional parameters in C3D files must be unpacked with Fortran ordering (`order="F"`) to correctly match ezc3d and C3D specification dimensions `(3, 4, num_plates)`.
-  - Moment-unit scaling (`Nmm` to `N*m` via $0.001$ factor) places the COP exactly within the physical foot boundaries during the squat trial.
-  - All 192 non-browser unit tests pass (`uv run pytest -m "not browser"`).
-  - All 11 categories in `tests/test_cross_browser.py` pass across Google Chrome, Chromium Snap, and Firefox with 100% success.
-  - Ruff linter (`uv run ruff check .`) and formatter (`uv run ruff format --check .`) pass with zero errors.
-- **Failed Approaches:**
-  - Initial C3D parameter reshaping used default C-order (`order="C"`), which transposed the channel and corner axes across plates. Fixed by applying `order="F"`.
-  - Bertec transducers in C3D files provide raw moment channels in `Nmm`; calculating COP without converting moments to `N*m` placed the COP several meters outside the force plate. Fixed by applying moment scaling factor of $0.001$.
-  - CSS `text-transform: uppercase` on `.badge` caused `driver.find_element().text` to return uppercase strings (`"2 PLATES"`). Adjusted cross-browser assertions to be case-insensitive.
+  - Read `pyproject.toml`, `openbiomech/cli.py` (full `argparse` surface),
+    `AGENTS.md`, `mkvis3d.spec`/`scripts/build_app.py`/`.github/workflows/
+    build_executables.yml`, and the launcher scripts (`mkvis3d.bat`/
+    `.command`/`_launcher.sh`) to keep the new README's install/build/CLI
+    sections accurate to what actually exists (no fabricated install
+    scripts, version banners, or citations).
+  - No AGPL `LICENSE` file exists in the repo despite `pyproject.toml`
+    declaring `AGPL-3.0-or-later` — README's License section links to the
+    canonical license text rather than a repo-local `LICENSE` file that
+    isn't there; flagged here rather than silently adding one.
+- **Failed Approaches:** none.
 - **Open Questions & Next Steps:**
-  - Ready for inverse dynamics pipeline linking segment kinematic chains directly with ground reaction forces from the extracted force platforms.
+  - Consider adding a `LICENSE` file (AGPL-3.0-or-later) at repo root — not
+    added this session since it wasn't asked for and is a licensing decision
+    worth a human nod.
+  - `docs/cli.md`/`.html` should be re-checked whenever `openbiomech/cli.py`'s
+    `build_parser()` gains/changes a subcommand or flag — it is hand-written,
+    not generated from `argparse` help text.

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mkvis3d / OpenBiomech — Target Architecture</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #5a5a5a; --border: #ddd;
+    --code-bg: #f5f5f5; --accent: #8a2be2; --warn-bg: #fff8e1; --warn-border: #e8c547;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14141a; --fg:#eaeaea; --muted:#a0a0a8; --border:#333;
+      --code-bg:#1f1f28; --accent:#c084fc; --warn-bg:#2a2410; --warn-border:#6b5b13; }
+  }
+  body { background:var(--bg); color:var(--fg); font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    max-width: 880px; margin: 0 auto; padding: 2rem 1.25rem 4rem; line-height:1.6; }
+  h1 { font-size:1.7rem; border-bottom:2px solid var(--accent); padding-bottom:.4rem; }
+  h2 { font-size:1.3rem; margin-top:2.2rem; border-bottom:1px solid var(--border); padding-bottom:.3rem; }
+  h3 { font-size:1.05rem; margin-top:1.6rem; color:var(--accent); }
+  code, pre { font-family: "SF Mono", Menlo, Consolas, monospace; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px; font-size:.9em; }
+  pre { background:var(--code-bg); padding:1rem; border-radius:8px; overflow-x:auto; font-size:.85em; }
+  pre code { background:none; padding:0; }
+  .warn { background:var(--warn-bg); border:1px solid var(--warn-border); border-radius:8px;
+    padding:.8rem 1rem; margin:1rem 0; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.92em; }
+  th, td { border:1px solid var(--border); padding:.4rem .6rem; text-align:left; }
+  th { background:var(--code-bg); }
+  .math { font-style:italic; color:var(--fg); }
+  a { color:var(--accent); }
+  ul, ol { padding-left:1.4rem; }
+  nav { font-size:.9em; margin-bottom:1.5rem; }
+</style>
+</head>
+<body>
+
+<nav><a href="index.html">Docs home</a> · <a href="cli.html">CLI reference</a> · <a href="../README.md">README</a></nav>
+
+<h1>mkvis3d / OpenBiomech — Target Architecture (Rust)</h1>
+
+<div class="warn">
+  <strong>Status:</strong> this document is the <strong>long-term target architecture</strong>
+  — a full Rust workspace that has <strong>not been started</strong>. The project is
+  currently in the <strong>Python prototype</strong> phase; see <code>CLAUDE.md</code>
+  for what actually exists today and <a href="index.html">the documentation hub</a>.
+  Nothing here should be read as "already implemented."
+</div>
+
+<p>OpenBiomech (mkvis3d) targets an ultra-high-performance, cross-platform
+(Linux, macOS Apple&nbsp;Silicon/Intel, Windows) biomechanical analysis engine
+and 3D visualization suite: an open-source, reproducible alternative to
+C-Motion Visual3D and BTK Mokka.</p>
+
+<p>The system decouples into four modular layers:</p>
+<ol>
+  <li><strong>Core data structures &amp; binary I/O engine</strong> — a high-throughput,
+    near-zero-copy parser/writer for standard biomechanical formats (<code>.c3d</code>,
+    <code>.csv</code>, <code>.trc</code>, <code>.mot</code>, <code>.anc</code>).</li>
+  <li><strong>Computational biomechanics engine</strong> — numerically stable linear
+    algebra, dual-pass filtering, rigid-body 6DoF tracking, ISB Joint Coordinate
+    Systems (JCS), recursive Newton-Euler inverse dynamics, anthropometric segment
+    modeling.</li>
+  <li><strong>Hardware-accelerated 3D viewport &amp; UI</strong> — cross-platform rendering
+    via <code>wgpu</code> (Metal / Vulkan / DX12) paired with an immediate-mode UI
+    (<code>egui</code> or <code>Qt6</code>/<code>cxx-qt</code>) and a synchronized
+    high-fps 2D telemetry plot view.</li>
+  <li><strong>Automation, scripting &amp; IPC pipeline</strong> — Python bindings via
+    <code>PyO3</code>/<code>maturin</code>, for batch CLI processing comparable to
+    Visual3D pipeline scripts (<code>.v3s</code>) and interoperability with NumPy/SciPy/Polars.</li>
+</ol>
+
+<h2 id="layout">1. Workspace layout (target)</h2>
+<pre><code>mkvis3d/
+├── Cargo.toml                      # Cargo workspace definition
+├── CLAUDE.md                       # AI assistant instructions and current phase
+├── README.md
+├── crates/
+│   ├── c3d-io/                     # Binary C3D parser/writer (Intel, DEC VAX, MIPS/Sun)
+│   ├── biomech-math/                # Kinematics, filters, linear algebra
+│   ├── biomech-model/                # Segmental model, landmarks, anthropometry
+│   ├── inverse-dynamics/             # Force plate calibration, COP, kinetics
+│   ├── viewer-core/                  # wgpu rendering pipelines and scene graph
+│   ├── gui-app/                      # Desktop frontend (egui or cxx-qt)
+│   └── pipeline-cli/                 # Headless CLI for batch execution
+├── py-openbiomech/                    # High-level Python package via PyO3
+└── tests/fixtures/                    # Real-world validation C3D files
+</code></pre>
+<p>See the <a href="../README.md">README status table</a> for which crates already
+have a working Python module in the current prototype.</p>
+
+<h2 id="math">2. Mathematical &amp; biomechanical standards</h2>
+<p>Implementations must adhere to International Society of Biomechanics (ISB)
+conventions and the formal analytical formulations below. This section is the
+canonical reference for <em>what is correct</em>, independent of the
+implementation language (Python today, Rust at the target architecture).</p>
+
+<h3>2.1 Coordinate system &amp; triad conventions</h3>
+<ul>
+  <li><strong>Right-handed orthogonal system:</strong> <span class="math">e<sub>x</sub> × e<sub>y</sub> = e<sub>z</sub></span>,
+    all unit vectors normalized.</li>
+  <li><strong>ISB axis assignment:</strong> Z = longitudinal/superior (proximal), X = anteroposterior
+    (anterior, joint-dependent), Y = mediolateral.</li>
+  <li><strong>Unit quaternions</strong> (scalar-first, <code>[w, x, y, z]</code>, unit norm) hold
+    orientation; Cardan/Euler extraction happens only as a final step, to avoid gimbal lock
+    during intermediate tracking.</li>
+</ul>
+
+<h3>2.2 6DoF rigid-body optimal registration (Kabsch-Umeyama SVD)</h3>
+<p>For each frame, align technical cluster markers (local) to measured trajectories (global):</p>
+<ol>
+  <li>Compute centroids of local and global marker sets.</li>
+  <li>Build the centered cross-covariance matrix <strong>H</strong> between them.</li>
+  <li>Decompose <strong>H = U Σ V<sup>T</sup></strong> (SVD).</li>
+  <li>Rotation <strong>R = V·d·U<sup>T</sup></strong>, where <strong>d</strong> = diag(1, 1, det(VU<sup>T</sup>))
+    rejects reflections (det(R) = +1).</li>
+  <li>Translation <strong>p = c<sub>y</sub> − R·c<sub>x</sub></strong>.</li>
+</ol>
+
+<h3>2.3 Joint Coordinate System (JCS) kinematics</h3>
+<p>Grood &amp; Suntay / ISB floating-axis parameterization: a proximal (flexion) axis
+<code>e1</code>, a distal (rotation) axis <code>f3</code>, and a floating axis
+<code>e_float = (e1 × f3) / ‖e1 × f3‖</code> perpendicular to both. Joint angular velocity
+decomposes as <code>ω = α̇·e_flex + β̇·e_float + γ̇·e_rot</code>.</p>
+
+<h3>2.4 Signal processing &amp; numerical differentiation</h3>
+<ul>
+  <li><strong>Butterworth dual-pass filter</strong> — 4th-order low-pass, zero-phase-lag
+    (forward-backward), with the standard cutoff correction for repeated passes.</li>
+  <li><strong>GCVSPL smoothing splines</strong> — cubic or quintic splines for smooth
+    velocity/acceleration without amplifying digitizing noise. The Python prototype uses
+    <code>scipy.interpolate.make_smoothing_spline</code> (cubic GCV only — see
+    <code>CLAUDE.md</code>).</li>
+</ul>
+
+<h3>2.5 Force plate mechanics &amp; Center of Pressure (COP)</h3>
+<p>Platform types 1-5. For a type-2 platform with a 6×6 calibration matrix <strong>C</strong>:</p>
+<ol>
+  <li>Raw channel forces/moments: <code>F_raw = C · V_analog</code>.</li>
+  <li>Correct moments for sensor origin offset (x₀, y₀, z₀):
+    <code>Mx' = Mx + Fy·z₀ − Fz·y₀</code>, <code>My' = My − Fx·z₀ + Fz·x₀</code>.</li>
+  <li>COP in plate coordinates: <code>x_cop = −My'/Fz</code>, <code>y_cop = Mx'/Fz</code>, <code>z_cop = 0</code>.</li>
+  <li><strong>Vertical GRF threshold:</strong> if <code>Fz &lt; F_threshold</code> (default 15.0&nbsp;N),
+    zero out COP, F, and M to remove non-contact singularities.</li>
+  <li>Transform COP/reaction forces from plate-local to global lab coordinates using the
+    4 corner calibration parameters (<code>CORNERS</code>).</li>
+</ol>
+
+<h3>2.6 3D inverse dynamics (recursive Newton-Euler)</h3>
+<p>Executed recursively, distal to proximal, per segment:</p>
+<ol>
+  <li><strong>Linear momentum balance:</strong>
+    <code>F_proximal = m·(a_com − g) − F_distal</code>, with g = [0, 0, −9.80665] m/s².</li>
+  <li><strong>Angular momentum balance:</strong>
+    <code>M_proximal = I·ω̇ + ω × (I·ω) − M_distal − (r_distal × F_distal) − (r_proximal × F_proximal)</code>,
+    where <code>I = R · I_local · R<sup>T</sup></code> is the instantaneous global inertia tensor.</li>
+  <li><strong>Joint power:</strong> <code>P_joint = M_joint · (ω_distal − ω_proximal)</code>.</li>
+</ol>
+
+<h2 id="c3d">3. C3D file format specification &amp; parsing rules</h2>
+<p>Raw 512-byte blocks. The parser must guarantee near-zero-copy performance where
+feasible and handle historical format anomalies.</p>
+
+<h3>3.1 Header block (block 1)</h3>
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td>Byte 1</td><td>Pointer to first parameter block (typically 2)</td></tr>
+  <tr><td>Byte 2</td><td>Magic key <code>0x50</code> (80)</td></tr>
+  <tr><td>Word 2 (bytes 3-4)</td><td>Number of 3D points per frame</td></tr>
+  <tr><td>Word 3 (bytes 5-6)</td><td>Total analog measurements per 3D frame</td></tr>
+  <tr><td>Word 4 (bytes 7-8)</td><td>1-based index of first frame</td></tr>
+  <tr><td>Word 5 (bytes 9-10)</td><td>1-based index of last frame</td></tr>
+  <tr><td>Word 6 (bytes 11-12)</td><td>Maximum interpolation gap</td></tr>
+  <tr><td>Words 7-8 (bytes 13-16)</td><td>3D scale factor: negative → 32-bit float storage; positive → 16-bit int, scaled by |scale|</td></tr>
+  <tr><td>Word 9 (bytes 17-18)</td><td>Pointer to first 512-byte data block</td></tr>
+  <tr><td>Word 10 (bytes 19-20)</td><td>Analog samples per video frame</td></tr>
+  <tr><td>Words 11-12 (bytes 21-24)</td><td>Frame rate (Hz, float)</td></tr>
+</table>
+
+<h3>3.2 Processor architecture flags</h3>
+<p>Found at byte 4 of the first parameter block:</p>
+<ul>
+  <li><strong>84 (0x54):</strong> Intel little-endian (IEEE-754 float)</li>
+  <li><strong>85 (0x55):</strong> DEC VAX (F-Float/D-Float, swapped 16-bit words)</li>
+  <li><strong>86 (0x56):</strong> MIPS/Sun big-endian (IEEE-754, byte-swapped)</li>
+</ul>
+<pre><code>pub fn vax_to_ieee_f32(vax_bits: u32) -&gt; f32 {
+    let word0 = (vax_bits &amp; 0xFFFF) as u16;
+    let word1 = ((vax_bits &gt;&gt; 16) &amp; 0xFFFF) as u16;
+    if word0 == 0 { return 0.0; }
+    let sign = (word0 &gt;&gt; 15) &amp; 0x01;
+    let exponent = (word0 &gt;&gt; 7) &amp; 0xFF;
+    let fraction = (((word0 &amp; 0x7F) as u32) &lt;&lt; 16) | (word1 as u32);
+    if exponent == 0 &amp;&amp; sign == 0 { return 0.0; }
+    let ieee_exp = (exponent as i32) - 128 + 127 - 1;
+    let ieee_bits = ((sign as u32) &lt;&lt; 31) | ((ieee_exp as u32) &lt;&lt; 23) | fraction;
+    f32::from_bits(ieee_bits)
+}
+</code></pre>
+<p>The current Python prototype implements the equivalent decode in
+<code>openbiomech/c3d_io/legacy_binary.py</code> using NumPy.</p>
+
+<h3>3.3 Data storage layout (target Rust)</h3>
+<p>Struct-of-Arrays (SoA) for contiguous SIMD vectorization: markers as parallel
+<code>x/y/z/residual/camera_mask</code> arrays, analog as a flattened
+<code>[Frame][Subsample][Channel]</code> buffer. The Python prototype uses the
+equivalent NumPy SoA layout.</p>
+
+<h2 id="style">4. Rust code style &amp; engineering guidelines (target)</h2>
+<p>These rules apply once the Rust workspace starts. They do not apply to the
+current Python prototype — see <code>CLAUDE.md</code> § Conventions for the
+Python rules in force today.</p>
+<ul>
+  <li><strong>Zero unchecked panics</strong> — no <code>unwrap()</code>/<code>expect()</code>/bare
+    slicing in library crates; propagate a typed <code>thiserror</code> enum.</li>
+  <li><strong>Precision discipline</strong> — <code>f64</code> for kinematics/SVD/integration;
+    downcast to <code>f32</code> only for <code>wgpu</code> vertex buffers.</li>
+  <li><strong>Allocation rules</strong> — zero heap allocations inside per-frame loops;
+    pre-allocate with <code>Vec::with_capacity</code> or arena/scratch memory.</li>
+</ul>
+<p><strong>Testing &amp; parity:</strong> every math function gets a ground-truth unit
+test; synthetic sinusoidal rigid-body motion validates velocity/acceleration/torque;
+cross-engine tolerance vs. Visual3D: angles ≤ 10⁻⁴°, moments ≤ 10⁻³ N·m,
+COP ≤ 10⁻² mm.</p>
+
+<h2 id="pipeline">5. Automation pipeline &amp; Python interoperability (target)</h2>
+<p>To fully replace Visual3D pipeline scripts (<code>.v3s</code>), the target engine
+exposes high-level declarative commands via Python:</p>
+<pre><code>import openbiomech as ob
+
+trial = ob.load_c3d("subject01_walk.c3d")
+trial.filter_markers(cutoff_hz=6.0, order=4)
+trial.filter_analog(cutoff_hz=20.0, order=4)
+
+model = ob.BiomechanicalModel.from_static(
+    static_c3d="subject01_static.c3d",
+    template="isb_lower_limb.yaml",
+)
+results = model.process_dynamic_trial(trial, kinematic_standard="ISB", bsp_model="Dumas2007")
+events = results.detect_gait_events(method="ForcePlateThreshold", threshold_n=15.0)
+results.export_csv("kinematics_kinetics_output.csv")
+</code></pre>
+<p>The equivalent already works today with the real <code>openbiomech</code> Python
+package — see <a href="cli.html">the CLI reference</a> and the
+<a href="../README.md">README status table</a>.</p>
+
+</body>
+</html>
