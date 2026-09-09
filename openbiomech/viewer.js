@@ -21,6 +21,7 @@ let yaw = -0.45, pitch = 0.22, zoom = 1, pan = [0, 0], center = [0, 0, 0], span 
 // alternating, or transient marker dropout) — see getFloorHeight().
 let autoFloorZ = 0;
 let distances = [], activeMarkerIndex = 0, showDistance = true;
+let angles = [], showAngle = true, angleMode = "3pt";
 let skeletonPairs = [];
 let activeSkeletonTemplate = "none";
 let loadedCustomTemplate = null;
@@ -752,6 +753,9 @@ function drawSceneToContext(targetCtx, w, h) {
   // Live 3D Coordinate Triads for s1 and s2 segment bases (RGB: X=Red, Y=Green, Z=Blue)
   drawKinematicsTriads(targetCtx, w, h);
 
+  // Live 3D Vector Angle & Arc (Dot Product)
+  drawVectorAngle3D(targetCtx, w, h);
+
   // Render Marker Points with custom size and custom/palette color
   const visible = pts.map((p, i) => ({ p, i })).filter(v => valid(v.p)).map(v => ({ ...v, q: project(v.p, w, h) })).sort((a, b) => b.q[2] - a.q[2]);
 
@@ -810,6 +814,53 @@ function draw() {
     } else {
       $("distance").textContent = Number.isFinite(d) ? `${d.toFixed(4)} m` : "Missing";
       $("distance").style.opacity = "1";
+    }
+  }
+
+  // Update Vector Dot Product Angle readout
+  const curAngle = angles[frame];
+  if ($("angle-metric-val")) {
+    if (!showAngle) {
+      $("angle-metric-val").textContent = Number.isFinite(curAngle) ? `${curAngle.toFixed(2)}° (Hidden)` : "Hidden";
+      $("angle-metric-val").style.opacity = "0.55";
+    } else {
+      $("angle-metric-val").textContent = Number.isFinite(curAngle) ? `${curAngle.toFixed(2)}°` : "Missing";
+      $("angle-metric-val").style.opacity = "1";
+    }
+  }
+  if ($("angle-details-val")) {
+    const is3pt = angleMode === "3pt";
+    const a = Number($("angle-marker-a") ? $("angle-marker-a").value : 0);
+    const b = Number($("angle-marker-b") ? $("angle-marker-b").value : 1);
+    const c = Number($("angle-marker-c") ? $("angle-marker-c").value : 2);
+    const v1a = Number($("angle-v1-a") ? $("angle-v1-a").value : 0);
+    const v1b = Number($("angle-v1-b") ? $("angle-v1-b").value : 1);
+    const v2c = Number($("angle-v2-c") ? $("angle-v2-c").value : 2);
+    const v2d = Number($("angle-v2-d") ? $("angle-v2-d").value : 3);
+    const framePts = trial.xyz[frame];
+    let u = null, v = null;
+    if (framePts) {
+      if (is3pt) {
+        const pa = framePts[a], pb = framePts[b], pc = framePts[c];
+        if (valid(pa) && valid(pb) && valid(pc)) {
+          u = [pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]];
+          v = [pc[0] - pb[0], pc[1] - pb[1], pc[2] - pb[2]];
+        }
+      } else {
+        const p1 = framePts[v1a], p2 = framePts[v1b], p3 = framePts[v2c], p4 = framePts[v2d];
+        if (valid(p1) && valid(p2) && valid(p3) && valid(p4)) {
+          u = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+          v = [p4[0] - p3[0], p4[1] - p3[1], p4[2] - p3[2]];
+        }
+      }
+    }
+    if (u && v) {
+      const normU = Math.hypot(u[0], u[1], u[2]);
+      const normV = Math.hypot(v[0], v[1], v[2]);
+      const dot = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+      $("angle-details-val").textContent = `u·v: ${dot.toFixed(4)} | ||u||: ${normU.toFixed(3)} m | ||v||: ${normV.toFixed(3)} m`;
+    } else {
+      $("angle-details-val").textContent = "u·v: — | ||u||: — | ||v||: —";
     }
   }
 
@@ -953,6 +1004,9 @@ function getSeriesForMode(mode, plotId = 1) {
 
   if (mode === "distance") {
     series.push({ name: "Distance", color: colDistance, values: distances });
+  } else if (mode === "angle-dot-product") {
+    const colAngle = isLight ? "#0284c7" : "#38bdf8";
+    series.push({ name: "Angle θ (Dot Product °)", color: colAngle, values: angles });
   } else if (mode === "active-z") {
     const vals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
     series.push({ name: "Z (Height)", color: colZ, values: vals });
@@ -1124,6 +1178,8 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
     plotGaps = getActiveMarkerGaps();
   } else if (mode === "distance") {
     plotGaps = findSeriesGaps(distances);
+  } else if (mode === "angle-dot-product") {
+    plotGaps = findSeriesGaps(angles);
   }
 
   if (plotGaps.length > 0) {
@@ -1268,6 +1324,57 @@ function measure() {
   saveSessionState();
 }
 
+function measureAngle() {
+  if (!trial) return;
+  const is3pt = angleMode === "3pt";
+  const a = Number($("angle-marker-a") ? $("angle-marker-a").value : 0);
+  const b = Number($("angle-marker-b") ? $("angle-marker-b").value : 1);
+  const c = Number($("angle-marker-c") ? $("angle-marker-c").value : 2);
+  const v1a = Number($("angle-v1-a") ? $("angle-v1-a").value : 0);
+  const v1b = Number($("angle-v1-b") ? $("angle-v1-b").value : 1);
+  const v2c = Number($("angle-v2-c") ? $("angle-v2-c").value : 2);
+  const v2d = Number($("angle-v2-d") ? $("angle-v2-d").value : 3);
+
+  const nFrames = trial.xyz.length;
+  angles = new Array(nFrames);
+
+  for (let f = 0; f < nFrames; f++) {
+    const framePts = trial.xyz[f];
+    let u = null, v = null;
+    if (framePts) {
+      if (is3pt) {
+        const pa = framePts[a], pb = framePts[b], pc = framePts[c];
+        if (valid(pa) && valid(pb) && valid(pc)) {
+          u = [pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]];
+          v = [pc[0] - pb[0], pc[1] - pb[1], pc[2] - pb[2]];
+        }
+      } else {
+        const p1 = framePts[v1a], p2 = framePts[v1b], p3 = framePts[v2c], p4 = framePts[v2d];
+        if (valid(p1) && valid(p2) && valid(p3) && valid(p4)) {
+          u = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+          v = [p4[0] - p3[0], p4[1] - p3[1], p4[2] - p3[2]];
+        }
+      }
+    }
+    if (u && v) {
+      const normU = Math.hypot(u[0], u[1], u[2]);
+      const normV = Math.hypot(v[0], v[1], v[2]);
+      if (normU > 1e-9 && normV > 1e-9) {
+        const dot = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+        const cosVal = Math.max(-1.0, Math.min(1.0, dot / (normU * normV)));
+        angles[f] = Math.acos(cosVal) * (180.0 / Math.PI);
+      } else {
+        angles[f] = NaN;
+      }
+    } else {
+      angles[f] = NaN;
+    }
+  }
+
+  draw();
+  saveSessionState();
+}
+
 function pause() {
   playing = false;
   $("play").textContent = "Play";
@@ -1319,6 +1426,15 @@ function collectViewerState() {
       bones: $("bones") ? $("bones").checked : true,
       loop: $("loop") ? $("loop").checked : true,
       showDistance,
+      showAngle,
+      angleMode,
+      angleMarkerA: $("angle-marker-a") ? $("angle-marker-a").value : "0",
+      angleMarkerB: $("angle-marker-b") ? $("angle-marker-b").value : "1",
+      angleMarkerC: $("angle-marker-c") ? $("angle-marker-c").value : "2",
+      angleV1A: $("angle-v1-a") ? $("angle-v1-a").value : "0",
+      angleV1B: $("angle-v1-b") ? $("angle-v1-b").value : "1",
+      angleV2C: $("angle-v2-c") ? $("angle-v2-c").value : "2",
+      angleV2D: $("angle-v2-d") ? $("angle-v2-d").value : "3",
       showForcePlates,
       showForceVectors,
       forceVectorScale,
@@ -1406,6 +1522,15 @@ function restoreSessionState(data) {
     if (typeof state.loop === "boolean" && $("loop")) $("loop").checked = state.loop;
     syncLoopToggleButton();
     if (typeof state.showDistance === "boolean") setDistanceVisible(state.showDistance);
+    if (typeof state.showAngle === "boolean") setAngleVisible(state.showAngle);
+    if (state.angleMode) setAngleMode(state.angleMode);
+    if (state.angleMarkerA && $("angle-marker-a")) $("angle-marker-a").value = state.angleMarkerA;
+    if (state.angleMarkerB && $("angle-marker-b")) $("angle-marker-b").value = state.angleMarkerB;
+    if (state.angleMarkerC && $("angle-marker-c")) $("angle-marker-c").value = state.angleMarkerC;
+    if (state.angleV1A && $("angle-v1-a")) $("angle-v1-a").value = state.angleV1A;
+    if (state.angleV1B && $("angle-v1-b")) $("angle-v1-b").value = state.angleV1B;
+    if (state.angleV2C && $("angle-v2-c")) $("angle-v2-c").value = state.angleV2C;
+    if (state.angleV2D && $("angle-v2-d")) $("angle-v2-d").value = state.angleV2D;
     if (typeof state.showForcePlates === "boolean") {
       showForcePlates = state.showForcePlates;
       if ($("show-force-plates")) $("show-force-plates").checked = showForcePlates;
@@ -1483,7 +1608,14 @@ function refreshMarkerSelectors() {
     "s2-plane-pt": String(Math.min(5, trial.labels.length - 1)),
     "sg-origin": "0",
     "sg-primary-pt": String(Math.min(1, trial.labels.length - 1)),
-    "sg-plane-pt": String(Math.min(2, trial.labels.length - 1))
+    "sg-plane-pt": String(Math.min(2, trial.labels.length - 1)),
+    "angle-marker-a": "0",
+    "angle-marker-b": trial.labels.length > 1 ? "1" : "0",
+    "angle-marker-c": trial.labels.length > 2 ? "2" : "0",
+    "angle-v1-a": "0",
+    "angle-v1-b": trial.labels.length > 1 ? "1" : "0",
+    "angle-v2-c": trial.labels.length > 2 ? "2" : "0",
+    "angle-v2-d": trial.labels.length > 3 ? "3" : (trial.labels.length > 1 ? "1" : "0")
   };
 
   for (const key of [
@@ -1491,7 +1623,9 @@ function refreshMarkerSelectors() {
     "orientation-origin", "orientation-x-point", "orientation-plane-point",
     "s1-origin", "s1-primary-pt", "s1-plane-pt",
     "s2-origin", "s2-primary-pt", "s2-plane-pt",
-    "sg-origin", "sg-primary-pt", "sg-plane-pt"
+    "sg-origin", "sg-primary-pt", "sg-plane-pt",
+    "angle-marker-a", "angle-marker-b", "angle-marker-c",
+    "angle-v1-a", "angle-v1-b", "angle-v2-c", "angle-v2-d"
   ]) {
     if (!$(key)) continue;
     const isUserSet = $(key).dataset.userSelected === "true";
@@ -1513,6 +1647,7 @@ function refreshMarkerSelectors() {
 
 function load(data) {
   trial = data;
+  window.trial = data;
   frame = 0;
   pause();
   activeMarkerIndex = 0;
@@ -1592,6 +1727,7 @@ function load(data) {
 
   fit();
   measure();
+  measureAngle();
   restoreSessionState(data);
   $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
   const hasRefTransform = (
@@ -2215,6 +2351,64 @@ if ($("btn-toggle-distance")) {
 }
 if ($("action-toggle-distance")) {
   $("action-toggle-distance").onclick = () => setDistanceVisible(!showDistance);
+}
+
+// Vector Angle Measurement (Dot Product) Toggle & Mode
+function setAngleVisible(visible) {
+  showAngle = Boolean(visible);
+  if ($("chk-show-angle")) $("chk-show-angle").checked = showAngle;
+  if ($("txt-show-angle")) {
+    $("txt-show-angle").textContent = showAngle ? "Shown" : "Hidden";
+    $("txt-show-angle").style.color = showAngle ? "var(--accent)" : "var(--text-muted)";
+  }
+  if ($("btn-toggle-angle")) {
+    $("btn-toggle-angle").textContent = showAngle ? "Disable" : "Enable";
+  }
+  saveSessionState();
+  draw();
+}
+
+function setAngleMode(mode) {
+  angleMode = mode;
+  const is3pt = mode === "3pt";
+  if ($("btn-angle-mode-3pt")) {
+    $("btn-angle-mode-3pt").classList.toggle("active", is3pt);
+    $("btn-angle-mode-3pt").style.background = is3pt ? "var(--accent)" : "var(--bg-canvas)";
+    $("btn-angle-mode-3pt").style.color = is3pt ? "#fff" : "var(--text-normal)";
+  }
+  if ($("btn-angle-mode-4pt")) {
+    $("btn-angle-mode-4pt").classList.toggle("active", !is3pt);
+    $("btn-angle-mode-4pt").style.background = !is3pt ? "var(--accent)" : "var(--bg-canvas)";
+    $("btn-angle-mode-4pt").style.color = !is3pt ? "#fff" : "var(--text-normal)";
+  }
+  if ($("angle-3pt-container")) $("angle-3pt-container").style.display = is3pt ? "block" : "none";
+  if ($("angle-4pt-container")) $("angle-4pt-container").style.display = !is3pt ? "block" : "none";
+  measureAngle();
+}
+
+if ($("chk-show-angle")) {
+  $("chk-show-angle").onchange = e => setAngleVisible(e.target.checked);
+}
+if ($("btn-toggle-angle")) {
+  $("btn-toggle-angle").onclick = () => setAngleVisible(!showAngle);
+}
+if ($("btn-angle-mode-3pt")) {
+  $("btn-angle-mode-3pt").onclick = () => setAngleMode("3pt");
+}
+if ($("btn-angle-mode-4pt")) {
+  $("btn-angle-mode-4pt").onclick = () => setAngleMode("4pt");
+}
+if ($("btn-plot-angle-curve")) {
+  $("btn-plot-angle-curve").onclick = () => {
+    if ($("plot1-mode")) {
+      $("plot1-mode").value = "angle-dot-product";
+      drawPlot1();
+      status("Plotted Vector Angle (Dot Product °) on Plot 1.");
+    }
+  };
+}
+for (const id of ["angle-marker-a", "angle-marker-b", "angle-marker-c", "angle-v1-a", "angle-v1-b", "angle-v2-c", "angle-v2-d"]) {
+  if ($(id)) $(id).onchange = measureAngle;
 }
 
 // ==========================================
@@ -5837,6 +6031,19 @@ function matrixToQuaternionJS(m) {
 
 function evaluateExpressionJS(expr, trialData) {
   const nFrames = trialData.xyz.length;
+  const trimmed = expr.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed) && parsed.length === 3 && parsed.every(v => Number.isFinite(Number(v)))) {
+        const pNum = [Number(parsed[0]), Number(parsed[1]), Number(parsed[2])];
+        return new Array(nFrames).fill(null).map(() => [...pNum]);
+      }
+    } catch (e) {
+      // not simple JSON array, continue to normal parser
+    }
+  }
+
   const labels = trialData.labels;
   const coords = [];
 
@@ -5995,7 +6202,8 @@ function renderVirtualPointsTable() {
     const tdExpr = document.createElement("td");
     tdExpr.style.padding = "4px";
     tdExpr.style.fontFamily = "monospace";
-    tdExpr.textContent = vp.expression;
+    const isManual = vp.expression.trim().startsWith("[");
+    tdExpr.textContent = isManual ? `📍 Manual ${vp.expression} m` : vp.expression;
 
     const tdStatus = document.createElement("td");
     tdStatus.style.padding = "4px";
@@ -6050,7 +6258,13 @@ function exportVirtualPointsPipeline() {
     "    # p is a dictionary of marker trajectories {label: (n_frames, 3) ndarray}",
   ];
   virtualPoints.forEach(vp => {
-    lines.push(`    p['${vp.name}'] = ${vp.expression}`);
+    const expr = vp.expression.trim();
+    if (expr.startsWith("[")) {
+      lines.push(`    # Static manual coordinates across frames [X, Y, Z]`);
+      lines.push(`    p['${vp.name}'] = np.tile(np.array(${expr}), (len(next(iter(p.values()))), 1))`);
+    } else {
+      lines.push(`    p['${vp.name}'] = ${expr}`);
+    }
   });
   lines.push("    return p");
   lines.push("");
@@ -6385,6 +6599,24 @@ function updateKinematicsLiveUI() {
     const qNorm = Math.hypot(curQuat[0], curQuat[1], curQuat[2], curQuat[3]);
     if ($("quat-norm-badge")) $("quat-norm-badge").textContent = `||q|| = ${qNorm.toFixed(4)}`;
   }
+
+  // Longitudinal Axes Included Angle (Dot Product between s1 and s2 Z-axes)
+  if (kinematicsData.s1Bases && kinematicsData.s2Bases) {
+    const b1 = kinematicsData.s1Bases[frame];
+    const b2 = kinematicsData.s2Bases[frame];
+    if (b1 && b2 && Number.isFinite(b1[0][2]) && Number.isFinite(b2[0][2])) {
+      const ez1 = [b1[0][2], b1[1][2], b1[2][2]];
+      const ez2 = [b2[0][2], b2[1][2], b2[2][2]];
+      const dot = ez1[0] * ez2[0] + ez1[1] * ez2[1] + ez1[2] * ez2[2];
+      const cosVal = Math.max(-1.0, Math.min(1.0, dot));
+      const thetaDeg = Math.acos(cosVal) * (180.0 / Math.PI);
+      if ($("kin-long-angle-val")) {
+        $("kin-long-angle-val").textContent = `${thetaDeg.toFixed(2)}°`;
+      }
+    } else {
+      if ($("kin-long-angle-val")) $("kin-long-angle-val").textContent = "— °";
+    }
+  }
 }
 
 function drawKinematicsTriads(targetCtx, w, h) {
@@ -6451,6 +6683,145 @@ function drawKinematicsTriads(targetCtx, w, h) {
       targetCtx.font = "bold 11px system-ui, sans-serif";
       targetCtx.fillText("s2 (" + (kinematicsConfig.s2.name || "s2") + ")", pO2[0] + 6, pO2[1] - 4);
     }
+  }
+}
+
+function drawVectorAngle3D(targetCtx, w, h) {
+  if (!trial || !showAngle || !trial.xyz[frame]) return;
+  const isLight = currentTheme === "light";
+  const framePts = trial.xyz[frame];
+  const is3pt = angleMode === "3pt";
+
+  const colorU = isLight ? "#0284c7" : "#38bdf8"; // Cyan
+  const colorV = isLight ? "#d97706" : "#fbbf24"; // Amber/Gold
+  const colorArc = isLight ? "#7c3aed" : "#c084fc"; // Purple
+  const colorText = isLight ? "#0f172a" : "#ffffff";
+
+  if (is3pt) {
+    const a = Number($("angle-marker-a") ? $("angle-marker-a").value : 0);
+    const b = Number($("angle-marker-b") ? $("angle-marker-b").value : 1);
+    const c = Number($("angle-marker-c") ? $("angle-marker-c").value : 2);
+    const pa = framePts[a], pb = framePts[b], pc = framePts[c];
+    if (!valid(pa) || !valid(pb) || !valid(pc)) return;
+
+    // u = pa - pb, v = pc - pb
+    const u = [pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]];
+    const v = [pc[0] - pb[0], pc[1] - pb[1], pc[2] - pb[2]];
+    const normU = Math.hypot(u[0], u[1], u[2]);
+    const normV = Math.hypot(v[0], v[1], v[2]);
+    if (normU <= 1e-9 || normV <= 1e-9) return;
+
+    // Draw Vector Lines: pb -> pa (u) and pb -> pc (v)
+    line(pb, pa, colorU, 2.5, targetCtx, w, h);
+    line(pb, pc, colorV, 2.5, targetCtx, w, h);
+
+    // Highlight Vertex pb with a ring
+    const pVertex = project(pb, w, h);
+    targetCtx.beginPath();
+    targetCtx.arc(pVertex[0], pVertex[1], markerSize * 1.8, 0, Math.PI * 2);
+    targetCtx.strokeStyle = colorArc;
+    targetCtx.lineWidth = 2;
+    targetCtx.stroke();
+
+    // Compute angle theta
+    const dot = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    const cosVal = Math.max(-1.0, Math.min(1.0, dot / (normU * normV)));
+    const thetaRad = Math.acos(cosVal);
+    const thetaDeg = thetaRad * (180.0 / Math.PI);
+
+    // Draw 3D Circular Arc around vertex pb in plane of (u, v)
+    const e1 = [u[0] / normU, u[1] / normU, u[2] / normU];
+    const vDotE1 = v[0] * e1[0] + v[1] * e1[1] + v[2] * e1[2];
+    let e2 = [v[0] - vDotE1 * e1[0], v[1] - vDotE1 * e1[1], v[2] - vDotE1 * e1[2]];
+    const normE2 = Math.hypot(e2[0], e2[1], e2[2]);
+    if (normE2 > 1e-9) {
+      e2 = [e2[0] / normE2, e2[1] / normE2, e2[2] / normE2];
+      const arcRadius = Math.min(Math.max(0.04, Math.min(normU, normV) * 0.35), 0.25);
+      const steps = 16;
+      let midPt2D = null;
+
+      targetCtx.beginPath();
+      targetCtx.strokeStyle = colorArc;
+      targetCtx.lineWidth = 2;
+
+      for (let s = 0; s <= steps; s++) {
+        const phi = (s / steps) * thetaRad;
+        const pt3D = [
+          pb[0] + arcRadius * (Math.cos(phi) * e1[0] + Math.sin(phi) * e2[0]),
+          pb[1] + arcRadius * (Math.cos(phi) * e1[1] + Math.sin(phi) * e2[1]),
+          pb[2] + arcRadius * (Math.cos(phi) * e1[2] + Math.sin(phi) * e2[2]),
+        ];
+        const pt2D = project(pt3D, w, h);
+        if (s === 0) {
+          targetCtx.moveTo(pt2D[0], pt2D[1]);
+        } else {
+          targetCtx.lineTo(pt2D[0], pt2D[1]);
+        }
+        if (s === Math.floor(steps / 2)) {
+          midPt2D = pt2D;
+        }
+      }
+      targetCtx.stroke();
+
+      // Draw angle text billboard near midpoint of the arc
+      if (midPt2D) {
+        targetCtx.font = "bold 11px system-ui, sans-serif";
+        const labelText = `θ = ${thetaDeg.toFixed(1)}°`;
+        const textWidth = targetCtx.measureText(labelText).width;
+        targetCtx.fillStyle = isLight ? "rgba(255, 255, 255, 0.88)" : "rgba(15, 23, 42, 0.88)";
+        targetCtx.fillRect(midPt2D[0] + 6, midPt2D[1] - 12, textWidth + 8, 16);
+        targetCtx.strokeStyle = colorArc;
+        targetCtx.lineWidth = 1;
+        targetCtx.strokeRect(midPt2D[0] + 6, midPt2D[1] - 12, textWidth + 8, 16);
+        targetCtx.fillStyle = colorText;
+        targetCtx.fillText(labelText, midPt2D[0] + 10, midPt2D[1]);
+      }
+    }
+  } else {
+    // 4pt mode: Vector 1 (p1 -> p2) and Vector 2 (p3 -> p4)
+    const v1a = Number($("angle-v1-a") ? $("angle-v1-a").value : 0);
+    const v1b = Number($("angle-v1-b") ? $("angle-v1-b").value : 1);
+    const v2c = Number($("angle-v2-c") ? $("angle-v2-c").value : 2);
+    const v2d = Number($("angle-v2-d") ? $("angle-v2-d").value : 3);
+    const p1 = framePts[v1a], p2 = framePts[v1b], p3 = framePts[v2c], p4 = framePts[v2d];
+    if (!valid(p1) || !valid(p2) || !valid(p3) || !valid(p4)) return;
+
+    line(p1, p2, colorU, 2.5, targetCtx, w, h);
+    line(p3, p4, colorV, 2.5, targetCtx, w, h);
+
+    const u = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+    const v = [p4[0] - p3[0], p4[1] - p3[1], p4[2] - p3[2]];
+    const normU = Math.hypot(u[0], u[1], u[2]);
+    const normV = Math.hypot(v[0], v[1], v[2]);
+    if (normU <= 1e-9 || normV <= 1e-9) return;
+
+    const dot = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    const cosVal = Math.max(-1.0, Math.min(1.0, dot / (normU * normV)));
+    const thetaDeg = Math.acos(cosVal) * (180.0 / Math.PI);
+
+    const pMid1 = project([(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, (p1[2] + p2[2]) / 2], w, h);
+    const pMid2 = project([(p3[0] + p4[0]) / 2, (p3[1] + p4[1]) / 2, (p3[2] + p4[2]) / 2], w, h);
+
+    // Label V1 and V2
+    targetCtx.font = "bold 10px system-ui, sans-serif";
+    targetCtx.fillStyle = colorU;
+    targetCtx.fillText("V1", pMid1[0] + 4, pMid1[1] - 4);
+    targetCtx.fillStyle = colorV;
+    targetCtx.fillText("V2", pMid2[0] + 4, pMid2[1] - 4);
+
+    // Draw billboard text between midpoints
+    const labelX = (pMid1[0] + pMid2[0]) / 2;
+    const labelY = (pMid1[1] + pMid2[1]) / 2;
+    targetCtx.font = "bold 11px system-ui, sans-serif";
+    const labelText = `θ = ${thetaDeg.toFixed(1)}°`;
+    const textWidth = targetCtx.measureText(labelText).width;
+    targetCtx.fillStyle = isLight ? "rgba(255, 255, 255, 0.88)" : "rgba(15, 23, 42, 0.88)";
+    targetCtx.fillRect(labelX - textWidth / 2 - 4, labelY - 8, textWidth + 8, 16);
+    targetCtx.strokeStyle = colorArc;
+    targetCtx.lineWidth = 1;
+    targetCtx.strokeRect(labelX - textWidth / 2 - 4, labelY - 8, textWidth + 8, 16);
+    targetCtx.fillStyle = colorText;
+    targetCtx.fillText(labelText, labelX - textWidth / 2, labelY + 4);
   }
 }
 
@@ -6763,16 +7134,85 @@ function initKinematicsControls() {
     };
   });
 
+  let vpCreationMode = "formula";
+  if ($("btn-vp-mode-formula")) {
+    $("btn-vp-mode-formula").onclick = () => {
+      vpCreationMode = "formula";
+      $("btn-vp-mode-formula").classList.add("active");
+      $("btn-vp-mode-formula").style.background = "var(--accent)";
+      $("btn-vp-mode-formula").style.color = "#fff";
+      $("btn-vp-mode-manual").classList.remove("active");
+      $("btn-vp-mode-manual").style.background = "var(--bg-canvas)";
+      $("btn-vp-mode-manual").style.color = "var(--text-normal)";
+      if ($("vp-container-formula")) $("vp-container-formula").style.display = "block";
+      if ($("vp-container-manual")) $("vp-container-manual").style.display = "none";
+    };
+  }
+  if ($("btn-vp-mode-manual")) {
+    $("btn-vp-mode-manual").onclick = () => {
+      vpCreationMode = "manual";
+      $("btn-vp-mode-manual").classList.add("active");
+      $("btn-vp-mode-manual").style.background = "var(--accent)";
+      $("btn-vp-mode-manual").style.color = "#fff";
+      $("btn-vp-mode-formula").classList.remove("active");
+      $("btn-vp-mode-formula").style.background = "var(--bg-canvas)";
+      $("btn-vp-mode-formula").style.color = "var(--text-normal)";
+      if ($("vp-container-manual")) $("vp-container-manual").style.display = "block";
+      if ($("vp-container-formula")) $("vp-container-formula").style.display = "none";
+    };
+  }
+
+  if ($("btn-vp-copy-marker")) {
+    $("btn-vp-copy-marker").onclick = () => {
+      if (!trial || !trial.xyz || !trial.xyz[frame]) return;
+      const pt = trial.xyz[frame][activeMarkerIndex];
+      if (valid(pt)) {
+        if ($("vp-manual-x")) $("vp-manual-x").value = pt[0].toFixed(4);
+        if ($("vp-manual-y")) $("vp-manual-y").value = pt[1].toFixed(4);
+        if ($("vp-manual-z")) $("vp-manual-z").value = pt[2].toFixed(4);
+        if ($("vp-name") && !$("vp-name").value) {
+          $("vp-name").value = (trial.labels[activeMarkerIndex] || "PT") + "_MANUAL";
+        }
+        status(`Copied coordinates (${pt[0].toFixed(3)}, ${pt[1].toFixed(3)}, ${pt[2].toFixed(3)}) m from marker "${trial.labels[activeMarkerIndex]}".`);
+      } else {
+        status("Active marker is missing or NaN at current frame.", true);
+      }
+    };
+  }
+
+  if ($("btn-vp-zero-coords")) {
+    $("btn-vp-zero-coords").onclick = () => {
+      if ($("vp-manual-x")) $("vp-manual-x").value = "0.000";
+      if ($("vp-manual-y")) $("vp-manual-y").value = "0.000";
+      if ($("vp-manual-z")) $("vp-manual-z").value = "0.000";
+    };
+  }
+
   if ($("btn-add-virtual-point")) {
     $("btn-add-virtual-point").onclick = async () => {
       const name = $("vp-name") ? $("vp-name").value.trim() : "";
-      const expr = $("vp-expr") ? $("vp-expr").value.trim() : "";
+      let expr = "";
+      if (vpCreationMode === "manual") {
+        const x = parseFloat($("vp-manual-x") ? $("vp-manual-x").value : "0");
+        const y = parseFloat($("vp-manual-y") ? $("vp-manual-y").value : "0");
+        const z = parseFloat($("vp-manual-z") ? $("vp-manual-z").value : "0");
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+          if ($("vp-error")) {
+            $("vp-error").textContent = "Please enter valid numerical coordinates for X, Y, and Z.";
+            $("vp-error").style.display = "block";
+          }
+          return;
+        }
+        expr = `[${x}, ${y}, ${z}]`;
+      } else {
+        expr = $("vp-expr") ? $("vp-expr").value.trim() : "";
+      }
       if (!name) {
         if ($("vp-error")) { $("vp-error").textContent = "Please enter a point name."; $("vp-error").style.display = "block"; }
         return;
       }
       if (!expr) {
-        if ($("vp-error")) { $("vp-error").textContent = "Please enter a formula."; $("vp-error").style.display = "block"; }
+        if ($("vp-error")) { $("vp-error").textContent = "Please enter a formula or coordinates."; $("vp-error").style.display = "block"; }
         return;
       }
       await addVirtualPoint(name, expr);

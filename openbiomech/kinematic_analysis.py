@@ -320,10 +320,13 @@ def evaluate_virtual_point_expression(
         "max": max,
     }
 
-    try:
-        result = eval(expression, {"__builtins__": {}}, allowed_globals)
-    except Exception as exc:
-        raise ValueError(f"Failed to evaluate expression '{expression}': {exc}") from exc
+    if isinstance(expression, (list, tuple, np.ndarray)):
+        result = expression
+    else:
+        try:
+            result = eval(str(expression), {"__builtins__": {}}, allowed_globals)
+        except Exception as exc:
+            raise ValueError(f"Failed to evaluate expression '{expression}': {exc}") from exc
 
     result_arr = np.asarray(result, dtype=np.float64)
     if result_arr.shape == (3,):
@@ -371,3 +374,94 @@ def add_virtual_points_to_trial(
             analog=trial.analog,
         )
     return current_trial
+
+
+def compute_vector_dot_product_angle(
+    u: np.ndarray,
+    v: np.ndarray,
+    *,
+    degrees: bool = True,
+) -> np.ndarray | float:
+    """Compute the spatial angle between two vectors u and v using the vector dot product.
+
+    Mathematical formulation:
+        u · v = ||u|| ||v|| cos(θ)
+        cos(θ) = (u · v) / (||u|| ||v||)
+        cos_clamped = clamp(cos(θ), -1.0, 1.0)
+        θ = arccos(cos_clamped)
+
+    Args:
+        u: Vector or trajectory array of shape (3,) or (N, 3).
+        v: Vector or trajectory array of shape (3,) or (N, 3).
+        degrees: If True (default), returns angle in degrees [0, 180]. If False, in radians [0, π].
+
+    Returns:
+        Angle in degrees or radians. Returns shape (N,) for 2D inputs, or float for 1D inputs.
+    """
+    arr_u = np.asarray(u, dtype=np.float64)
+    arr_v = np.asarray(v, dtype=np.float64)
+
+    is_1d = arr_u.ndim == 1 and arr_v.ndim == 1
+    if is_1d:
+        arr_u = arr_u[None, :]
+        arr_v = arr_v[None, :]
+
+    norm_u = np.linalg.norm(arr_u, axis=-1)
+    norm_v = np.linalg.norm(arr_v, axis=-1)
+
+    valid = (
+        np.isfinite(arr_u).all(axis=-1)
+        & np.isfinite(arr_v).all(axis=-1)
+        & (norm_u > 1e-12)
+        & (norm_v > 1e-12)
+    )
+
+    dot = np.sum(arr_u * arr_v, axis=-1)
+    angle = np.full(dot.shape, np.nan, dtype=np.float64)
+
+    if valid.any():
+        cos_val = np.clip(dot[valid] / (norm_u[valid] * norm_v[valid]), -1.0, 1.0)
+        rad = np.arccos(cos_val)
+        angle[valid] = np.degrees(rad) if degrees else rad
+
+    if is_1d:
+        return float(angle[0]) if np.isfinite(angle[0]) else float("nan")
+    return angle
+
+
+def compute_marker_angle(
+    trial: MarkerTrial,
+    marker_a: str,
+    marker_b: str,
+    marker_c: str,
+    *,
+    degrees: bool = True,
+) -> np.ndarray:
+    """Compute 3D joint angle at vertex marker_b between marker_a and marker_c across all frames."""
+    a = trial.marker(marker_a)
+    b = trial.marker(marker_b)
+    c = trial.marker(marker_c)
+    u = a - b
+    v = c - b
+    res = compute_vector_dot_product_angle(u, v, degrees=degrees)
+    return np.asarray(res, dtype=np.float64)
+
+
+def compute_two_vector_angle(
+    trial: MarkerTrial,
+    v1_origin: str,
+    v1_target: str,
+    v2_origin: str,
+    v2_target: str,
+    *,
+    degrees: bool = True,
+) -> np.ndarray:
+    """Compute 3D angle between Vector 1 (v1_origin -> v1_target) and Vector 2 (v2_origin -> v2_target)."""
+    p1 = trial.marker(v1_origin)
+    p2 = trial.marker(v1_target)
+    p3 = trial.marker(v2_origin)
+    p4 = trial.marker(v2_target)
+    u = p2 - p1
+    v = p4 - p3
+    res = compute_vector_dot_product_angle(u, v, degrees=degrees)
+    return np.asarray(res, dtype=np.float64)

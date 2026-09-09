@@ -1,41 +1,39 @@
-# Session Handoff: mkvis3d Complete User Manual & Biomechanics Guide
+# Session Handoff: Manual Coordinates Virtual Points & Vector Dot Product Angles
 
 - **Status:** Completed
 - **Current State:**
-  - Implemented comprehensive User Manual and Biomechanics Guide covering 100% of `mkvis3d` features, tools, algorithms, and workflows, modeled after the depth of classical literature (`kwon3d.com` and Winter's textbook) without adopting external branding.
-  - **Deliverables:**
-    1. **`openbiomech/viewer.html` & `openbiomech/viewer.js` (`#modal-manual`):**
-       - 14 complete chapters embedded directly inside the GUI modal with clean Unicode typography (zero raw LaTeX artifacts).
-       - Live search input dynamically filtering chapters and sidebar TOC items.
-       - Popout / Print button (`#btn-manual-popout`) allowing detached window viewing and clean PDF printing.
-       - Renamed Help menu item to **`📐 Biomechanics Theory & Mathematics...`** (`#action-help-theory`) navigating straight to Chapter 6 (Coordinate Systems & Bases).
-       - Top navbar button **`[📖 Manual & Theory]`** (`#btn-open-manual`) and shortcut **`F1`**.
-    2. **`docs/manual.html`:** Standalone, responsive, offline single-file HTML manual with dark/light theme toggle, live search, and print/PDF CSS.
-    3. **`docs/MANUAL.md`:** 14 detailed chapters for GitHub repository browsing.
-    4. **Coverage:**
-       - Chapter 1: System Overview & Architecture
-       - Chapter 2: Data Formats & Biomechanical I/O (C3D, CSV, .3d, .vaila, BVH, Blender)
-       - Chapter 3: 3D Viewport & Scene Navigation (Orbit, Pan, Zoom, ↻ Compositor Refresh, ⧉ Popouts)
-       - Chapter 4: Interactive Timeline & Multi-Plot Analysis (Scrubber, X/Y/Z isolation, NaN gap bands, 1-click gap fill)
-       - Chapter 5: Point Selection & 3D Distance Measurement (Euclidean metrics, live curve, stats)
-       - Chapter 6: Coordinate Systems & Orthonormal Bases (sg, s1, s2, Gram-Schmidt proofs)
-       - Chapter 7: Relative Joint Kinematics (MR = sg s1^T s2 sg^T, 6 Euler sequences, Quaternions)
-       - Chapter 8: Virtual Points & Secondary Landmark Creator (NumPy formulas, script export)
-       - Chapter 9: Signal Conditioning: Filtering & Gap Interpolation (Hampel, PCHIP, Butterworth 4th zero-phase)
-       - Chapter 10: Anthropometry & Whole-Body Center of Mass (de Leva 1996 16-segment model)
-       - Chapter 11: Force Platforms, Ground Reaction Forces & Kinetics (Types 1-5, COP, Newton-Euler inverse dynamics)
-       - Chapter 12: Video Synchronization & Multi-Window Desktop (Sync offset, popout monitors)
-       - Chapter 13: Command-Line Interface (CLI) Complete Reference (all 10 commands)
-       - Chapter 14: Practical Tutorials, Standards & Shortcuts (Gait, Squat, CMJ, shortcut table)
+  - Implemented manual numerical coordinate virtual point creation ($X, Y, Z$) and vector spatial angle measurement via dot product in `openbiomech`.
+  - **Features Delivered:**
+    1. **Manual Coordinate Point Creation (`openbiomech/kinematic_analysis.py`, `openbiomech/viewer.html`, `openbiomech/viewer.js`):**
+       - Mode switcher in `#modal-kinematics` Tab 1: `[📐 NumPy Formula]` and `[📍 Manual Coordinates (X, Y, Z)]`.
+       - Manual 3D coordinate inputs ($X, Y, Z$ in meters) with step controls, `[📋 Copy from Active Marker @ Frame]`, and `Reset (0, 0, 0)`.
+       - Virtual points table displays badge `📍 Manual [X, Y, Z] m` and provides Python export script preserving fixed coordinate arrays (`np.tile(np.array([X, Y, Z]), (len(trial.xyz), 1))`).
+       - Backend `evaluate_virtual_point_expression` supports numeric list/array expressions `[x, y, z]`.
+    2. **Vector Angle Measurement via Dot Product (`openbiomech/kinematic_analysis.py`, `openbiomech/viewer.html`, `openbiomech/viewer.js`):**
+       - Exact mathematical formula:
+         $$\mathbf{u} \cdot \mathbf{v} = \|\mathbf{u}\| \|\mathbf{v}\| \cos(\theta) \implies \theta = \arccos\left(\text{clamp}\left(\frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\| \|\mathbf{v}\|}, -1.0, 1.0\right)\right) \times \frac{180^\circ}{\pi}$$
+       - Clamping strictly enforced to prevent `NaN` from floating point overshoot beyond $[-1.0, 1.0]$.
+       - Python functions: `compute_vector_dot_product_angle(u, v, degrees=True)`, `compute_marker_angle(trial, a, b, c, degrees=True)`, `compute_two_vector_angle(trial, v1_a, v1_b, v2_c, v2_d, degrees=True)`.
+       - Left Sidebar Panel: "ANGLE (DOT PRODUCT)" with 3-marker (vertex $\mathbf{u}=\mathbf{A}-\mathbf{B}, \mathbf{v}=\mathbf{C}-\mathbf{B}$) and 4-marker ($\mathbf{u}=\mathbf{B}-\mathbf{A}, \mathbf{v}=\mathbf{D}-\mathbf{C}$) modes.
+       - Live numerical display: angle in degrees, $\mathbf{u}\cdot\mathbf{v}$, $\|\mathbf{u}\|$, $\|\mathbf{v}\|$, and `[📈 Plot Angle Curve on Timeline]` button.
+       - 3D Viewport Visualization: colored vector lines (Cyan `#0284c7`, Amber `#d97706`), vertex highlight ring, circular arc, and billboard text label (`θ = XX.X°`).
+       - Timeline multi-plot integration: `<option value="angle-dot-product">Angle (Dot Product °)</option>` on Plot 1 and Plot 2 with real-time curve rendering and NaN gap shading.
+       - Longitudinal Axes Included Angle card added to Tab 3 of `#modal-kinematics` calculating $\arccos(\mathbf{e}_{z1} \cdot \mathbf{e}_{z2}) \times 180^\circ / \pi$.
+    3. **Documentation:**
+       - Updated Chapter 5 (3D Distance & Vector Angle Measurement) and Chapter 8 (Virtual Points & Secondary Landmark Creator) across `openbiomech/viewer.html` (`#modal-manual`), `docs/manual.html`, and `docs/MANUAL.md`.
   - **Standalone Linux Binary Rebuilt:** Updated `dist/mkvis3d` via `scripts/build_app.py`.
   - **Verification:**
-    - Full pytest suite: 227 passed (`uv run pytest -m "not browser"`).
-    - Ruff check & format: 0 errors across all 86 files.
-    - Chrome CDP E2E tests: verified modal opening, chapter count (14), TOC navigation, search filtering, F1 shortcut, Esc close, popout button.
-    - Screenshot captured: `outputs/screenshot_manual_modal_live.png`.
+    - Test suite: 232 passed, 3 deselected in 19.44s (`uv run pytest -m "not browser"`).
+    - Ruff check & format: 0 errors across all 86 files (`uv run ruff check . && uv run ruff format --check .`).
+    - Chrome CDP E2E tests: verified angle readout (`55.74°`), 4pt mode switch (`49.42°`), Plot 1 curve generation, manual coordinate virtual point creation, and Tab 3 longitudinal axes angle (`124.92°`).
+    - Visual screenshots verified: `outputs/screenshot_angle_sidebar_plot.png` and `outputs/screenshot_manual_point_kinematics.png`.
 
 - **What Worked:**
-  - Standardizing mathematical equations with clean Unicode characters (`·`, `×`, `√`, `||e||`) ensures crisp, legible rendering across all environments without external math renderers.
+  - Clamping the dot product quotient prior to $\arccos$ ensures robust numerical stability across degenerate, near-parallel, and anti-parallel configurations in both Python backend and JS client.
+  - Exposing `window.trial = data;` ensures smooth integration with external automation, CDP tests, and browser inspector workflows.
+
+- **Failed Approaches:**
+  - N/A.
 
 - **Open Questions & Next Steps:**
-  - Goal complete and ready for user inspection.
+  - All requested features, tests, builds, and documentation are complete.

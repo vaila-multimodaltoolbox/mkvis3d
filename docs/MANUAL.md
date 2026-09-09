@@ -261,6 +261,27 @@ $$w = 0.25\,S, \quad x = \frac{MR_{32} - MR_{23}}{S}, \quad y = \frac{MR_{13} - 
 - Smooth spherical linear interpolation (**SLERP**) between frames.
 - Computationally efficient composition of segment chains: $\mathbf{q}_{\text{relative}} = \mathbf{q}_1^* \otimes \mathbf{q}_2$.
 
+### 3.6 Spatial Vector Angle via Dot Product
+While Euler/Cardan angles decompose relative orientation into sequence-dependent planar rotations (flexion/extension, adduction/abduction, internal/external rotation), researchers frequently require the **true spatial angle** between two directed axes (e.g. segment longitudinal axes, segment inclination to the vertical, or knee joint angle):
+
+$$\mathbf{u} \cdot \mathbf{v} = \|\mathbf{u}\| \|\mathbf{v}\| \cos(\theta)$$
+$$\cos(\theta) = \frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\| \|\mathbf{v}\|}$$
+$$\theta = \arccos\left(\text{clamp}\left(\frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\| \|\mathbf{v}\|}, -1.0, 1.0\right)\right) \times \frac{180^\circ}{\pi}$$
+
+#### Topological Modes Supported:
+1. **3-Marker Vertex Mode (Joint Angle):**
+   - Markers $A$, $B$ (vertex), and $C$.
+   - $\mathbf{u} = \mathbf{A} - \mathbf{B}$, $\mathbf{v} = \mathbf{C} - \mathbf{B}$ sharing origin $B$.
+   - Examples: Knee flexion (Hip - Knee - Ankle), Elbow flexion (Shoulder - Elbow - Wrist).
+2. **4-Marker Independent Mode (Two Vectors):**
+   - Vector 1: $\mathbf{u} = \mathbf{B} - \mathbf{A}$
+   - Vector 2: $\mathbf{v} = \mathbf{D} - \mathbf{C}$
+   - Examples: Angle between thigh segment axis and shank segment axis; segment inclination relative to laboratory vertical.
+
+#### Viewport & Timeline Plotting:
+- Renders Vector 1 in Cyan, Vector 2 in Amber, with an angle circular arc around the vertex and a live 3D billboard text badge with $\theta = XX.X^\circ$.
+- 1-click button to plot continuous $\theta(t)$ curves on Plot 1 or Plot 2, featuring automatic NaN gap highlighting and range-of-motion (ROM) metrics.
+
 ---
 
 ## 4. Virtual Points & Secondary Landmark Creator
@@ -272,7 +293,18 @@ Skin-mounted retroreflective markers cannot be placed inside anatomical joint ce
 - **Ankle Joint Center (AJC):** Midpoint between Lateral and Medial Malleoli.
 - **Pelvic Midpoint:** Center of the pelvic brim $(RASI + LASI) / 2$.
 
-### 4.2 NumPy Vector Expression Syntax
+### 4.2 Creation Modes: Formula vs. Manual Coordinates
+mkvis3d provides two distinct modes for virtual point generation:
+1. **NumPy Formula Mode (Dynamic Trajectories):**
+   - Evaluates a vectorized mathematical expression across all frames.
+   - Accesses trial marker arrays via `p['MARKER_NAME']` (shape $N \times 3$).
+2. **Manual Coordinates Mode (Static Landmark / Calibration Target):**
+   - Directly specify metric coordinates $[X, Y, Z]$ in meters.
+   - Convenience button **📋 Copy from Active Marker @ Frame** copies the instantaneous 3D position of the active marker into the $X, Y, Z$ inputs.
+   - Creates a constant $(N, 3)$ coordinate array across all frames.
+   - Standalone Python pipeline exports cleanly as `p['NAME'] = np.tile(np.array([X, Y, Z]), (len(trial.frames), 1))`.
+
+### 4.3 NumPy Vector Expression Syntax
 mkvis3d features an interactive **Virtual Point Creator** where users can write formulas in standard NumPy syntax. The system exposes the marker dictionary `p`:
 - `p['MARKER_NAME']`: Accesses the $[N \times 3]$ coordinates of marker across all frames.
 - `np`: Standard NumPy library functions (`np.cross`, `np.linalg.norm`, `np.dot`, `np.sqrt`).

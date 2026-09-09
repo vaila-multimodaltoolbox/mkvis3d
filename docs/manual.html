@@ -378,18 +378,39 @@
 
       <!-- Chapter 5 -->
       <section id="ch5" class="manual-section">
-        <h2>5. Point Selection & 3D Distance Measurement</h2>
+        <h2>5. Point Selection, 3D Distance & Vector Angle Measurement</h2>
         <p>
-          mkvis3d includes a real-time Euclidean distance tool for biomechanical measurement between any two landmarks:
+          mkvis3d provides comprehensive Euclidean distance and spatial vector angle measurement tools with real-time 3D viewport rendering and continuous timeline plotting.
         </p>
+        <h3>5.1 3D Euclidean Distance</h3>
         <div class="math-block">
           d(t) = √((x_B(t) - x_A(t))² + (y_B(t) - y_A(t))² + (z_B(t) - z_A(t))²)
         </div>
         <ul>
           <li>Select <strong>Marker A</strong> and <strong>Marker B</strong> from the sidebar dropdowns.</li>
-          <li>Renders a live connecting 3D line between the two markers in the viewport.</li>
+          <li>Renders a live connecting 3D line between the two markers in the viewport (color-coded amber).</li>
           <li>Generates a dynamic distance timeline curve on Plot 1 with instantaneous readout in meters.</li>
-          <li>Calculates summary statistics: Minimum, Maximum, Mean, and Standard Deviation (SD) across the trial.</li>
+          <li>Calculates summary statistics: Minimum, Maximum, Mean, and Standard Deviation across the trial.</li>
+        </ul>
+
+        <h3>5.2 Vector Angle via Dot Product</h3>
+        <p>
+          Spatial angles between two 3D vectors are calculated using the vector dot product, with strict numerical clamping to [-1.0, 1.0] to prevent floating-point precision NaN values:
+        </p>
+        <div class="math-block">
+          u · v = ||u|| ||v|| cos(θ)<br>
+          cos(θ) = (u · v) / (||u|| ||v||)<br>
+          θ = arccos(clamp(cos(θ), -1.0, 1.0)) × (180° / π)
+        </div>
+        <ul>
+          <li><strong>3 Markers (Vertex Mode):</strong> Measures joint angles (e.g. Hip-Knee-Ankle). Given Marker A, Vertex Marker B, and Marker C, the two vectors share origin B:
+            <br><code>u = A - B</code>, <code>v = C - B</code>
+          </li>
+          <li><strong>4 Markers (Independent Vectors):</strong> Measures the spatial orientation between two separate segments or axes:
+            <br><code>u = B - A (Vector 1)</code>, <code>v = D - C (Vector 2)</code>
+          </li>
+          <li><strong>3D Viewport Visualization:</strong> Draws Vector 1 in Cyan, Vector 2 in Amber, an arc around the vertex, and a live 3D billboard text badge with <code>θ = XX.X°</code>.</li>
+          <li><strong>Timeline Multi-Plot:</strong> Plot 1 and Plot 2 can display continuous <code>Angle (Dot Product °)</code> curves across all frames with NaN gap bands and range of motion (ROM) metrics.</li>
         </ul>
       </section>
 
@@ -458,8 +479,11 @@
       <section id="ch8" class="manual-section">
         <h2>8. Virtual Points & Secondary Landmark Creator</h2>
         <p>
-          Joint centers (e.g. Hip Joint Center, Knee Joint Center) cannot be measured directly on skin surfaces. mkvis3d allows creating unlimited secondary virtual points using standard NumPy vector syntax:
+          Joint centers (e.g. Hip Joint Center, Knee Joint Center) and calibration offsets cannot always be measured directly by physical skin markers. mkvis3d provides two flexible creation modes:
         </p>
+
+        <h3>8.1 NumPy Formula Mode</h3>
+        <p>Create dynamic virtual points evaluated across all trial frames using NumPy syntax:</p>
         <div class="card">
           <p><strong>1. Midpoint of two markers (e.g. Pelvis center):</strong></p>
           <pre><code>(p['RASI'] + p['LASI']) / 2</code></pre>
@@ -470,8 +494,20 @@
           <p><strong>4. Perpendicular vector via cross product:</strong></p>
           <pre><code>np.cross(p['p2'] - p['p1'], p['p3'] - p['p1'])</code></pre>
         </div>
+
+        <h3>8.2 Manual Coordinates Mode (X, Y, Z)</h3>
         <p>
-          Click <strong>💾 Save Points Pipeline (.py)</strong> to export points as reproducible Python scripts runnable on any server without GUI.
+          Define static or calibration points by directly specifying fixed metric coordinates <code>[X, Y, Z]</code>:
+        </p>
+        <ul>
+          <li>Enter numerical values for <strong>X (m)</strong>, <strong>Y (m)</strong>, and <strong>Z (m)</strong> directly in the input boxes.</li>
+          <li>Click <strong>📋 Copy from Active Marker @ Frame</strong> to immediately fill the inputs with the 3D position of the selected marker at the current playback time.</li>
+          <li>Press <strong>+ Create Point</strong> to instantiate the point across all frames. In the defined points list, it appears as <code>📍 Manual [X, Y, Z] m</code>.</li>
+        </ul>
+
+        <h3>8.3 Pipeline Script Export (.py)</h3>
+        <p>
+          Click <strong>💾 Save Points Pipeline (.py)</strong> to export all defined points as clean, standalone Python code using <code>np.tile(...)</code> for manual coordinates and vectorized NumPy expressions for dynamic points.
         </p>
       </section>
 

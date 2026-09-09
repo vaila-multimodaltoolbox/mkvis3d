@@ -10,6 +10,9 @@ from scipy.spatial.transform import Rotation
 from openbiomech.kinematic_analysis import (
     add_virtual_points_to_trial,
     build_orthonormal_basis,
+    compute_marker_angle,
+    compute_two_vector_angle,
+    compute_vector_dot_product_angle,
     evaluate_virtual_point_expression,
     relative_segment_kinematics,
 )
@@ -275,3 +278,101 @@ def test_gui_kinematics_bases_endpoints():
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_compute_vector_dot_product_angle_basic():
+    """Verify dot product angle calculations for canonical orthogonal and collinear vectors."""
+    # 1. Orthogonal: 90 degrees
+    u = np.array([1.0, 0.0, 0.0])
+    v = np.array([0.0, 1.0, 0.0])
+    assert np.isclose(compute_vector_dot_product_angle(u, v), 90.0, atol=1e-12)
+    assert np.isclose(compute_vector_dot_product_angle(u, v, degrees=False), np.pi / 2, atol=1e-12)
+
+    # 2. Parallel: 0 degrees
+    u = np.array([2.5, 0.0, 0.0])
+    v = np.array([10.0, 0.0, 0.0])
+    assert np.isclose(compute_vector_dot_product_angle(u, v), 0.0, atol=1e-12)
+
+    # 3. Anti-parallel: 180 degrees
+    u = np.array([0.0, 3.0, 0.0])
+    v = np.array([0.0, -5.0, 0.0])
+    assert np.isclose(compute_vector_dot_product_angle(u, v), 180.0, atol=1e-12)
+
+    # 4. 45 degrees
+    u = np.array([1.0, 0.0, 0.0])
+    v = np.array([1.0, 1.0, 0.0])
+    assert np.isclose(compute_vector_dot_product_angle(u, v), 45.0, atol=1e-12)
+
+    # 5. 60 degrees: u = [1, 0, 0], v = [0.5, sqrt(3)/2, 0]
+    u = np.array([1.0, 0.0, 0.0])
+    v = np.array([0.5, np.sqrt(3) / 2.0, 0.0])
+    assert np.isclose(compute_vector_dot_product_angle(u, v), 60.0, atol=1e-12)
+
+
+def test_compute_vector_dot_product_angle_edge_cases():
+    """Verify handling of degenerate vectors, NaNs, and floating point overshoots."""
+    # Zero vector -> NaN
+    u = np.array([0.0, 0.0, 0.0])
+    v = np.array([1.0, 2.0, 3.0])
+    assert np.isnan(compute_vector_dot_product_angle(u, v))
+
+    # NaN vector -> NaN
+    u = np.array([np.nan, 1.0, 2.0])
+    v = np.array([1.0, 1.0, 1.0])
+    assert np.isnan(compute_vector_dot_product_angle(u, v))
+
+    # Trajectory batch (N, 3)
+    n = 20
+    traj_u = np.tile([1.0, 0.0, 0.0], (n, 1))
+    traj_v = np.tile([0.0, 1.0, 0.0], (n, 1))
+    angles = compute_vector_dot_product_angle(traj_u, traj_v)
+    assert angles.shape == (n,)
+    assert np.allclose(angles, 90.0, atol=1e-12)
+
+
+def test_compute_marker_angle_joint():
+    """Verify 3-marker joint angle (Vertex B between A and C)."""
+    trial = make_dummy_trial(n_frames=5)
+    # RASI=[0.1, t, 1.0], RKNE=[0.1, t, 0.5], RANK=[0.1, t, 0.05]
+    # At vertex RKNE:
+    # u = RASI - RKNE = [0, 0, 0.5] (points straight UP along +Z)
+    # v = RANK - RKNE = [0, 0, -0.45] (points straight DOWN along -Z)
+    # Expected angle = 180 degrees (straight extended limb)
+    angles = compute_marker_angle(trial, "RASI", "RKNE", "RANK")
+    assert len(angles) == 5
+    assert np.allclose(angles, 180.0, atol=1e-12)
+
+
+def test_compute_two_vector_angle_segments():
+    """Verify 4-marker angle between two independent segment vectors."""
+    trial = make_dummy_trial(n_frames=5)
+    # V1: LASI -> RASI = [0.2, 0, 0] (lateral X)
+    # V2: RKNE -> RASI = [0, 0, 0.5] (vertical Z)
+    # Orthogonal -> 90 degrees
+    angles = compute_two_vector_angle(trial, "LASI", "RASI", "RKNE", "RASI")
+    assert len(angles) == 5
+    assert np.allclose(angles, 90.0, atol=1e-12)
+
+
+def test_manual_coordinate_virtual_point():
+    """Verify manual coordinate point creation and evaluate_virtual_point_expression."""
+    trial = make_dummy_trial(n_frames=10)
+
+    # String list literal
+    coords_str = evaluate_virtual_point_expression(trial, "[0.25, -0.75, 1.50]")
+    assert coords_str.shape == (10, 3)
+    assert np.allclose(coords_str[0], [0.25, -0.75, 1.50])
+    assert np.allclose(coords_str[9], [0.25, -0.75, 1.50])
+
+    # Direct list
+    coords_list = evaluate_virtual_point_expression(trial, [0.10, 0.20, 0.30])
+    assert coords_list.shape == (10, 3)
+    assert np.allclose(coords_list[0], [0.10, 0.20, 0.30])
+
+    # Adding manual virtual point to trial
+    vp_spec = [{"name": "CALIB_ORIGIN", "expression": "[0.0, 0.0, 0.0]"}]
+    augmented = add_virtual_points_to_trial(trial, vp_spec)
+    assert "CALIB_ORIGIN" in augmented.labels
+    calib = augmented.marker("CALIB_ORIGIN")
+    assert calib.shape == (10, 3)
+    assert np.allclose(calib, 0.0)
