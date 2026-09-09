@@ -254,6 +254,8 @@ button:hover { border-color: var(--accent); color: var(--accent); background: va
 button:disabled { opacity: 0.35; cursor: default; border-color: var(--border-color); color: var(--text-muted); background: var(--btn-bg); }
 button.primary { background: var(--accent); color: var(--accent-text); border: 0; font-weight: 700; }
 button.primary:hover { background: var(--accent-hover); color: var(--accent-text); }
+button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 
 .btn-group { display: flex; gap: 6px; }
 .btn-group > * { flex: 1; text-align: center; }
@@ -334,6 +336,18 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
   grid-template-rows: 1fr;
 }
 #windows-container.layout-3d #vertical-splitter { display: none !important; }
+
+#windows-container.layout-video {
+  grid-template-columns: 1fr 6px var(--video-col-width, 420px);
+  grid-template-rows: 1fr 6px var(--plot-height, 170px);
+}
+#windows-container.layout-video #panel-3d { grid-row: 1; grid-column: 1; }
+#windows-container.layout-video #horizontal-splitter { display: flex; grid-row: 1; grid-column: 2; }
+#windows-container.layout-video #panel-video { grid-row: 1; grid-column: 3; }
+#windows-container.layout-video #vertical-splitter { grid-row: 2; grid-column: 1 / 4; }
+#windows-container.layout-video #panel-plot1 { grid-row: 3; grid-column: 1 / 4; }
+
+#horizontal-splitter { display: none; }
 
 /* Individual Window Pane */
 .window-pane {
@@ -465,6 +479,36 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
 .window-splitter-h:hover::after, .window-splitter-h.is-dragging::after {
   background: var(--accent);
   width: 80px;
+}
+
+/* Horizontal Resizer / Splitter Handle between 3D Viewport and Video column */
+.window-splitter-v {
+  width: 6px;
+  margin: 0 -1px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  user-select: none;
+  touch-action: none;
+  transition: background 0.15s ease;
+  border-radius: 3px;
+}
+.window-splitter-v::after {
+  content: "";
+  width: 3px;
+  height: 48px;
+  border-radius: 2px;
+  background: var(--border-color);
+  transition: background 0.15s, height 0.15s;
+}
+.window-splitter-v:hover, .window-splitter-v.is-dragging {
+  background: rgba(89, 222, 195, 0.18);
+}
+.window-splitter-v:hover::after, .window-splitter-v.is-dragging::after {
+  background: var(--accent);
+  height: 80px;
 }
 
 /* Color Swatches Grid */
@@ -651,8 +695,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
     <button class="menu-btn" aria-haspopup="true">File ▾</button>
     <div class="dropdown-menu">
       <div class="dropdown-item" id="action-open-file">Open File... <span class="shortcut-hint">Ctrl+O</span></div>
-      <div class="dropdown-item" id="action-load-video">🎬 Carregar Vídeo de Referência (mp4/mov/mkv/avi)...</div>
-      <input type="file" id="video-file-input" accept=".mp4,.mov,.mkv,.avi,video/*" hidden>
+      <div class="dropdown-item" id="action-load-video">🎬 Load Reference Video (mp4/mov/mkv/avi)...</div>
+      <input type="file" id="video-file-input" accept=".mp4,.mov,.mkv,.avi,.webm,.m4v,video/*" multiple hidden>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Sample Trials in data/</div>
       <div class="dropdown-item" data-example="pilot0102_squat03.c3d">Vicon Squat (pilot0102_squat03.c3d)</div>
@@ -668,6 +712,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</div>
       <div class="dropdown-item" id="action-export-bvh">Export Biovision Hierarchy (.bvh)...</div>
       <div class="dropdown-item" id="action-export-html">Save Standalone HTML Viewer...</div>
+      <button id="export" hidden style="display:none" aria-hidden="true"></button>
+      <button id="snapshot" hidden style="display:none" aria-hidden="true"></button>
     </div>
   </div>
 
@@ -691,8 +737,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="dropdown-item" id="action-theme-dark">✓ Dark Mode (Escuro)</div>
       <div class="dropdown-item" id="action-theme-light">  Light Mode (Claro)</div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Signal Processing & Lab LCS</div>
-      <div class="dropdown-item" id="action-view-lcs">📐 Visual3D Coordinate System (LCS)...</div>
+      <div class="dropdown-header">Reference System & Processing</div>
+      <div class="dropdown-item" id="action-view-lcs">📐 Reference System & Origin...</div>
       <div class="dropdown-item" id="action-view-filter">🌊 Smooth, Filter & Gap Fill...</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-item" id="action-view-shortcuts">Keyboard & Mouse Controls <span class="shortcut-hint">F1 / ?</span></div>
@@ -707,22 +753,28 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="dropdown-item" id="action-win-plot1">✓ Plot Window 1</div>
       <div class="dropdown-item" id="action-win-plot2">Plot Window 2</div>
       <div class="dropdown-item" id="action-win-table">Marker Inspector Table</div>
+      <div class="dropdown-item" id="action-win-video">Reference Video</div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Subwindow Pop-out & Float</div>
-      <div class="dropdown-item" id="action-float-plot1">↗ Flutuar Janela Plot 1</div>
-      <div class="dropdown-item" id="action-popout-plot1">⧉ Destacar Plot 1 em Nova Janela</div>
-      <div class="dropdown-item" id="action-float-table">↗ Flutuar Marker Inspector</div>
-      <div class="dropdown-item" id="action-popout-table">⧉ Destacar Marker Inspector em Nova Janela</div>
-      <div class="dropdown-item" id="action-dock-all">↙ Reanexar Todas as Janelas</div>
+      <div class="dropdown-header">Subwindow Pop-out & Float — pick what a new window shows</div>
+      <div class="dropdown-item" id="action-float-plot1">↗ Float Plot Window 1</div>
+      <div class="dropdown-item" id="action-popout-plot1">⧉ Pop Out Plot 1 to New Window</div>
+      <div class="dropdown-item" id="action-float-plot2">↗ Float Plot Window 2</div>
+      <div class="dropdown-item" id="action-popout-plot2">⧉ Pop Out Plot 2 to New Window</div>
+      <div class="dropdown-item" id="action-float-table">↗ Float Marker Inspector</div>
+      <div class="dropdown-item" id="action-popout-table">⧉ Pop Out Marker Inspector to New Window</div>
+      <div class="dropdown-item" id="action-float-video">↗ Float Reference Video</div>
+      <div class="dropdown-item" id="action-popout-video">⧉ Pop Out Reference Video to New Window</div>
+      <div class="dropdown-item" id="action-dock-all">↙ Redock All Windows</div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Mosaico Multi-Janela (Visão 3D)</div>
-      <div class="dropdown-item" id="action-mosaic-2">⬛⬛ Mosaico 2 Janelas (lado a lado)</div>
-      <div class="dropdown-item" id="action-mosaic-4">⬜⬜ Mosaico 4 Janelas (grade 2×2)</div>
+      <div class="dropdown-header">Multi-Window Mosaic (3D View)</div>
+      <div class="dropdown-item" id="action-mosaic-2">⬛⬛ 2-Window Mosaic (side by side)</div>
+      <div class="dropdown-item" id="action-mosaic-4">⬜⬜ 4-Window Mosaic (2×2 grid)</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Layout Presets</div>
       <div class="dropdown-item" id="preset-default">Default (3D + Plot)</div>
       <div class="dropdown-item" id="preset-dual">Dual Plot (3D + 2 Plots)</div>
       <div class="dropdown-item" id="preset-full">Full Analysis (3D + Plot + Table)</div>
+      <div class="dropdown-item" id="preset-video">3D + Video (Split)</div>
       <div class="dropdown-item" id="preset-3d">3D Maximized (Focus)</div>
     </div>
   </div>
@@ -750,8 +802,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="dropdown-item" id="action-dec-marker-size">Decrease Marker Size <span class="shortcut-hint">-</span></div>
       <div class="dropdown-item" id="action-reset-marker-style">Reset Marker Style</div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Visual3D Coordinate System</div>
-      <div class="dropdown-item" id="action-opt-lcs">📐 Set Laboratory Coordinate System (LCS)...</div>
+      <div class="dropdown-header">Reference System</div>
+      <div class="dropdown-item" id="action-opt-lcs">📐 Reference System & Origin...</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Signal Conditioning</div>
       <div class="dropdown-item" id="action-opt-filter">🌊 Smooth, Filter & Gap Fill...</div>
@@ -819,7 +871,7 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
           <span>Distance Measurement</span>
           <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; text-transform: none; font-weight: normal; margin: 0;">
             <input type="checkbox" id="chk-show-distance" checked>
-            <span id="txt-show-distance" style="color: var(--accent);">Exibir</span>
+            <span id="txt-show-distance" style="color: var(--accent);">Shown</span>
           </label>
         </div>
         <label for="marker-a">Marker A</label>
@@ -831,7 +883,7 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
         <div class="metric-card" id="card-distance-metric">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
             <label style="margin: 0 0 2px;">Distance</label>
-            <button id="btn-toggle-distance" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Desativar</button>
+            <button id="btn-toggle-distance" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Disable</button>
           </div>
           <div id="distance" class="metric-val">— m</div>
         </div>
@@ -850,20 +902,20 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
         <span id="marker-size-val" style="font-size: 11px; font-weight: 600; color: var(--accent);">3.5 px</span>
       </div>
       <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
-        <button id="btn-dec-marker-size" type="button" style="padding: 2px 8px; font-weight: bold;" title="Diminuir Marcadores (-)">−</button>
+        <button id="btn-dec-marker-size" type="button" style="padding: 2px 8px; font-weight: bold;" title="Decrease Marker Size (-)">−</button>
         <input type="range" id="marker-size-slider" min="1" max="15" step="0.5" value="3.5" style="flex: 1;">
-        <button id="btn-inc-marker-size" type="button" style="padding: 2px 8px; font-weight: bold;" title="Aumentar Marcadores (+)">+</button>
+        <button id="btn-inc-marker-size" type="button" style="padding: 2px 8px; font-weight: bold;" title="Increase Marker Size (+)">+</button>
       </div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
         <label style="margin: 0;">Marker Color (viewc3d)</label>
-        <button id="btn-cycle-marker-color" type="button" style="font-size: 10px; padding: 1px 6px;" title="Alternar Cor (C)">Ciclar (C)</button>
+        <button id="btn-cycle-marker-color" type="button" style="font-size: 10px; padding: 1px 6px;" title="Cycle Color (C)">Cycle (C)</button>
       </div>
       <div id="marker-color-swatches" class="color-swatches-grid" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 6px;">
         <!-- Filled in viewer.js -->
       </div>
       <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;">
-        <input type="color" id="marker-color-custom" value="#f97316" title="Cor personalizada" style="width: 28px; height: 24px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; background: transparent;">
+        <input type="color" id="marker-color-custom" value="#f97316" title="Custom color" style="width: 28px; height: 24px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; background: transparent;">
         <span style="font-size: 11px; color: var(--text-muted);">Custom Color</span>
         <button id="btn-reset-marker-style" type="button" style="margin-left: auto; font-size: 10px; padding: 1px 6px;">Reset</button>
       </div>
@@ -878,7 +930,7 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
 
       <label for="skeleton-template-select">Skeleton Template</label>
       <select id="skeleton-template-select" aria-label="Skeleton Template Selection">
-        <option value="none">— None / Sem Modelo —</option>
+        <option value="none">— None —</option>
         <option value="sam3dinov3_mhr70">SAM 3D / MHR-70 (70 keypoints)</option>
         <option value="yolo_coco17">COCO-17 / YOLO (17 keypoints)</option>
         <option value="mediapipe_pose33">MediaPipe Pose (33 keypoints)</option>
@@ -898,8 +950,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <input type="file" id="file-skeleton-custom" accept=".json" style="display:none">
 
       <div class="btn-group" style="margin-top: 8px;">
-        <button id="btn-load-skeleton" class="primary" style="font-weight: 700;">Carregar Skeleton</button>
-        <button id="btn-clear-skeleton">Limpar</button>
+        <button id="btn-load-skeleton" class="primary" style="font-weight: 700;">Load Skeleton</button>
+        <button id="btn-clear-skeleton">Clear</button>
       </div>
       <div style="margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--border-color);">
         <label for="com-sex">Whole-Body Center of Mass (de Leva 1996)</label>
@@ -1000,11 +1052,11 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
         <button id="top">Top</button>
       </div>
       
-      <label for="up">Lab Vertical Axis</label>
+      <label for="up">Vertical Axis</label>
       <select id="up">
-        <option value="z">Z (ISB / Vicon)</option>
-        <option value="y">Y</option>
-        <option value="x">X</option>
+        <option value="z">Z (Default)</option>
+        <option value="y">Y (Y-Up)</option>
+        <option value="x">X (X-Up)</option>
       </select>
       
       <div style="margin-top: 12px;">
@@ -1019,10 +1071,10 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
 
       <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-color);">
         <button id="btn-open-lcs" type="button" style="width: 100%; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <span>📐 Visual3D Lab LCS...</span>
+          <span>📐 Reference System & Origin...</span>
         </button>
         <div id="lcs-active-badge" style="font-size: 10px; color: var(--text-muted); margin-top: 4px; text-align: center;">
-          LCS: ISB (+Y AP, +Z Axial)
+          Ref System: Default (Z-Up)
         </div>
       </div>
     </section>
@@ -1067,7 +1119,7 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
           </div>
           <div class="pane-tools">
             <span style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Orbit: Drag | Pan: Shift+Drag | Zoom: Wheel</span>
-            <button class="btn-pane-tool btn-popout" data-pane="panel-3d" title="Destacar 3D em Nova Janela Independente (Multi-Monitor)">⧉</button>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-3d" title="Pop Out 3D View to New Window (Multi-Monitor)">⧉</button>
           </div>
         </div>
         <div class="pane-body">
@@ -1083,7 +1135,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       </section>
 
       <!-- Vertical Resizer / Splitter Handle between 3D & Charts -->
-      <div id="vertical-splitter" class="window-splitter-h" role="separator" aria-orientation="horizontal" title="Arraste para ajustar a altura dos gráficos (Duplo clique para redefinir)"></div>
+      <div id="vertical-splitter" class="window-splitter-h" role="separator" aria-orientation="horizontal" title="Drag to adjust plot height (double-click to reset)"></div>
+      <div id="horizontal-splitter" class="window-splitter-v" role="separator" aria-orientation="vertical" title="Drag to adjust video/3D column width (double-click to reset)"></div>
 
       <!-- Plot Window 1 -->
       <section id="panel-plot1" class="window-pane">
@@ -1099,8 +1152,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
           </div>
           <div class="pane-tools">
             <span id="plot1-readout" class="plot-readout">—</span>
-            <button class="btn-pane-tool btn-float" data-pane="panel-plot1" title="Janela Flutuante (Arrastável / Redimensionável)">↗</button>
-            <button class="btn-pane-tool btn-popout" data-pane="panel-plot1" title="Destacar Plot 1 em Nova Janela Independente (Multi-Monitor)">⧉</button>
+            <button class="btn-pane-tool btn-float" data-pane="panel-plot1" title="Floating Window (Draggable / Resizable)">↗</button>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-plot1" title="Pop Out Plot 1 to New Window (Multi-Monitor)">⧉</button>
           </div>
         </div>
         <div class="pane-body">
@@ -1122,9 +1175,9 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
           </div>
           <div class="pane-tools">
             <span id="plot2-readout" class="plot-readout">—</span>
-            <button class="btn-pane-tool btn-float" data-pane="panel-plot2" title="Janela Flutuante (Arrastável / Redimensionável)">↗</button>
-            <button class="btn-pane-tool btn-popout" data-pane="panel-plot2" title="Destacar Plot 2 em Nova Janela Independente (Multi-Monitor)">⧉</button>
-            <button id="btn-close-plot2" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Fechar Janela">✕</button>
+            <button class="btn-pane-tool btn-float" data-pane="panel-plot2" title="Floating Window (Draggable / Resizable)">↗</button>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-plot2" title="Pop Out Plot 2 to New Window (Multi-Monitor)">⧉</button>
+            <button id="btn-close-plot2" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Close Window">✕</button>
           </div>
         </div>
         <div class="pane-body">
@@ -1139,9 +1192,9 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
             <span>Marker Inspector</span>
           </div>
           <div class="pane-tools">
-            <button class="btn-pane-tool btn-float" data-pane="panel-table" title="Janela Flutuante (Arrastável / Redimensionável)">↗</button>
-            <button class="btn-pane-tool btn-popout" data-pane="panel-table" title="Destacar Marker Inspector em Nova Janela Independente (Multi-Monitor)">⧉</button>
-            <button id="btn-close-table" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Fechar Janela">✕</button>
+            <button class="btn-pane-tool btn-float" data-pane="panel-table" title="Floating Window (Draggable / Resizable)">↗</button>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-table" title="Pop Out Marker Inspector to New Window (Multi-Monitor)">⧉</button>
+            <button id="btn-close-table" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Close Window">✕</button>
           </div>
         </div>
         <div class="pane-body">
@@ -1163,27 +1216,47 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
         </div>
       </section>
 
-      <!-- Reference Video Sync Window (Optional) -->
+      <!-- Reference Video Sync Window (Multi-Camera & Frame Sync) -->
       <section id="panel-video" class="window-pane" hidden>
         <div class="pane-header">
-          <div class="pane-title">
-            <span>Vídeo de Referência</span>
+          <div class="pane-title" style="display: flex; align-items: center; gap: 8px;">
+            <span>Reference Video</span>
+            <select id="video-camera-select" style="font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-panel); color: var(--text-color); cursor: pointer; max-width: 170px;" title="Switch camera view" hidden></select>
           </div>
-          <div class="pane-tools">
-            <button class="btn-pane-tool btn-float" data-pane="panel-video" title="Janela Flutuante (Arrastável / Redimensionável)">↗</button>
-            <button id="btn-close-video" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Fechar Vídeo">✕</button>
+          <div class="pane-tools" style="display: flex; align-items: center; gap: 4px;">
+            <button id="btn-add-video" class="btn-pane-tool" style="font-size: 11px; padding: 2px 8px; width: auto;" title="Load another camera angle or reference video">＋ Add Video</button>
+            <button class="btn-pane-tool btn-float" data-pane="panel-video" title="Floating Window (Draggable / Resizable)">↗</button>
+            <button class="btn-pane-tool btn-popout" data-pane="panel-video" title="Pop Out Reference Video to New Window (Multi-Monitor)">⧉</button>
+            <button id="btn-close-video" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Close Video">✕</button>
           </div>
         </div>
-        <div class="pane-body" style="display: flex; flex-direction: column;">
+        <div class="pane-body" style="display: flex; flex-direction: column; position: relative; overflow: hidden; background: #050508;">
           <div id="video-mismatch-panel" hidden style="background: var(--bg-panel-alt); border: 1px solid #c9822b; border-left: 4px solid #c9822b; border-radius: 6px; padding: 8px 12px; margin: 8px; font-size: 11px;">
-            <div style="font-weight: 700; color: #c9822b; margin-bottom: 4px;">⚠ Vídeo e trial não coincidem (frames / FPS)</div>
+            <div style="font-weight: 700; color: #c9822b; margin-bottom: 4px;">⚠ Video and trial do not match (frames / FPS)</div>
             <div id="video-mismatch-text" style="color: var(--text-muted); margin-bottom: 8px;"></div>
             <div style="display: flex; gap: 8px;">
-              <button type="button" id="btn-video-trim" style="font-size: 11px; padding: 4px 10px;" title="Cortar os dados de mocap para a duração do vídeo e exportar CSV/C3D">✂ Cortar Dados</button>
-              <button type="button" id="btn-video-interp" style="font-size: 11px; padding: 4px 10px;" title="Reamostrar os dados de mocap para o FPS estimado do vídeo e exportar CSV/C3D">↔ Interpolar Dados</button>
+              <button type="button" id="btn-video-trim" style="font-size: 11px; padding: 4px 10px;" title="Trim mocap data to the video duration and export CSV/C3D">✂ Trim Data</button>
+              <button type="button" id="btn-video-interp" style="font-size: 11px; padding: 4px 10px;" title="Resample mocap data to the video's estimated FPS and export CSV/C3D">↔ Resample Data</button>
             </div>
           </div>
-          <video id="ref-video" style="flex: 1; width: 100%; min-height: 0; background: #000;" muted playsinline></video>
+          <div style="flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden;">
+            <video id="ref-video" style="width: 100%; height: 100%; object-fit: contain; background: #000; cursor: pointer;" muted playsinline title="Click to play / pause"></video>
+            <div id="video-overlay-play" style="position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; background: rgba(0,0,0,0.6); border-radius: 50%; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff;">▶</div>
+          </div>
+          <!-- Video Sync & Offset Bar -->
+          <div id="video-control-bar" style="height: 32px; background: var(--bg-panel-alt); border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 11px; color: var(--text-muted); flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-weight: 600; color: var(--text-color);">Sync Offset:</span>
+              <button id="btn-offset-dec" class="btn-pane-tool" style="width: 22px; height: 20px; padding: 0; font-size: 11px;" title="Decrease offset by 1 frame (-1 frame)">-1</button>
+              <span id="video-offset-val" style="font-family: monospace; font-size: 11px; color: var(--accent); font-weight: 600; min-width: 32px; text-align: center;">0 f</span>
+              <button id="btn-offset-inc" class="btn-pane-tool" style="width: 22px; height: 20px; padding: 0; font-size: 11px;" title="Increase offset by 1 frame (+1 frame)">+1</button>
+              <button id="btn-offset-reset" class="btn-pane-tool" style="font-size: 10px; padding: 1px 5px; height: 20px;" title="Reset offset to 0">0</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span id="video-frame-info" style="font-family: monospace; font-size: 11px;">0 / 0 · 0.000s</span>
+              <span id="video-sync-badge" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(34,197,94,0.15); color: #22c55e; font-weight: 600;">Synced</span>
+            </div>
+          </div>
         </div>
       </section>
     </div>
@@ -1196,7 +1269,7 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
         <button id="play" class="primary" title="Play / Pause (Space)" disabled>Play</button>
         <button id="next" title="Next Frame (→)" disabled>▶</button>
         <button id="last" title="Last Frame (>>|)">▶|</button>
-        <button id="seek-motion" title="Seek to Active Movement" style="width: auto; padding: 0 8px; font-size: 11px;">Motion</button>
+        <button id="loop-toggle" title="Loop Playback On/Off" aria-pressed="true" style="width: auto; padding: 0 8px; font-size: 11px;">Loop</button>
       </div>
 
       <div id="timeline-wrap">
@@ -1244,7 +1317,7 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
         <div><span class="key-cap">C</span></div><div>Cycle marker color (11 colors from viewc3d)</div>
         <div><span class="key-cap">+</span> / <span class="key-cap">-</span></div><div>Increase / decrease marker size</div>
         <div><span class="key-cap">Alt + T</span></div><div>Toggle Light / Dark theme mode</div>
-        <div><span class="key-cap">Alt + L</span></div><div>Open Visual3D Coordinate System (LCS) dialog</div>
+        <div><span class="key-cap">Alt + L</span></div><div>Open Reference System & Origin dialog</div>
         <div><span class="key-cap">Alt + F</span></div><div>Open Signal Filtering & Gap Fill dialog</div>
         <div><span class="key-cap">Esc</span></div><div>Close open dialog / modal window</div>
       </div>
@@ -1252,73 +1325,125 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
   </div>
 </div>
 
-<!-- Visual3D Laboratory Coordinate System (LCS) Modal -->
+<!-- Reference System & Origin Modal -->
 <section id="modal-lcs" class="window-pane" hidden role="dialog" aria-modal="true" aria-labelledby="modal-lcs-title">
   <div class="pane-header">
-    <div class="pane-title"><h3 id="modal-lcs-title">Visual3D Laboratory Coordinate System (LCS)</h3></div>
+    <div class="pane-title"><h3 id="modal-lcs-title">Reference System & Origin</h3></div>
     <div class="pane-tools"><button class="modal-close" id="btn-close-lcs" aria-label="Close">✕</button></div>
   </div>
   <div class="pane-body">
     <div class="modal-body">
       <p style="margin-top:0; font-size: 12px; color: var(--text-muted);">
-        Configure laboratory orientation following the <strong>Visual3D Set_Laboratory_Coordinate_System</strong> standard.
-        Fix trials where <em>Y is vertical</em> (BVH, Unity, 3D CSV) or walkway direction is along X.
+        Swap coordinate axes (+ / -) and translate the origin to adjust your 3D animation reference frame.
       </p>
 
+      <!-- Presets -->
       <div style="margin-bottom: 12px;">
-        <label style="font-weight: 600; margin-bottom: 6px;">Presets:</label>
+        <label style="font-weight: 600; margin-bottom: 6px; font-size: 12px;">Default Templates:</label>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
-          <button type="button" class="btn-lcs-preset active" data-preset="isb_default">ISB (+Z Up, +Y AP)</button>
-          <button type="button" class="btn-lcs-preset" data-preset="y_up_bvh">BVH / Unity (+Y Up, +Z AP)</button>
-          <button type="button" class="btn-lcs-preset" data-preset="y_up_threejs">Three.js (+Y Up, -Z AP)</button>
-          <button type="button" class="btn-lcs-preset" data-preset="x_up">X-Up (+X Up, +Y AP)</button>
-          <button type="button" class="btn-lcs-preset" data-preset="walkway_x">Walkway X (+Z Up, +X AP)</button>
-          <button type="button" class="btn-lcs-preset" data-preset="reverse_walkway">Reverse Walk (-Y AP)</button>
+          <button type="button" class="btn-lcs-preset active" data-preset="default_z">Default (Z-Up)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="y_up">Y-Up (Vertical Y)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="x_up">X-Up (Vertical X)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="walkway_x">Walkway along X</button>
+          <button type="button" class="btn-lcs-preset" data-preset="inverted_z">Inverted Z</button>
+          <button type="button" class="btn-lcs-preset" data-preset="reverse_y">Reverse Walk (-Y)</button>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: var(--bg-panel-alt); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
-        <div>
-          <label for="lcs-axial-select" style="font-weight: 600; margin-top:0;">AXIAL Direction (Up/Vertical):</label>
-          <select id="lcs-axial-select">
-            <option value="+Z" selected>+Z (ISB / Vicon standard)</option>
-            <option value="-Z">-Z</option>
-            <option value="+Y">+Y (BVH / Unity / Blender)</option>
-            <option value="-Y">-Y</option>
-            <option value="+X">+X</option>
-            <option value="-X">-X</option>
-          </select>
+      <!-- Axis Mapping (New X, New Y, New Z) -->
+      <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; background: var(--bg-panel-alt);">
+        <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">Axis Mapping (+ / -)</legend>
+        
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px;">
+          <div>
+            <label for="lcs-axis-x" style="font-weight: 600; font-size: 11px; margin-top:0;">Target X Axis:</label>
+            <select id="lcs-axis-x" style="width: 100%;">
+              <option value="+X" selected>+X</option>
+              <option value="-X">-X</option>
+              <option value="+Y">+Y</option>
+              <option value="-Y">-Y</option>
+              <option value="+Z">+Z</option>
+              <option value="-Z">-Z</option>
+            </select>
+          </div>
+          <div>
+            <label for="lcs-axis-y" style="font-weight: 600; font-size: 11px; margin-top:0;">Target Y Axis:</label>
+            <select id="lcs-axis-y" style="width: 100%;">
+              <option value="+X">+X</option>
+              <option value="-X">-X</option>
+              <option value="+Y" selected>+Y</option>
+              <option value="-Y">-Y</option>
+              <option value="+Z">+Z</option>
+              <option value="-Z">-Z</option>
+            </select>
+          </div>
+          <div>
+            <label for="lcs-axis-z" style="font-weight: 600; font-size: 11px; margin-top:0;">Target Z Axis (Up):</label>
+            <select id="lcs-axis-z" style="width: 100%;">
+              <option value="+X">+X</option>
+              <option value="-X">-X</option>
+              <option value="+Y">+Y</option>
+              <option value="-Y">-Y</option>
+              <option value="+Z" selected>+Z</option>
+              <option value="-Z">-Z</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label for="lcs-ap-select" style="font-weight: 600; margin-top:0;">AP Direction (Anterior-Posterior):</label>
-          <select id="lcs-ap-select">
-            <option value="+Y" selected>+Y (Forward)</option>
-            <option value="-Y">-Y (Backward)</option>
-            <option value="+X">+X (Walk along X)</option>
-            <option value="-X">-X (Walk along -X)</option>
-            <option value="+Z">+Z</option>
-            <option value="-Z">-Z</option>
-          </select>
-        </div>
-      </div>
 
-      <div id="lcs-feedback-box" style="margin-top: 12px; padding: 10px; border-radius: 5px; background: var(--metric-card-bg); border: 1px solid var(--border-color); font-size: 11px;">
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <button type="button" id="btn-swap-xy" style="font-size: 10px; padding: 4px 8px;">Swap X ↔ Y</button>
+          <button type="button" id="btn-swap-xz" style="font-size: 10px; padding: 4px 8px;">Swap X ↔ Z</button>
+          <button type="button" id="btn-swap-yz" style="font-size: 10px; padding: 4px 8px;">Swap Y ↔ Z</button>
+          <button type="button" id="btn-invert-x" style="font-size: 10px; padding: 4px 8px;">± Invert X</button>
+          <button type="button" id="btn-invert-y" style="font-size: 10px; padding: 4px 8px;">± Invert Y</button>
+          <button type="button" id="btn-invert-z" style="font-size: 10px; padding: 4px 8px;">± Invert Z</button>
+        </div>
+      </fieldset>
+
+      <!-- Origin Translation -->
+      <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; background: var(--bg-panel-alt);">
+        <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">Origin Translation (Meters)</legend>
+        
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px;">
+          <div>
+            <label for="lcs-trans-x" style="font-weight: 600; font-size: 11px; margin-top:0;">ΔX (m):</label>
+            <input type="number" id="lcs-trans-x" step="0.05" value="0.00" style="width: 100%;">
+          </div>
+          <div>
+            <label for="lcs-trans-y" style="font-weight: 600; font-size: 11px; margin-top:0;">ΔY (m):</label>
+            <input type="number" id="lcs-trans-y" step="0.05" value="0.00" style="width: 100%;">
+          </div>
+          <div>
+            <label for="lcs-trans-z" style="font-weight: 600; font-size: 11px; margin-top:0;">ΔZ (m):</label>
+            <input type="number" id="lcs-trans-z" step="0.05" value="0.00" style="width: 100%;">
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <button type="button" id="btn-trans-center-xy" style="font-size: 10px; padding: 4px 8px;">Center (X=0, Y=0)</button>
+          <button type="button" id="btn-trans-zero-floor" style="font-size: 10px; padding: 4px 8px;">Floor to Z = 0</button>
+          <button type="button" id="btn-trans-reset" style="font-size: 10px; padding: 4px 8px;">Reset Translation</button>
+        </div>
+      </fieldset>
+
+      <!-- Feedback / Verification Box -->
+      <div id="lcs-feedback-box" style="padding: 8px 10px; border-radius: 5px; background: var(--metric-card-bg); border: 1px solid var(--border-color); font-size: 11px;">
         <div style="display: flex; justify-content: space-between;">
-          <span>Computed ML (Right / Lateral):</span>
-          <strong id="lcs-ml-result" style="color: var(--accent);">+X</strong>
+          <span>System Matrix:</span>
+          <strong id="lcs-matrix-summary" style="font-family: monospace; color: var(--accent);">X→+X, Y→+Y, Z→+Z</strong>
         </div>
         <div style="display: flex; justify-content: space-between; margin-top: 4px;">
-          <span>Orientation / Handedness:</span>
-          <span id="lcs-det-result" style="color: #22c55e; font-weight: 600;">Right-Handed System (det = +1.0)</span>
+          <span>Handedness / Orientation:</span>
+          <span id="lcs-det-result" style="color: #22c55e; font-weight: 600;">Right-Handed (det = +1.0)</span>
         </div>
         <div id="lcs-error-msg" style="color: #ef4444; margin-top: 4px; display: none;"></div>
       </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
-        <button type="button" id="btn-reset-lcs" style="font-size: 11px;">Reset to Original System</button>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
+        <button type="button" id="btn-reset-lcs" style="font-size: 11px;">Reset to Default</button>
         <div style="display: flex; gap: 8px;">
           <button type="button" id="btn-cancel-lcs">Cancel</button>
-          <button type="button" id="btn-apply-lcs" class="primary" style="font-weight: 700;">Apply LCS Transformation</button>
+          <button type="button" id="btn-apply-lcs" class="primary" style="font-weight: 700;">Apply Reference System</button>
         </div>
       </div>
     </div>

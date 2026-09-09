@@ -10,3 +10,4 @@ build/
 uv.lock
 loops/state/
 vendor/
+node_modules/

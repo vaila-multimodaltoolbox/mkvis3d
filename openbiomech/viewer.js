@@ -26,16 +26,16 @@ let activeSkeletonTemplate = "none";
 let loadedCustomTemplate = null;
 let popoutWindows = {};
 
-// Reference video sync state (item 6): refVideoFile holds the loaded File
-// plus its object URL; refVideoInfo holds the last mismatch-check numbers
-// (estimated FPS, duration, expected frame count) used by the trim/
-// interpolate actions.
+// Reference video sync & multi-camera state
+let refVideosList = [];
+let activeVideoIndex = -1;
 let refVideoFile = null;
 let refVideoInfo = null;
+let videoFrameOffset = 0;
 
-// Visual3D LCS and Signal Conditioning State
+// Reference System (LCS) and Signal Conditioning State
 let rawLoadedXYZ = null;
-let currentLCS = { ap: "+Y", axial: "+Z" };
+let currentLCS = { x: "+X", y: "+Y", z: "+Z", tx: 0, ty: 0, tz: 0, ap: "+Y", axial: "+Z" };
 let activeFilterConfig = null;
 let filterPreviewActive = false;
 let filterPreviewSeries = null;
@@ -190,8 +190,7 @@ function status(message, error = false) {
 }
 
 function orient(p) {
-  const up = $("up") ? $("up").value : "z";
-  return up === "y" ? [p[0], -p[2], p[1]] : up === "x" ? [p[1], p[2], p[0]] : p;
+  return p;
 }
 
 function projectOriented(p, w = canvas.clientWidth, h = canvas.clientHeight) {
@@ -224,10 +223,9 @@ function fit() {
   for (let f = 0; f < trial.xyz.length; f += stride) {
     for (const raw of trial.xyz[f]) {
       if (!valid(raw)) continue;
-      const p = orient(raw);
       for (let j = 0; j < 3; j++) {
-        lo[j] = Math.min(lo[j], p[j]);
-        hi[j] = Math.max(hi[j], p[j]);
+        lo[j] = Math.min(lo[j], raw[j]);
+        hi[j] = Math.max(hi[j], raw[j]);
       }
     }
   }
@@ -236,16 +234,25 @@ function fit() {
     for (const fp of trial.force_plates) {
       if (!fp.corners) continue;
       for (const corner of fp.corners) {
-        const p = orient(corner);
+        if (!valid(corner)) continue;
         for (let j = 0; j < 3; j++) {
-          lo[j] = Math.min(lo[j], p[j]);
-          hi[j] = Math.max(hi[j], p[j]);
+          lo[j] = Math.min(lo[j], corner[j]);
+          hi[j] = Math.max(hi[j], corner[j]);
         }
       }
     }
   }
+
+  if (!Number.isFinite(lo[0]) || !Number.isFinite(hi[0]) || lo[0] === Infinity) {
+    lo = [-1, -1, 0];
+    hi = [1, 1, 1];
+  }
+
   center = lo.map((v, j) => (v + hi[j]) / 2);
   span = Math.max(...hi.map((v, j) => v - lo[j]), 0.01);
+  if (!Number.isFinite(span) || span <= 0) span = 1.0;
+  if (!Number.isFinite(center[0])) center = [0, 0, 0];
+
   autoFloorZ = Number.isFinite(lo[2]) ? lo[2] : 0;
   zoom = 1;
   pan = [0, 0];
@@ -265,8 +272,7 @@ function getFloorHeight() {
     for (const fp of trial.force_plates) {
       if (fp.corners) {
         for (const corner of fp.corners) {
-          const p = orient(corner);
-          minFpZ = Math.min(minFpZ, p[2]);
+          if (valid(corner)) minFpZ = Math.min(minFpZ, corner[2]);
         }
       }
     }
@@ -396,7 +402,7 @@ function applySkeletonTemplate(templateObj) {
   if ($("bones")) $("bones").checked = skeletonPairs.length > 0;
   const badge = $("skeleton-status-badge");
   if (badge) {
-    badge.textContent = skeletonPairs.length > 0 ? `${skeletonPairs.length} conexões` : "0 conexões";
+    badge.textContent = skeletonPairs.length > 0 ? `${skeletonPairs.length} connections` : "0 connections";
     badge.style.color = skeletonPairs.length > 0 ? "var(--accent)" : "var(--text-muted)";
   }
   draw();
@@ -793,7 +799,7 @@ function draw() {
   const d = distances[frame];
   if ($("distance")) {
     if (!showDistance) {
-      $("distance").textContent = Number.isFinite(d) ? `${d.toFixed(4)} m (Oculto)` : "Oculto";
+      $("distance").textContent = Number.isFinite(d) ? `${d.toFixed(4)} m (Hidden)` : "Hidden";
       $("distance").style.opacity = "0.55";
     } else {
       $("distance").textContent = Number.isFinite(d) ? `${d.toFixed(4)} m` : "Missing";
@@ -1074,6 +1080,11 @@ function pause() {
   playing = false;
   $("play").textContent = "Play";
   elapsed = 0;
+  const video = $("ref-video");
+  if (video && !video.paused) {
+    video.pause();
+  }
+  draw();
 }
 
 function selectActiveMarker(idx) {
@@ -1083,26 +1094,20 @@ function selectActiveMarker(idx) {
   saveSessionState();
 }
 
-function seekToMotion() {
-  if (!trial) return;
-  pause();
-  let motionFrame = 0;
-  const pts0 = trial.xyz[0];
-  for (let f = 1; f < trial.xyz.length; f++) {
-    let diffSum = 0;
-    for (let m = 0; m < trial.labels.length; m++) {
-      const p = pts0[m], q = trial.xyz[f][m];
-      if (valid(p) && valid(q)) diffSum += Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]);
-    }
-    if (diffSum / trial.labels.length > 0.04) {
-      motionFrame = Math.max(0, f - 10);
-      break;
-    }
-  }
-  frame = motionFrame;
-  draw();
-  saveSessionState();
-  status(`Jumped to motion onset at frame ${frame + 1} (${(frame / trial.rate_hz).toFixed(2)}s).`);
+function syncLoopToggleButton() {
+  const btn = $("loop-toggle");
+  const loop = $("loop");
+  if (!btn || !loop) return;
+  btn.setAttribute("aria-pressed", loop.checked ? "true" : "false");
+  btn.title = loop.checked ? "Loop Playback: On" : "Loop Playback: Off";
+}
+
+function toggleLoop() {
+  const loop = $("loop");
+  if (!loop) return;
+  loop.checked = !loop.checked;
+  loop.dispatchEvent(new Event("change"));
+  syncLoopToggleButton();
 }
 
 function collectViewerState() {
@@ -1133,7 +1138,9 @@ function collectViewerState() {
       markerColor,
       currentLCS,
       activeFilterConfig,
-      plotHeight: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--plot-height").trim() : "170px"
+      plotHeight: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--plot-height").trim() : "170px",
+      videoColWidth: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--video-col-width").trim() : "420px",
+      videoFrameOffset
   };
 }
 
@@ -1154,8 +1161,29 @@ function restoreSessionState(data) {
     const state = JSON.parse(raw);
     if (!state || state.trialName !== data.name) return;
 
-    if (state.currentLCS && typeof state.currentLCS === "object" && state.currentLCS.ap && state.currentLCS.axial) {
-      currentLCS = state.currentLCS;
+    if (state.currentLCS && typeof state.currentLCS === "object") {
+      if (state.currentLCS.x && state.currentLCS.y && state.currentLCS.z) {
+        currentLCS = {
+          x: state.currentLCS.x,
+          y: state.currentLCS.y,
+          z: state.currentLCS.z,
+          tx: state.currentLCS.tx || 0,
+          ty: state.currentLCS.ty || 0,
+          tz: state.currentLCS.tz || 0,
+          ap: state.currentLCS.ap || state.currentLCS.y,
+          axial: state.currentLCS.axial || state.currentLCS.z
+        };
+      } else if (state.currentLCS.ap && state.currentLCS.axial) {
+        const oldRes = computeLCSMatrix(state.currentLCS.ap, state.currentLCS.axial);
+        currentLCS = {
+          x: oldRes.valid ? oldRes.mlName : "+X",
+          y: state.currentLCS.ap,
+          z: state.currentLCS.axial,
+          tx: 0, ty: 0, tz: 0,
+          ap: state.currentLCS.ap,
+          axial: state.currentLCS.axial
+        };
+      }
     }
     if (state.activeFilterConfig && typeof state.activeFilterConfig === "object") {
       activeFilterConfig = state.activeFilterConfig;
@@ -1180,6 +1208,7 @@ function restoreSessionState(data) {
     if (typeof state.trail === "boolean" && $("trail")) $("trail").checked = state.trail;
     if (typeof state.bones === "boolean" && $("bones")) $("bones").checked = state.bones;
     if (typeof state.loop === "boolean" && $("loop")) $("loop").checked = state.loop;
+    syncLoopToggleButton();
     if (typeof state.showDistance === "boolean") setDistanceVisible(state.showDistance);
     if (typeof state.showForcePlates === "boolean") {
       showForcePlates = state.showForcePlates;
@@ -1215,6 +1244,12 @@ function restoreSessionState(data) {
     }
     if (state.plotHeight && $("windows-container")) {
       $("windows-container").style.setProperty("--plot-height", state.plotHeight);
+    }
+    if (state.videoColWidth && $("windows-container")) {
+      $("windows-container").style.setProperty("--video-col-width", state.videoColWidth);
+    }
+    if (Number.isFinite(state.videoFrameOffset)) {
+      setVideoOffset(state.videoFrameOffset);
     }
 
     if (state.activeSkeletonTemplate && state.activeSkeletonTemplate !== "none") {
@@ -1277,7 +1312,7 @@ function load(data) {
   refreshMarkerSelectors();
   if ($("marker-b")) $("marker-b").value = String(Math.min(1, data.labels.length - 1));
 
-  for (const id of ["play", "prev", "next", "timeline", "first", "last", "seek-motion", "btn-load-skeleton", "btn-clear-skeleton", "btn-apply-rate", "btn-create-com", "btn-analyze-orientation", "btn-export-analyses"]) {
+  for (const id of ["play", "prev", "next", "timeline", "first", "last", "loop-toggle", "btn-load-skeleton", "btn-clear-skeleton", "btn-apply-rate", "btn-create-com", "btn-analyze-orientation", "btn-export-analyses", "export", "snapshot"]) {
     if ($(id)) $(id).disabled = false;
   }
   $("timeline").max = String(data.xyz.length - 1);
@@ -1333,12 +1368,23 @@ function load(data) {
   measure();
   restoreSessionState(data);
   $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
-  if (currentLCS.ap !== "+Y" || currentLCS.axial !== "+Z" || activeFilterConfig) {
+  const hasRefTransform = (
+    (currentLCS.x && currentLCS.x !== "+X") ||
+    (currentLCS.y && currentLCS.y !== "+Y") ||
+    (currentLCS.z && currentLCS.z !== "+Z") ||
+    Math.abs(currentLCS.tx || 0) > 1e-4 ||
+    Math.abs(currentLCS.ty || 0) > 1e-4 ||
+    Math.abs(currentLCS.tz || 0) > 1e-4 ||
+    (currentLCS.ap && currentLCS.ap !== "+Y") ||
+    (currentLCS.axial && currentLCS.axial !== "+Z")
+  );
+  if (hasRefTransform || activeFilterConfig) {
     recomputeTrialXYZ();
   }
   updateLCSUI();
   updateFilterUI();
   saveSessionState();
+  checkCompanionVideos();
   status("File loaded. Coordinates in meters; missing frames are preserved.");
 }
 
@@ -1363,6 +1409,20 @@ $("play").onclick = () => {
     playing = true;
     lastTick = performance.now();
     $("play").textContent = "Pause";
+
+    const video = $("ref-video");
+    if (video && refVideoFile && video.duration) {
+      const speed = Number($("speed") ? $("speed").value : 1) || 1;
+      video.playbackRate = speed;
+      const targetTime = Math.max(0, Math.min(video.duration, (frame + videoFrameOffset) / trial.rate_hz));
+      if (Math.abs(video.currentTime - targetTime) > 0.02) {
+        video.currentTime = targetTime;
+      }
+      const p = video.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(err => console.warn("Video play error:", err));
+      }
+    }
   }
 };
 
@@ -1377,11 +1437,14 @@ $("prev").onclick = () => step(-1);
 $("next").onclick = () => step(1);
 if ($("first")) $("first").onclick = () => { pause(); frame = 0; draw(); saveSessionState(); };
 if ($("last")) $("last").onclick = () => { pause(); frame = trial.xyz.length - 1; draw(); saveSessionState(); };
-if ($("seek-motion")) $("seek-motion").onclick = seekToMotion;
+if ($("loop-toggle")) $("loop-toggle").onclick = toggleLoop;
 
-$("timeline").oninput = () => {
+$("timeline").oninput = e => {
+  // Read the scrub target's value from the event before pause() (which now
+  // calls draw()) resets #timeline.value back to the current frame.
+  const target = Number(e.target.value);
   pause();
-  frame = Number($("timeline").value);
+  frame = target;
   draw();
   saveSessionState();
 };
@@ -1389,20 +1452,46 @@ $("timeline").oninput = () => {
 function tick(now) {
   try {
     if (playing && trial) {
-      elapsed += (now - lastTick) / 1000 * trial.rate_hz * Number($("speed").value);
-      const advance = Math.floor(elapsed);
-      elapsed -= advance;
-      if (advance) {
-        frame += advance;
-        if (frame >= trial.xyz.length) {
+      const video = $("ref-video");
+      const hasActiveVideo = video && refVideoFile && video.duration && !video.paused;
+
+      if (hasActiveVideo) {
+        const currentVidTime = video.currentTime;
+        let targetFrame = Math.round(currentVidTime * trial.rate_hz - videoFrameOffset);
+
+        if (targetFrame >= trial.xyz.length || video.ended) {
           if ($("loop") && $("loop").checked) {
-            frame %= trial.xyz.length;
+            frame = 0;
+            video.currentTime = Math.max(0, videoFrameOffset / trial.rate_hz);
+            video.play().catch(() => {});
           } else {
             frame = trial.xyz.length - 1;
             pause();
           }
+        } else if (targetFrame < 0) {
+          targetFrame = 0;
         }
-        draw();
+
+        if (playing && targetFrame !== frame && targetFrame < trial.xyz.length) {
+          frame = targetFrame;
+          draw();
+        }
+      } else {
+        elapsed += (now - lastTick) / 1000 * trial.rate_hz * Number($("speed").value);
+        const advance = Math.floor(elapsed);
+        elapsed -= advance;
+        if (advance) {
+          frame += advance;
+          if (frame >= trial.xyz.length) {
+            if ($("loop") && $("loop").checked) {
+              frame %= trial.xyz.length;
+            } else {
+              frame = trial.xyz.length - 1;
+              pause();
+            }
+          }
+          draw();
+        }
       }
     }
   } catch (err) {
@@ -1465,12 +1554,31 @@ if ($("graph2")) setupChartSeek($("graph2"));
 $("front").onclick = () => { yaw = 0; pitch = 0; draw(); saveSessionState(); };
 $("side").onclick = () => { yaw = Math.PI / 2; pitch = 0; draw(); saveSessionState(); };
 $("top").onclick = () => { yaw = 0; pitch = Math.PI / 2; draw(); saveSessionState(); };
-$("reset").onclick = () => { fit(); saveSessionState(); };
+$("reset").onclick = () => { yaw = -0.45; pitch = 0.22; fit(); saveSessionState(); };
 
-if ($("up")) $("up").onchange = () => { fit(); saveSessionState(); };
+if ($("up")) $("up").onchange = () => {
+  const v = $("up").value;
+  if (v === "y") {
+    currentLCS = { ...currentLCS, x: "-X", y: "+Z", z: "+Y" };
+  } else if (v === "x") {
+    currentLCS = { ...currentLCS, x: "+Y", y: "+Z", z: "+X" };
+  } else {
+    currentLCS = { ...currentLCS, x: "+X", y: "+Y", z: "+Z" };
+  }
+  yaw = -0.45;
+  pitch = 0.22;
+  recomputeTrialXYZ();
+  updateLCSUI();
+  saveSessionState();
+};
 for (const id of ["labels", "trail", "grid", "bones", "loop"]) {
-  if ($(id)) $(id).onchange = () => { draw(); saveSessionState(); };
+  if ($(id)) $(id).onchange = () => {
+    if (id === "loop") syncLoopToggleButton();
+    draw();
+    saveSessionState();
+  };
 }
+syncLoopToggleButton();
 if ($("speed")) $("speed").onchange = saveSessionState;
 for (const id of ["marker-a", "marker-b"]) {
   if ($(id)) $(id).onchange = measure;
@@ -1532,17 +1640,33 @@ function setLayout(name) {
     $("panel-plot2").hidden = true;
     $("panel-table").hidden = true;
     if (splitter) splitter.hidden = true;
+  } else if (name === "video") {
+    $("panel-plot1").hidden = false;
+    $("panel-plot2").hidden = true;
+    $("panel-table").hidden = true;
+    if (splitter) splitter.hidden = false;
   } else {
     $("panel-plot1").hidden = false;
     $("panel-plot2").hidden = true;
     $("panel-table").hidden = true;
     if (splitter) splitter.hidden = false;
   }
+  // panel-video has a grid slot only in the "video" preset (see #windows-
+  // container.layout-video in the CSS); every other preset hides it, same
+  // as plot2/table hiding outside the presets that place them. dockPane()
+  // clears any leftover floating-pane state (position/size/inline styles)
+  // from a prior manual float, same object either way — never
+  // re-created, so the WebGL/canvas context in panel-3d is untouched.
+  if ($("panel-video")) {
+    dockPane("panel-video");
+    $("panel-video").hidden = name !== "video";
+  }
   resize();
 }
 if ($("preset-default")) $("preset-default").onclick = () => setLayout("default");
 if ($("preset-dual")) $("preset-dual").onclick = () => setLayout("dual");
 if ($("preset-full")) $("preset-full").onclick = () => setLayout("full");
+if ($("preset-video")) $("preset-video").onclick = () => setLayout("video");
 if ($("preset-3d")) $("preset-3d").onclick = () => setLayout("3d");
 
 if ($("btn-close-plot2")) $("btn-close-plot2").onclick = () => setLayout("default");
@@ -1551,7 +1675,7 @@ if ($("btn-close-table")) $("btn-close-table").onclick = () => setLayout("defaul
 // Skeleton Template Loading
 async function loadSelectedSkeleton() {
   if (!trial) {
-    status("Carregue um arquivo antes de carregar o skeleton.", true);
+    status("Load a file before loading the skeleton.", true);
     return;
   }
   const select = $("skeleton-template-select");
@@ -1560,12 +1684,12 @@ async function loadSelectedSkeleton() {
     skeletonPairs = [];
     activeSkeletonTemplate = "none";
     if ($("skeleton-status-badge")) {
-      $("skeleton-status-badge").textContent = "Nenhum";
+      $("skeleton-status-badge").textContent = "None";
       $("skeleton-status-badge").style.color = "var(--text-muted)";
     }
     draw();
     saveSessionState();
-    status("Nenhum modelo de skeleton selecionado.");
+    status("No skeleton model selected.");
     return;
   }
   if (val === "custom") {
@@ -1573,7 +1697,7 @@ async function loadSelectedSkeleton() {
       activeSkeletonTemplate = "custom";
       const count = applySkeletonTemplate(loadedCustomTemplate);
       saveSessionState();
-      status(`Skeleton personalizado carregado (${count} conexões).`);
+      status(`Custom skeleton loaded (${count} connections).`);
     } else {
       if ($("file-skeleton-custom")) $("file-skeleton-custom").click();
     }
@@ -1583,7 +1707,7 @@ async function loadSelectedSkeleton() {
     activeSkeletonTemplate = "vicon_squat";
     const count = applySkeletonTemplate(VICON_SQUAT_TEMPLATE);
     saveSessionState();
-    status(`Skeleton Vicon Squat carregado (${count} conexões).`);
+    status(`Vicon Squat skeleton loaded (${count} connections).`);
     return;
   }
 
@@ -1601,9 +1725,9 @@ async function loadSelectedSkeleton() {
     activeSkeletonTemplate = val;
     const count = applySkeletonTemplate(tObj);
     saveSessionState();
-    status(`Skeleton ${tObj.schema || val} carregado (${count} conexões).`);
+    status(`Skeleton ${tObj.schema || val} loaded (${count} connections).`);
   } else {
-    status(`Template '${val}' não encontrado.`, true);
+    status(`Template '${val}' not found.`, true);
   }
 }
 
@@ -1620,7 +1744,7 @@ if ($("btn-clear-skeleton")) {
     }
     saveSessionState();
     draw();
-    status("Skeleton limpo.");
+    status("Skeleton cleared.");
   };
 }
 
@@ -1637,9 +1761,9 @@ if ($("file-skeleton-custom")) {
         if ($("skeleton-template-select")) $("skeleton-template-select").value = "custom";
         const count = applySkeletonTemplate(json);
         saveSessionState();
-        status(`Template '${f.name}' carregado (${count} conexões).`);
+        status(`Template '${f.name}' loaded (${count} connections).`);
       } catch (err) {
-        status("Arquivo JSON inválido para skeleton.", true);
+        status("Invalid skeleton JSON file.", true);
       }
     };
     reader.readAsText(f);
@@ -1664,6 +1788,8 @@ document.addEventListener("click", () => {
 if ($("action-open-file")) $("action-open-file").onclick = () => $("file").click();
 if ($("action-export-plot")) $("action-export-plot").onclick = () => exportDistanceCsv();
 if ($("action-export-html")) $("action-export-html").onclick = () => saveStandaloneHtmlSnapshot();
+if ($("export")) $("export").onclick = () => exportDistanceCsv();
+if ($("snapshot")) $("snapshot").onclick = () => saveStandaloneHtmlSnapshot();
 
 if ($("action-export-all-csv")) {
   $("action-export-all-csv").onclick = () => {
@@ -1735,11 +1861,11 @@ function setDistanceVisible(visible) {
   showDistance = Boolean(visible);
   if ($("chk-show-distance")) $("chk-show-distance").checked = showDistance;
   if ($("txt-show-distance")) {
-    $("txt-show-distance").textContent = showDistance ? "Exibir" : "Oculto";
+    $("txt-show-distance").textContent = showDistance ? "Shown" : "Hidden";
     $("txt-show-distance").style.color = showDistance ? "var(--accent)" : "var(--text-muted)";
   }
   if ($("btn-toggle-distance")) {
-    $("btn-toggle-distance").textContent = showDistance ? "Desativar" : "Ativar";
+    $("btn-toggle-distance").textContent = showDistance ? "Disable" : "Enable";
   }
   if ($("action-toggle-distance")) {
     $("action-toggle-distance").textContent = (showDistance ? "✓ " : "  ") + "Distance Line (A–B)  D";
@@ -1792,7 +1918,7 @@ function floatPane(paneId) {
   const floatBtn = pane.querySelector(".btn-float");
   if (floatBtn) {
     floatBtn.textContent = "↙";
-    floatBtn.title = "Fixar / Reanexar à grade";
+    floatBtn.title = "Dock / Redock to grid";
   }
   initDraggablePane(pane);
 
@@ -1819,7 +1945,7 @@ function dockPane(paneId) {
   const floatBtn = pane.querySelector(".btn-float");
   if (floatBtn) {
     floatBtn.textContent = "↗";
-    floatBtn.title = "Janela Flutuante (Arrastável / Redimensionável)";
+    floatBtn.title = "Floating Window (Draggable / Resizable)";
   }
   resize();
 }
@@ -1841,7 +1967,7 @@ function dockAllPanes() {
 // through the existing per-frame syncPopoutContent() broadcast in draw().
 function tileMosaicViews(count = 2) {
   if (!trial) {
-    status("Nenhum trial carregado para abrir o mosaico de janelas.", true);
+    status("No trial loaded to open the window mosaic.", true);
     return;
   }
   const cols = count <= 2 ? count : 2;
@@ -1926,14 +2052,14 @@ function popoutPane(paneId, placement = null) {
 
   const titleText = pane && pane.querySelector(".pane-title")
     ? pane.querySelector(".pane-title").innerText.replace(/^[●\s]+/, "")
-    : (baseType === "panel-3d" ? `Visão 3D · ${paneId}` : paneId);
+    : (baseType === "panel-3d" ? `3D View · ${paneId}` : paneId);
 
   const features = placement
     ? `left=${placement.left},top=${placement.top},width=${placement.width},height=${placement.height},resizable=yes,scrollbars=yes`
     : "width=820,height=520,resizable=yes,scrollbars=yes";
   const popWin = window.open("", `mkvis3d_popout_${paneId}`, features);
   if (!popWin) {
-    status("Pop-up bloqueado pelo navegador. Abrindo em janela flutuante interna.");
+    status("Pop-up blocked by the browser. Opening in an internal floating window instead.");
     if (isPrimaryInstance) floatPane(paneId);
     return;
   }
@@ -2019,7 +2145,7 @@ function popoutPane(paneId, placement = null) {
     <div class="pop-header-left">
       <span class="pop-title">● ${titleText}</span>
       ${baseType === "panel-plot1" || baseType === "panel-plot2" ? `
-        <select id="pop-plot-mode" class="pop-select" title="Modo do Gráfico">
+        <select id="pop-plot-mode" class="pop-select" title="Plot Mode">
           <option value="distance">Distance (Marker A to B)</option>
           <option value="active-z">Active Marker · Z Position (Height)</option>
           <option value="active-xyz">Active Marker · X, Y, Z Coordinates</option>
@@ -2028,15 +2154,15 @@ function popoutPane(paneId, placement = null) {
       ` : ""}
     </div>
     <div class="pop-header-center">
-      <button id="pop-btn-prev" class="pop-tool-btn" title="Frame Anterior (←)">◀</button>
+      <button id="pop-btn-prev" class="pop-tool-btn" title="Previous Frame (←)">◀</button>
       <button id="pop-btn-play" class="pop-tool-btn pop-play-btn" title="Play / Pause (Space)">Play</button>
-      <button id="pop-btn-next" class="pop-tool-btn" title="Próximo Frame (→)">▶</button>
+      <button id="pop-btn-next" class="pop-tool-btn" title="Next Frame (→)">▶</button>
       <input type="range" id="pop-timeline" class="pop-timeline-range" min="0" max="0" value="0" title="Scrub Timeline">
       <span id="pop-frame" class="pop-frame-badge">0 / 0</span>
     </div>
     <div class="pop-header-right">
       <span id="pop-readout" class="pop-readout-text"></span>
-      <button class="btn-redock" id="btn-pop-redock">↙ Reanexar</button>
+      <button class="btn-redock" id="btn-pop-redock">↙ Redock</button>
     </div>
   </div>
   <div class="pop-body" id="pop-body-container"></div>
@@ -2151,6 +2277,19 @@ function popoutPane(paneId, placement = null) {
       </table>
     `;
     container.appendChild(wrap);
+  } else if (baseType === "panel-video") {
+    const popVideo = doc.createElement("video");
+    popVideo.id = "pop-video";
+    popVideo.style.width = "100%";
+    popVideo.style.height = "100%";
+    popVideo.style.objectFit = "contain";
+    popVideo.style.background = "#000";
+    popVideo.muted = true;
+    popVideo.playsInline = true;
+    popVideo.controls = false;
+    const mainVideo = $("ref-video");
+    if (mainVideo && mainVideo.src) popVideo.src = mainVideo.src;
+    container.appendChild(popVideo);
   }
 
   // Transport controls in popout window
@@ -2208,8 +2347,8 @@ function popoutPane(paneId, placement = null) {
       ph.className = "detached-placeholder";
       ph.id = `detached-ph-${paneId}`;
       ph.innerHTML = `
-        <p><strong>${titleText}</strong> está destacada em uma janela independente.</p>
-        <button type="button" onclick="restorePoppedOutPane('${paneId}')">↙ Reanexar</button>
+        <p><strong>${titleText}</strong> is detached in an independent window.</p>
+        <button type="button" onclick="restorePoppedOutPane('${paneId}')">↙ Redock</button>
       `;
       pane.appendChild(ph);
     }
@@ -2340,6 +2479,18 @@ function syncPopoutContent(paneId) {
         row.cells[5].textContent = isOk ? p[2].toFixed(3) : "—";
       }
     }
+  } else if (baseType === "panel-video") {
+    const popVideo = doc.getElementById("pop-video");
+    const mainVideo = $("ref-video");
+    if (popVideo && mainVideo && mainVideo.src && trial && mainVideo.duration) {
+      if (popVideo.src !== mainVideo.src) popVideo.src = mainVideo.src;
+      const targetTime = Math.min(mainVideo.duration, frame / trial.rate_hz);
+      if (Math.abs(popVideo.currentTime - targetTime) > 0.04) popVideo.currentTime = targetTime;
+      const speed = Number($("speed") ? $("speed").value : 1) || 1;
+      if (Math.abs(popVideo.playbackRate - speed) > 1e-6) popVideo.playbackRate = speed;
+      if (playing && popVideo.paused) popVideo.play().catch(() => {});
+      else if (!playing && !popVideo.paused) popVideo.pause();
+    }
   }
 }
 
@@ -2362,8 +2513,12 @@ document.querySelectorAll(".btn-popout").forEach(btn => {
 
 if ($("action-float-plot1")) $("action-float-plot1").onclick = () => toggleFloatPane("panel-plot1");
 if ($("action-popout-plot1")) $("action-popout-plot1").onclick = () => popoutPane("panel-plot1");
+if ($("action-float-plot2")) $("action-float-plot2").onclick = () => toggleFloatPane("panel-plot2");
+if ($("action-popout-plot2")) $("action-popout-plot2").onclick = () => popoutPane("panel-plot2");
 if ($("action-float-table")) $("action-float-table").onclick = () => toggleFloatPane("panel-table");
 if ($("action-popout-table")) $("action-popout-table").onclick = () => popoutPane("panel-table");
+if ($("action-float-video")) $("action-float-video").onclick = () => toggleFloatPane("panel-video");
+if ($("action-popout-video")) $("action-popout-video").onclick = () => popoutPane("panel-video");
 if ($("action-dock-all")) $("action-dock-all").onclick = dockAllPanes;
 if ($("action-mosaic-2")) $("action-mosaic-2").onclick = () => tileMosaicViews(2);
 if ($("action-mosaic-4")) $("action-mosaic-4").onclick = () => tileMosaicViews(4);
@@ -2371,10 +2526,10 @@ if ($("action-mosaic-4")) $("action-mosaic-4").onclick = () => tileMosaicViews(4
 // Blender and BVH exports
 function exportBlenderPythonScript() {
   if (!trial) {
-    status("Nenhum trial carregado para exportar para o Blender.", true);
+    status("No trial loaded to export to Blender.", true);
     return;
   }
-  status("Gerando script Python para o Blender...");
+  status("Generating Blender Python script...");
   const trialName = $("title") ? $("title").textContent.replace(/[^a-zA-Z0-9_-]/g, "_") : "trial";
   
   const bones = skeletonPairs.map(p => [trial.labels[p[0]], trial.labels[p[1]]]);
@@ -2455,15 +2610,15 @@ if __name__ == "__main__":
     build_openbiomech()
 `;
   download(scriptContent, `${trialName}_blender.py`, "text/x-python");
-  status("Script Blender (.py) exportado com sucesso!");
+  status("Blender script (.py) exported successfully!");
 }
 
 function exportBVHMotionFile() {
   if (!trial) {
-    status("Nenhum trial carregado para exportar para BVH.", true);
+    status("No trial loaded to export to BVH.", true);
     return;
   }
-  status("Gerando arquivo BVH...");
+  status("Generating BVH file...");
   const trialName = $("title") ? $("title").textContent.replace(/[^a-zA-Z0-9_-]/g, "_") : "trial";
   const rateHz = trial.rate_hz > 0 ? trial.rate_hz : 100;
   const frameTime = (1 / rateHz).toFixed(8);
@@ -2499,64 +2654,207 @@ function exportBVHMotionFile() {
   }
 
   download(lines.join("\n") + "\n", `${trialName}.bvh`, "text/plain");
-  status("Arquivo BVH (.bvh) exportado com sucesso!");
+  status("BVH file (.bvh) exported successfully!");
 }
 
 if ($("action-export-blender")) $("action-export-blender").onclick = exportBlenderPythonScript;
 if ($("action-export-bvh")) $("action-export-bvh").onclick = exportBVHMotionFile;
 
-// Reference video sync (item 6): load a local mp4/mov/mkv/avi file and play
-// it back frame-locked to the mocap animation, warning when the video's
-// duration/FPS don't match the trial so the user can trim or interpolate.
-function loadVideoFile(file) {
-  if (!trial) {
-    status("Carregue um trial antes de carregar o vídeo de referência.", true);
-    return;
+// Reference video sync & multi-camera system (Master-Clock Pattern)
+function updateCameraSelectorUI() {
+  const sel = $("video-camera-select");
+  if (!sel) return;
+  if (refVideosList.length > 1) {
+    sel.hidden = false;
+    sel.replaceChildren(...refVideosList.map((v, idx) => {
+      const opt = document.createElement("option");
+      opt.value = String(idx);
+      opt.textContent = `Cam ${idx + 1}: ${v.name}`;
+      return opt;
+    }));
+    sel.value = String(activeVideoIndex >= 0 ? activeVideoIndex : 0);
+  } else {
+    sel.hidden = true;
   }
+}
+
+function addVideoSource(source) {
+  const existingIdx = refVideosList.findIndex(v => v.name === source.name);
+  if (existingIdx >= 0) {
+    if (refVideosList[existingIdx].url && refVideosList[existingIdx].url.startsWith("blob:") && refVideosList[existingIdx].url !== source.url) {
+      try { URL.revokeObjectURL(refVideosList[existingIdx].url); } catch (_) {}
+    }
+    refVideosList[existingIdx] = source;
+    return existingIdx;
+  }
+  refVideosList.push(source);
+  return refVideosList.length - 1;
+}
+
+function switchVideoCamera(index) {
+  if (index < 0 || index >= refVideosList.length) return;
+  activeVideoIndex = index;
+  const item = refVideosList[index];
+  refVideoFile = item;
+
   const video = $("ref-video");
   if (!video) return;
-  const ext = (file.name.split(".").pop() || "").toLowerCase();
-  if (!["mp4", "mov", "mkv", "avi", "webm", "m4v"].includes(ext)) {
-    status(`Formato de vídeo não reconhecido: .${ext}. Use mp4, mov, mkv ou avi.`, true);
-    return;
-  }
-  if (refVideoFile && refVideoFile.url) {
-    try { URL.revokeObjectURL(refVideoFile.url); } catch (_) {}
-  }
-  const url = URL.createObjectURL(file);
-  refVideoFile = { file, url };
-  refVideoInfo = null;
+
+  const wasPlaying = playing;
+  const currentMocapTime = trial && trial.rate_hz ? frame / trial.rate_hz : 0;
+
   if ($("video-mismatch-panel")) $("video-mismatch-panel").hidden = true;
 
   video.onerror = () => {
     status(
-      `Não foi possível decodificar "${file.name}" (.${ext}). Navegadores só decodificam nativamente ` +
-      `MP4/MOV com H.264+AAC, ou MKV/WEBM se internamente forem VP9/H.264+Opus/AAC — AVI quase nunca ` +
-      `funciona. Converta o arquivo para MP4 (H.264) e tente novamente.`,
+      `Could not decode "${item.name}". Browsers natively decode MP4/MOV (H.264+AAC) and MKV/WEBM (VP9/H.264).`,
       true
     );
   };
-  video.onloadedmetadata = async () => {
-    // panel-video has no fixed slot in the grid layout presets (setLayout);
-    // it opens as a floating pane, same mechanism as dragging the filter
-    // modal off the main window, so it never displaces panel-3d/plots/table.
-    if (!activeFloatingPanes.has("panel-video")) floatPane("panel-video");
-    status(`Vídeo carregado: ${file.name} (${video.duration.toFixed(2)}s, ${video.videoWidth}×${video.videoHeight}).`);
-    const estimatedFps = await estimateVideoFps(video);
-    checkVideoTrialMismatch(video, estimatedFps);
+
+  video.onloadedmetadata = () => {
+    const targetTime = Math.max(0, Math.min(video.duration, currentMocapTime + (videoFrameOffset / (trial ? trial.rate_hz : 100))));
+    video.currentTime = targetTime;
+    const speed = Number($("speed") ? $("speed").value : 1) || 1;
+    video.playbackRate = speed;
+
+    const container = $("windows-container");
+    if (!container || !container.classList.contains("layout-video")) setLayout("video");
+
+    status(`Video loaded [${index + 1}/${refVideosList.length}]: ${item.name} (${video.duration.toFixed(2)}s, ${video.videoWidth}×${video.videoHeight}).`);
+    checkVideoTrialMismatch(video);
+    updateVideoReadout();
+
+    if (wasPlaying) {
+      video.play().catch(() => {});
+    }
   };
-  video.src = url;
+
+  video.src = item.url;
   video.load();
+  updateCameraSelectorUI();
+}
+
+function loadVideoFiles(fileList) {
+  if (!trial) {
+    status("Load a trial before loading reference video.", true);
+    return;
+  }
+  const files = Array.from(fileList || []).filter(f => {
+    const ext = (f.name.split(".").pop() || "").toLowerCase();
+    return ["mp4", "mov", "mkv", "avi", "webm", "m4v"].includes(ext);
+  });
+  if (!files.length) {
+    status("No valid video files selected (.mp4, .mov, .mkv, .webm).", true);
+    return;
+  }
+
+  let firstIdx = -1;
+  files.forEach(f => {
+    const url = URL.createObjectURL(f);
+    const idx = addVideoSource({ name: f.name, url, file: f, isServer: false });
+    if (firstIdx === -1) firstIdx = idx;
+  });
+
+  updateCameraSelectorUI();
+  if (firstIdx >= 0) switchVideoCamera(firstIdx);
+}
+
+function loadVideoFile(file) {
+  loadVideoFiles([file]);
+}
+
+function setVideoOffset(offsetFrames) {
+  videoFrameOffset = Math.round(offsetFrames);
+  const valEl = $("video-offset-val");
+  if (valEl) {
+    valEl.textContent = `${videoFrameOffset > 0 ? "+" : ""}${videoFrameOffset} f`;
+  }
+  const video = $("ref-video");
+  if (video && !playing && trial && video.duration) {
+    const targetTime = Math.max(0, Math.min(video.duration, (frame + videoFrameOffset) / trial.rate_hz));
+    video.currentTime = targetTime;
+  }
+  updateVideoReadout();
+  saveSessionState();
+}
+
+function updateVideoReadout() {
+  const info = $("video-frame-info");
+  const badge = $("video-sync-badge");
+  const video = $("ref-video");
+  if (!trial) return;
+
+  const vidSec = video && video.duration ? video.currentTime.toFixed(3) : (frame / trial.rate_hz).toFixed(3);
+  if (info) {
+    info.textContent = `${frame + 1} / ${trial.xyz.length} · ${vidSec}s`;
+  }
+  if (badge) {
+    const isSynced = refVideoFile != null;
+    badge.textContent = isSynced ? (playing ? "Live Sync" : "Synced") : "No Video";
+    badge.style.background = isSynced ? "rgba(34,197,94,0.15)" : "rgba(148,163,184,0.15)";
+    badge.style.color = isSynced ? "#22c55e" : "#94a3b8";
+  }
+}
+
+async function checkCompanionVideos() {
+  if (!boot.server) return;
+  try {
+    const resp = await fetch("/api/companion_videos");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data && Array.isArray(data.videos) && data.videos.length > 0) {
+      let addedAny = false;
+      data.videos.forEach(v => {
+        const url = `/api/video?name=${encodeURIComponent(v.name)}`;
+        addVideoSource({ name: v.name, url, file: null, isServer: true });
+        addedAny = true;
+      });
+      if (addedAny) {
+        updateCameraSelectorUI();
+        if (activeVideoIndex < 0 && refVideosList.length > 0) {
+          switchVideoCamera(0);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Could not check companion videos:", e);
+  }
 }
 
 if ($("action-load-video")) $("action-load-video").onclick = () => $("video-file-input").click();
 if ($("video-file-input")) {
   $("video-file-input").onchange = e => {
-    const file = e.target.files && e.target.files[0];
-    if (file) loadVideoFile(file);
+    if (e.target.files && e.target.files.length) loadVideoFiles(e.target.files);
     e.target.value = "";
   };
 }
+if ($("btn-add-video")) {
+  $("btn-add-video").onclick = () => {
+    if ($("video-file-input")) $("video-file-input").click();
+  };
+}
+if ($("video-camera-select")) {
+  $("video-camera-select").onchange = e => {
+    switchVideoCamera(Number(e.target.value));
+  };
+}
+if ($("btn-offset-dec")) $("btn-offset-dec").onclick = () => setVideoOffset(videoFrameOffset - 1);
+if ($("btn-offset-inc")) $("btn-offset-inc").onclick = () => setVideoOffset(videoFrameOffset + 1);
+if ($("btn-offset-reset")) $("btn-offset-reset").onclick = () => setVideoOffset(0);
+
+if ($("ref-video")) {
+  $("ref-video").onclick = () => {
+    $("play").click();
+    const overlay = $("video-overlay-play");
+    if (overlay) {
+      overlay.textContent = playing ? "▶" : "⏸";
+      overlay.style.opacity = "1";
+      setTimeout(() => { overlay.style.opacity = "0"; }, 300);
+    }
+  };
+}
+
 if ($("btn-close-video")) {
   $("btn-close-video").onclick = () => {
     const video = $("ref-video");
@@ -2565,85 +2863,48 @@ if ($("btn-close-video")) {
       video.removeAttribute("src");
       video.load();
     }
-    if (refVideoFile && refVideoFile.url) {
-      try { URL.revokeObjectURL(refVideoFile.url); } catch (_) {}
-    }
+    refVideosList.forEach(item => {
+      if (item.url && item.url.startsWith("blob:")) {
+        try { URL.revokeObjectURL(item.url); } catch (_) {}
+      }
+    });
+    refVideosList = [];
+    activeVideoIndex = -1;
     refVideoFile = null;
     refVideoInfo = null;
-    if ($("panel-video")) $("panel-video").hidden = true;
+    updateCameraSelectorUI();
+    updateVideoReadout();
     if ($("video-mismatch-panel")) $("video-mismatch-panel").hidden = true;
+    const container = $("windows-container");
+    if (container && container.classList.contains("layout-video")) setLayout("default");
+    else if ($("panel-video")) $("panel-video").hidden = true;
     resize();
   };
 }
 
-// Samples ~0.6s of decoded frames via requestVideoFrameCallback to estimate
-// the container's real playback FPS (not always exposed in metadata).
-// Resolves null when the API is unsupported, so callers must treat a null
-// estimate as "FPS unknown" rather than a mismatch.
-function estimateVideoFps(video) {
-  return new Promise(resolve => {
-    if (typeof video.requestVideoFrameCallback !== "function") {
-      resolve(null);
-      return;
-    }
-    const sampleWindowSec = 0.6;
-    const wasMuted = video.muted;
-    video.muted = true;
-    let count = 0;
-    let startMediaTime = null;
-    const finish = fps => {
-      video.pause();
-      video.currentTime = 0;
-      video.muted = wasMuted;
-      resolve(fps && Number.isFinite(fps) && fps > 0 ? fps : null);
-    };
-    const onFrame = (_now, metadata) => {
-      if (startMediaTime === null) startMediaTime = metadata.mediaTime;
-      count++;
-      const elapsedMedia = metadata.mediaTime - startMediaTime;
-      if (elapsedMedia < sampleWindowSec && count < 90) {
-        video.requestVideoFrameCallback(onFrame);
-      } else {
-        finish(elapsedMedia > 0 ? (count - 1) / elapsedMedia : null);
-      }
-    };
-    video.requestVideoFrameCallback(onFrame);
-    video.play().catch(() => finish(null));
-  });
-}
-
-// Compares the video's expected frame count (duration * trial rate) and its
-// estimated FPS against the loaded trial, and shows/hides the mismatch
-// warning panel with the concrete numbers when they disagree.
-function checkVideoTrialMismatch(video, estimatedFps) {
+// Compares the video's expected frame count (duration * trial rate) against the
+// loaded trial, and shows/hides the mismatch warning panel with concrete numbers.
+function checkVideoTrialMismatch(video, estimatedFps = null) {
   if (!trial) return;
   const expectedFrames = Math.round(video.duration * trial.rate_hz);
   const frameDiff = Math.abs(expectedFrames - trial.xyz.length);
-  const frameTolerance = Math.max(1, Math.round(trial.xyz.length * 0.02));
-  const fpsMismatch = estimatedFps
-    ? Math.abs(estimatedFps - trial.rate_hz) > Math.max(0.5, trial.rate_hz * 0.02)
-    : false;
-  refVideoInfo = { estimatedFps, durationSec: video.duration, expectedFrames };
+  const frameTolerance = Math.max(2, Math.round(trial.xyz.length * 0.03));
+  refVideoInfo = { estimatedFps: estimatedFps || trial.rate_hz, durationSec: video.duration, expectedFrames };
 
   const panel = $("video-mismatch-panel");
   if (!panel) return;
-  if (frameDiff <= frameTolerance && !fpsMismatch) {
+  if (frameDiff <= frameTolerance) {
     panel.hidden = true;
     return;
   }
   panel.hidden = false;
-  const fpsText = estimatedFps ? `${estimatedFps.toFixed(2)} fps` : "FPS não detectado";
   $("video-mismatch-text").textContent =
-    `Vídeo: ${fpsText} · ${video.duration.toFixed(2)}s · ${expectedFrames} frames esperados no trial. ` +
-    `Trial: ${trial.rate_hz.toFixed(2)} fps · ${trial.xyz.length} frames.`;
+    `Video: ${video.duration.toFixed(2)}s · ${expectedFrames} frames expected at ${trial.rate_hz.toFixed(2)} Hz. ` +
+    `Trial: ${trial.rate_hz.toFixed(2)} fps · ${trial.xyz.length} frames (diff: ${frameDiff} frames).`;
 }
 
-// Builds a standalone marker-trial payload (same shape MarkerTrial JSON uses
-// for /api/export/c3d) from the current trial with new xyz/rate_hz, and
-// exports it as CSV (always, no server needed) plus C3D (when the local GUI
-// server is running). Analog channels are intentionally dropped: trimming
-// or resampling to a video's timebase has no defined mapping for force-plate
-// subsamples, and this path only concerns marker/video alignment.
+// Builds a standalone marker-trial payload from the current trial with new xyz/rate_hz,
+// and exports it as CSV (always, no server needed) plus C3D (when the local GUI server is running).
 async function exportVideoSyncTrial(newTrial, description) {
   const header = ["frame", "time_s"];
   newTrial.labels.forEach(lbl => header.push(`${lbl}_x`, `${lbl}_y`, `${lbl}_z`));
@@ -2657,7 +2918,7 @@ async function exportVideoSyncTrial(newTrial, description) {
     rows.push(row.join(","));
   });
   download(rows.join("\n") + "\n", `${newTrial.name}.csv`, "text/csv");
-  status(`CSV exportado (${description}): ${newTrial.name}.csv`);
+  status(`CSV exported (${description}): ${newTrial.name}.csv`);
 
   if (!boot.server) return;
   try {
@@ -2671,9 +2932,9 @@ async function exportVideoSyncTrial(newTrial, description) {
       throw new Error(error.error || "Failed to export C3D.");
     }
     downloadBlob(await response.blob(), `${newTrial.name}.c3d`);
-    status(`C3D também exportado (${description}): ${newTrial.name}.c3d`);
+    status(`C3D also exported (${description}): ${newTrial.name}.c3d`);
   } catch (error) {
-    status(`CSV exportado, mas o C3D falhou: ${error.message}`, true);
+    status(`CSV exported, but C3D failed: ${error.message}`, true);
   }
 }
 
@@ -2686,12 +2947,12 @@ function trimTrialToVideoDuration() {
     labels: trial.labels.slice(),
     xyz: trial.xyz.slice(0, endFrame),
   };
-  exportVideoSyncTrial(newTrial, `cortado para ${endFrame} frames (${refVideoInfo.durationSec.toFixed(2)}s do vídeo)`);
+  exportVideoSyncTrial(newTrial, `trimmed to ${endFrame} frames (${refVideoInfo.durationSec.toFixed(2)}s of video)`);
 }
 
 function interpolateTrialToVideoFps() {
   if (!trial || !refVideoInfo || !refVideoInfo.estimatedFps) {
-    status("FPS do vídeo não pôde ser estimado; não é possível interpolar.", true);
+    status("Video FPS could not be estimated; cannot resample.", true);
     return;
   }
   const targetFps = refVideoInfo.estimatedFps;
@@ -2725,27 +2986,41 @@ function interpolateTrialToVideoFps() {
     labels: trial.labels.slice(),
     xyz: newXyz,
   };
-  exportVideoSyncTrial(newTrial, `reamostrado de ${trial.rate_hz.toFixed(2)} para ${targetFps.toFixed(2)} fps`);
+  exportVideoSyncTrial(newTrial, `resampled from ${trial.rate_hz.toFixed(2)} to ${targetFps.toFixed(2)} fps`);
 }
 
 if ($("btn-video-trim")) $("btn-video-trim").onclick = trimTrialToVideoDuration;
 if ($("btn-video-interp")) $("btn-video-interp").onclick = interpolateTrialToVideoFps;
 
-// Mirrors playback (frame position, speed, play/pause) onto the reference
-// video element every draw() call — the same central point every frame-
-// advancing code path (tick(), step(), scrub, popout scrub) already funnels
-// through, so no extra wiring is needed at each call site.
+// Synchronizes the reference video element with the mocap playback.
+// When PLAYING, the video element is the master clock and tick() advances the mocap frames;
+// this function only ensures playbackRate is aligned.
+// When PAUSED / SCRUBBING / STEPPING, this seeks the video to the exact frame.
 function syncRefVideo() {
   const video = $("ref-video");
-  if (!video || !refVideoFile || !trial || !video.duration) return;
-  const targetTime = Math.min(video.duration, frame / trial.rate_hz);
-  if (Math.abs(video.currentTime - targetTime) > 0.04) {
-    video.currentTime = targetTime;
+  if (!video || !refVideoFile || !trial || !video.duration) {
+    updateVideoReadout();
+    return;
   }
   const speed = Number($("speed") ? $("speed").value : 1) || 1;
-  if (Math.abs(video.playbackRate - speed) > 1e-6) video.playbackRate = speed;
-  if (playing && video.paused) video.play().catch(() => {});
-  else if (!playing && !video.paused) video.pause();
+  if (Math.abs(video.playbackRate - speed) > 1e-6) {
+    video.playbackRate = speed;
+  }
+
+  if (playing) {
+    if (video.paused) {
+      video.play().catch(() => {});
+    }
+  } else {
+    if (!video.paused) {
+      video.pause();
+    }
+    const targetTime = Math.max(0, Math.min(video.duration, (frame + videoFrameOffset) / trial.rate_hz));
+    if (Math.abs(video.currentTime - targetTime) > 0.015) {
+      video.currentTime = targetTime;
+    }
+  }
+  updateVideoReadout();
 }
 
 // Windows Menu Actions
@@ -2760,6 +3035,17 @@ if ($("action-win-plot2")) $("action-win-plot2").onclick = () => {
 };
 if ($("action-win-table")) $("action-win-table").onclick = () => {
   const p = $("panel-table"); p.hidden = !p.hidden; resize();
+};
+// panel-video's visibility is gated by the layout-video grid preset (it has
+// no grid slot in any other preset), not just .hidden — reuse the same
+// setLayout dispatch as loadVideoFile()/btn-close-video instead of a plain
+// toggle so the pane actually appears/disappears in the grid.
+if ($("action-win-video")) $("action-win-video").onclick = () => {
+  const container = $("windows-container");
+  if (!container) return;
+  if (container.classList.contains("layout-video")) setLayout("default");
+  else setLayout("video");
+  resize();
 };
 
 // Help & Shortcuts Modals
@@ -2854,6 +3140,16 @@ document.addEventListener("keydown", e => {
   if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === "c" || e.key === "C")) {
     e.preventDefault();
     cycleMarkerColor();
+    return;
+  }
+  if (e.key === "[" || e.key === "{") {
+    e.preventDefault();
+    setVideoOffset(videoFrameOffset - 1);
+    return;
+  }
+  if (e.key === "]" || e.key === "}") {
+    e.preventDefault();
+    setVideoOffset(videoFrameOffset + 1);
     return;
   }
 });
@@ -3136,8 +3432,29 @@ function saveStandaloneHtmlSnapshot() {
 window.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
 window.addEventListener("drop", async e => {
   e.preventDefault();
-  const file = e.dataTransfer.files[0];
-  if (file) uploadFile(file);
+  const files = Array.from(e.dataTransfer.files || []);
+  if (!files.length) return;
+
+  const videoExts = ["mp4", "mov", "mkv", "avi", "webm", "m4v"];
+  const mocapExts = ["c3d", "csv", "3d", "vaila", "json"];
+
+  const mocapFile = files.find(f => {
+    const ext = (f.name.split(".").pop() || "").toLowerCase();
+    return mocapExts.includes(ext);
+  });
+
+  const videoFiles = files.filter(f => {
+    const ext = (f.name.split(".").pop() || "").toLowerCase();
+    return videoExts.includes(ext);
+  });
+
+  if (mocapFile) {
+    await uploadFile(mocapFile);
+  }
+
+  if (videoFiles.length > 0) {
+    loadVideoFiles(videoFiles);
+  }
 });
 
 // File Upload Handler
@@ -3319,8 +3636,65 @@ function initVerticalSplitter() {
   });
 }
 
+// Drag handle between panel-3d and panel-video (layout-video preset only) —
+// resizes --video-col-width, the mirror of initVerticalSplitter()'s
+// --plot-height but along the column axis.
+function initHorizontalSplitter() {
+  const splitter = $("horizontal-splitter");
+  const container = $("windows-container");
+  if (!splitter || !container) return;
+
+  let isDragging = false;
+  let startX = 0;
+  let startWidth = 420;
+
+  splitter.addEventListener("pointerdown", e => {
+    isDragging = true;
+    startX = e.clientX;
+    splitter.classList.add("is-dragging");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const currentWidthStr = getComputedStyle(container).getPropertyValue("--video-col-width").trim();
+    startWidth = parseFloat(currentWidthStr) || 420;
+    splitter.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  splitter.addEventListener("pointermove", e => {
+    if (!isDragging) return;
+    const dx = startX - e.clientX;
+    const containerRect = container.getBoundingClientRect();
+    const minWidth = 220;
+    const maxWidth = Math.max(minWidth, containerRect.width - 300);
+    const newWidth = Math.min(maxWidth, Math.max(minWidth, Math.round(startWidth + dx)));
+    container.style.setProperty("--video-col-width", `${newWidth}px`);
+    resize();
+  });
+
+  const stopDrag = e => {
+    if (isDragging) {
+      isDragging = false;
+      splitter.classList.remove("is-dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try { splitter.releasePointerCapture(e.pointerId); } catch (_) {}
+      saveSessionState();
+    }
+  };
+
+  splitter.addEventListener("pointerup", stopDrag);
+  splitter.addEventListener("pointercancel", stopDrag);
+
+  splitter.addEventListener("dblclick", () => {
+    container.style.setProperty("--video-col-width", "420px");
+    resize();
+    saveSessionState();
+  });
+}
+
 // ============================================================================
-// Visual3D Laboratory Coordinate System (LCS) & Signal Conditioning Module
+// ============================================================================
+// Reference System (LCS) & Signal Conditioning Module
 // ============================================================================
 
 const DIRECTION_VECTORS = {
@@ -3330,6 +3704,15 @@ const DIRECTION_VECTORS = {
   "-Y": [0, -1, 0],
   "+Z": [0, 0, 1],
   "-Z": [0, 0, -1]
+};
+
+const REF_SYSTEM_PRESETS = {
+  default_z: { x: "+X", y: "+Y", z: "+Z", label: "Default (Z-Up)" },
+  y_up: { x: "-X", y: "+Z", z: "+Y", label: "Y-Up (Vertical Y)" },
+  x_up: { x: "+Y", y: "+Z", z: "+X", label: "X-Up (Vertical X)" },
+  walkway_x: { x: "-Y", y: "+X", z: "+Z", label: "Walkway along X" },
+  inverted_z: { x: "+X", y: "+Y", z: "-Z", label: "Inverted Z" },
+  reverse_y: { x: "-X", y: "-Y", z: "+Z", label: "Reverse Walk (-Y)" }
 };
 
 const LCS_PRESETS = {
@@ -3353,6 +3736,24 @@ function cross3(a, b) {
   ];
 }
 
+function computeReferenceSystemMatrix(xKey, yKey, zKey) {
+  const vx = DIRECTION_VECTORS[xKey];
+  const vy = DIRECTION_VECTORS[yKey];
+  const vz = DIRECTION_VECTORS[zKey];
+  if (!vx || !vy || !vz) {
+    return { valid: false, error: "Invalid vector direction specified." };
+  }
+  const R = [vx, vy, vz];
+  const det = R[0][0] * (R[1][1] * R[2][2] - R[1][2] * R[2][1]) -
+              R[0][1] * (R[1][0] * R[2][2] - R[1][2] * R[2][0]) +
+              R[0][2] * (R[1][0] * R[2][1] - R[1][1] * R[2][0]);
+
+  if (Math.abs(det) < 1e-4) {
+    return { valid: false, R, det, error: "Axes are not independent (select 3 distinct axes)." };
+  }
+  return { valid: true, R, det };
+}
+
 function computeLCSMatrix(apKey, axialKey) {
   const v_ap = DIRECTION_VECTORS[apKey];
   const v_axial = DIRECTION_VECTORS[axialKey];
@@ -3363,7 +3764,6 @@ function computeLCSMatrix(apKey, axialKey) {
   if (Math.abs(dot) > 1e-4) {
     return { valid: false, error: `AP direction (${apKey}) and Axial direction (${axialKey}) must be orthogonal.` };
   }
-  // Visual3D convention: ML = AP x AXIAL
   const v_ml = cross3(v_ap, v_axial);
   let mlName = "?";
   for (const [name, vec] of Object.entries(DIRECTION_VECTORS)) {
@@ -3375,7 +3775,6 @@ function computeLCSMatrix(apKey, axialKey) {
     }
   }
 
-  // Row 0 = v_ml, Row 1 = v_ap, Row 2 = v_axial
   const R = [v_ml, v_ap, v_axial];
   const det = R[0][0] * (R[1][1] * R[2][2] - R[1][2] * R[2][1]) -
               R[0][1] * (R[1][0] * R[2][2] - R[1][2] * R[2][0]) +
@@ -3384,12 +3783,15 @@ function computeLCSMatrix(apKey, axialKey) {
   return { valid: true, R, mlName, det };
 }
 
-function applyLCSToXYZ(xyz, R) {
+function applyReferenceSystemToXYZ(xyz, R, translation = [0, 0, 0]) {
   const nFrames = xyz.length;
   const out = new Array(nFrames);
   const r00 = R[0][0], r01 = R[0][1], r02 = R[0][2];
   const r10 = R[1][0], r11 = R[1][1], r12 = R[1][2];
   const r20 = R[2][0], r21 = R[2][1], r22 = R[2][2];
+  const tx = translation[0] || 0;
+  const ty = translation[1] || 0;
+  const tz = translation[2] || 0;
 
   for (let f = 0; f < nFrames; f++) {
     const framePts = xyz[f];
@@ -3400,9 +3802,9 @@ function applyLCSToXYZ(xyz, R) {
       if (p && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Number.isFinite(p[2])) {
         const x = p[0], y = p[1], z = p[2];
         newPts[m] = [
-          r00 * x + r01 * y + r02 * z,
-          r10 * x + r11 * y + r12 * z,
-          r20 * x + r21 * y + r22 * z
+          r00 * x + r01 * y + r02 * z + tx,
+          r10 * x + r11 * y + r12 * z + ty,
+          r20 * x + r21 * y + r22 * z + tz
         ];
       } else {
         newPts[m] = null;
@@ -3411,6 +3813,10 @@ function applyLCSToXYZ(xyz, R) {
     out[f] = newPts;
   }
   return out;
+}
+
+function applyLCSToXYZ(xyz, R) {
+  return applyReferenceSystemToXYZ(xyz, R, [0, 0, 0]);
 }
 
 // ---------------------------------------------------------------------------
@@ -3971,30 +4377,42 @@ function recomputeTrialXYZ() {
 
   let workingXYZ = rawLoadedXYZ;
 
-  // Apply LCS
-  if (currentLCS.ap !== "+Y" || currentLCS.axial !== "+Z") {
-    const lcsRes = computeLCSMatrix(currentLCS.ap, currentLCS.axial);
-    if (lcsRes.valid) {
-      workingXYZ = applyLCSToXYZ(workingXYZ, lcsRes.R);
+  // Determine if reference system transformation is active
+  const xKey = currentLCS.x || "+X";
+  const yKey = currentLCS.y || "+Y";
+  const zKey = currentLCS.z || "+Z";
+  const tx = currentLCS.tx || 0;
+  const ty = currentLCS.ty || 0;
+  const tz = currentLCS.tz || 0;
+
+  const isTransformed = (
+    xKey !== "+X" || yKey !== "+Y" || zKey !== "+Z" ||
+    Math.abs(tx) > 1e-5 || Math.abs(ty) > 1e-5 || Math.abs(tz) > 1e-5
+  );
+
+  if (isTransformed) {
+    const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
+    if (res.valid) {
+      const R = res.R;
+      workingXYZ = applyReferenceSystemToXYZ(rawLoadedXYZ, R, [tx, ty, tz]);
       if (rawForcePlates) {
-        const R = lcsRes.R;
         trial.force_plates = rawForcePlates.map(fp => ({
           ...fp,
           corners: fp.corners.map(c => [
-            R[0][0] * c[0] + R[0][1] * c[1] + R[0][2] * c[2],
-            R[1][0] * c[0] + R[1][1] * c[1] + R[1][2] * c[2],
-            R[2][0] * c[0] + R[2][1] * c[1] + R[2][2] * c[2],
+            R[0][0] * c[0] + R[0][1] * c[1] + R[0][2] * c[2] + tx,
+            R[1][0] * c[0] + R[1][1] * c[1] + R[1][2] * c[2] + ty,
+            R[2][0] * c[0] + R[2][1] * c[1] + R[2][2] * c[2] + tz,
           ]),
-          cop: fp.cop.map(p => p ? [
-            R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2],
-            R[1][0] * p[0] + R[1][1] * p[1] + R[1][2] * p[2],
-            R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2],
-          ] : null),
-          force: fp.force.map(f => f ? [
+          cop: fp.cop ? fp.cop.map(p => p ? [
+            R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2] + tx,
+            R[1][0] * p[0] + R[1][1] * p[1] + R[1][2] * p[2] + ty,
+            R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2] + tz,
+          ] : null) : null,
+          force: fp.force ? fp.force.map(f => f ? [
             R[0][0] * f[0] + R[0][1] * f[1] + R[0][2] * f[2],
             R[1][0] * f[0] + R[1][1] * f[1] + R[1][2] * f[2],
             R[2][0] * f[0] + R[2][1] * f[1] + R[2][2] * f[2],
-          ] : [0, 0, 0]),
+          ] : [0, 0, 0]) : null,
         }));
       }
     }
@@ -4017,20 +4435,41 @@ function recomputeTrialXYZ() {
 
 function updateLCSUI() {
   const badge = $("lcs-active-badge");
-  if (!badge) return;
-  if (currentLCS.ap === "+Y" && currentLCS.axial === "+Z") {
-    badge.textContent = "LCS: ISB (+Y AP, +Z Axial)";
-    badge.style.color = "var(--text-muted)";
+  const xKey = currentLCS.x || "+X";
+  const yKey = currentLCS.y || "+Y";
+  const zKey = currentLCS.z || "+Z";
+  const tx = currentLCS.tx || 0;
+  const ty = currentLCS.ty || 0;
+  const tz = currentLCS.tz || 0;
+  const hasTrans = Math.abs(tx) > 1e-4 || Math.abs(ty) > 1e-4 || Math.abs(tz) > 1e-4;
+
+  if (xKey === "+X" && yKey === "+Y" && zKey === "+Z" && !hasTrans) {
+    if (badge) {
+      badge.textContent = "Ref System: Default (Z-Up)";
+      badge.style.color = "var(--text-muted)";
+    }
+    if ($("up")) $("up").value = "z";
   } else {
-    let label = `LCS: ${currentLCS.ap} AP, ${currentLCS.axial} Axial`;
-    for (const key in LCS_PRESETS) {
-      if (LCS_PRESETS[key].ap === currentLCS.ap && LCS_PRESETS[key].axial === currentLCS.axial) {
-        label = `LCS: ${LCS_PRESETS[key].label}`;
+    let label = `Ref: X→${xKey}, Y→${yKey}, Z→${zKey}`;
+    for (const key in REF_SYSTEM_PRESETS) {
+      const p = REF_SYSTEM_PRESETS[key];
+      if (p.x === xKey && p.y === yKey && p.z === zKey) {
+        label = `Ref: ${p.label}`;
         break;
       }
     }
-    badge.textContent = label;
-    badge.style.color = "var(--accent)";
+    if (hasTrans) {
+      label += ` [Δ(${tx.toFixed(1)}, ${ty.toFixed(1)}, ${tz.toFixed(1)})]`;
+    }
+    if (badge) {
+      badge.textContent = label;
+      badge.style.color = "var(--accent)";
+    }
+    if ($("up")) {
+      if (zKey === "+Y") $("up").value = "y";
+      else if (zKey === "+X") $("up").value = "x";
+      else if (zKey === "+Z") $("up").value = "z";
+    }
   }
 }
 
@@ -4078,9 +4517,13 @@ function updateFilterUI() {
 function openLCSModal() {
   const modal = $("modal-lcs");
   if (!modal) return;
-  if ($("lcs-axial-select")) $("lcs-axial-select").value = currentLCS.axial;
-  if ($("lcs-ap-select")) $("lcs-ap-select").value = currentLCS.ap;
-  updateLCSFeedback();
+  if ($("lcs-axis-x")) $("lcs-axis-x").value = currentLCS.x || "+X";
+  if ($("lcs-axis-y")) $("lcs-axis-y").value = currentLCS.y || "+Y";
+  if ($("lcs-axis-z")) $("lcs-axis-z").value = currentLCS.z || "+Z";
+  if ($("lcs-trans-x")) $("lcs-trans-x").value = (currentLCS.tx || 0).toFixed(2);
+  if ($("lcs-trans-y")) $("lcs-trans-y").value = (currentLCS.ty || 0).toFixed(2);
+  if ($("lcs-trans-z")) $("lcs-trans-z").value = (currentLCS.tz || 0).toFixed(2);
+  updateReferenceSystemFeedback();
   modal.hidden = false;
   floatPane("modal-lcs");
 }
@@ -4092,28 +4535,34 @@ function closeLCSModal() {
   modal.hidden = true;
 }
 
-function updateLCSFeedback() {
-  const axial = $("lcs-axial-select") ? $("lcs-axial-select").value : "+Z";
-  const ap = $("lcs-ap-select") ? $("lcs-ap-select").value : "+Y";
-  const res = computeLCSMatrix(ap, axial);
+function updateReferenceSystemFeedback() {
+  const xKey = $("lcs-axis-x") ? $("lcs-axis-x").value : "+X";
+  const yKey = $("lcs-axis-y") ? $("lcs-axis-y").value : "+Y";
+  const zKey = $("lcs-axis-z") ? $("lcs-axis-z").value : "+Z";
+  const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
 
-  const mlEl = $("lcs-ml-result");
+  const sumEl = $("lcs-matrix-summary");
   const detEl = $("lcs-det-result");
   const errEl = $("lcs-error-msg");
   const btnApply = $("btn-apply-lcs");
 
   if (res.valid) {
-    if (mlEl) mlEl.textContent = res.mlName;
+    if (sumEl) sumEl.textContent = `X→${xKey}, Y→${yKey}, Z→${zKey}`;
     if (detEl) {
-      detEl.textContent = `Right-Handed System (det = +${res.det.toFixed(1)})`;
-      detEl.style.color = "#22c55e";
+      if (res.det > 0.5) {
+        detEl.textContent = `Right-Handed System (det = +${res.det.toFixed(1)})`;
+        detEl.style.color = "#22c55e";
+      } else {
+        detEl.textContent = `Left-Handed / Mirrored (det = ${res.det.toFixed(1)})`;
+        detEl.style.color = "#38bdf8";
+      }
     }
     if (errEl) errEl.style.display = "none";
     if (btnApply) btnApply.disabled = false;
   } else {
-    if (mlEl) mlEl.textContent = "Invalid (Collinear)";
+    if (sumEl) sumEl.textContent = "Invalid Basis";
     if (detEl) {
-      detEl.textContent = "Cannot construct basis";
+      detEl.textContent = "Cannot construct 3D frame";
       detEl.style.color = "#ef4444";
     }
     if (errEl) {
@@ -4124,33 +4573,60 @@ function updateLCSFeedback() {
   }
 
   document.querySelectorAll(".btn-lcs-preset").forEach(btn => {
-    const p = LCS_PRESETS[btn.dataset.preset];
-    btn.classList.toggle("active", p && p.ap === ap && p.axial === axial);
+    const p = REF_SYSTEM_PRESETS[btn.dataset.preset];
+    btn.classList.toggle("active", p && p.x === xKey && p.y === yKey && p.z === zKey);
   });
+}
+
+function applyReferenceSystem(xKey, yKey, zKey, tx = 0, ty = 0, tz = 0) {
+  const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
+  if (!res.valid) {
+    status(`Reference System Error: ${res.error}`);
+    return;
+  }
+  currentLCS = {
+    x: xKey,
+    y: yKey,
+    z: zKey,
+    tx: parseFloat(tx) || 0,
+    ty: parseFloat(ty) || 0,
+    tz: parseFloat(tz) || 0,
+    ap: yKey,
+    axial: zKey
+  };
+  yaw = -0.45;
+  pitch = 0.22;
+  recomputeTrialXYZ();
+  updateLCSUI();
+  closeLCSModal();
+  status(`Reference System applied: X→${xKey}, Y→${yKey}, Z→${zKey}, Offset=[${(currentLCS.tx).toFixed(2)}, ${(currentLCS.ty).toFixed(2)}, ${(currentLCS.tz).toFixed(2)}] m.`);
 }
 
 function applyLCS(apKey, axialKey) {
   const res = computeLCSMatrix(apKey, axialKey);
   if (!res.valid) {
-    status(`LCS Error: ${res.error}`);
+    status(`Reference System Error: ${res.error}`);
     return;
   }
-  currentLCS = { ap: apKey, axial: axialKey };
-  recomputeTrialXYZ();
-  updateLCSUI();
-  closeLCSModal();
-  status(`Laboratory Coordinate System (LCS) applied: AP=${apKey}, Axial=${axialKey}, ML=${res.mlName}.`);
+  applyReferenceSystem(res.mlName, apKey, axialKey, 0, 0, 0);
 }
 
 function resetLCS() {
-  currentLCS = { ap: "+Y", axial: "+Z" };
-  if ($("lcs-axial-select")) $("lcs-axial-select").value = "+Z";
-  if ($("lcs-ap-select")) $("lcs-ap-select").value = "+Y";
-  updateLCSFeedback();
+  currentLCS = { x: "+X", y: "+Y", z: "+Z", tx: 0, ty: 0, tz: 0, ap: "+Y", axial: "+Z" };
+  if ($("lcs-axis-x")) $("lcs-axis-x").value = "+X";
+  if ($("lcs-axis-y")) $("lcs-axis-y").value = "+Y";
+  if ($("lcs-axis-z")) $("lcs-axis-z").value = "+Z";
+  if ($("lcs-trans-x")) $("lcs-trans-x").value = "0.00";
+  if ($("lcs-trans-y")) $("lcs-trans-y").value = "0.00";
+  if ($("lcs-trans-z")) $("lcs-trans-z").value = "0.00";
+  if ($("up")) $("up").value = "z";
+  yaw = -0.45;
+  pitch = 0.22;
+  updateReferenceSystemFeedback();
   recomputeTrialXYZ();
   updateLCSUI();
   closeLCSModal();
-  status("Laboratory Coordinate System reset to standard ISB (+Y AP, +Z Axial).");
+  status("Reference system reset to default (Z-Up, zero translation).");
 }
 
 function getModalFilterConfig() {
@@ -4297,25 +4773,121 @@ function initLCSAndFilterControls() {
   if ($("action-opt-lcs")) $("action-opt-lcs").onclick = openLCSModal;
   if ($("action-opt-filter")) $("action-opt-filter").onclick = openFilterModal;
 
-  // LCS Dialog
+  // Reference System (LCS) Dialog
   if ($("btn-close-lcs")) $("btn-close-lcs").onclick = closeLCSModal;
   if ($("btn-cancel-lcs")) $("btn-cancel-lcs").onclick = closeLCSModal;
   if ($("btn-reset-lcs")) $("btn-reset-lcs").onclick = resetLCS;
   if ($("btn-apply-lcs")) $("btn-apply-lcs").onclick = () => {
-    const axial = $("lcs-axial-select") ? $("lcs-axial-select").value : "+Z";
-    const ap = $("lcs-ap-select") ? $("lcs-ap-select").value : "+Y";
-    applyLCS(ap, axial);
+    const x = $("lcs-axis-x") ? $("lcs-axis-x").value : "+X";
+    const y = $("lcs-axis-y") ? $("lcs-axis-y").value : "+Y";
+    const z = $("lcs-axis-z") ? $("lcs-axis-z").value : "+Z";
+    const tx = parseFloat($("lcs-trans-x")?.value) || 0;
+    const ty = parseFloat($("lcs-trans-y")?.value) || 0;
+    const tz = parseFloat($("lcs-trans-z")?.value) || 0;
+    applyReferenceSystem(x, y, z, tx, ty, tz);
   };
-  if ($("lcs-axial-select")) $("lcs-axial-select").onchange = updateLCSFeedback;
-  if ($("lcs-ap-select")) $("lcs-ap-select").onchange = updateLCSFeedback;
+
+  if ($("lcs-axis-x")) $("lcs-axis-x").onchange = updateReferenceSystemFeedback;
+  if ($("lcs-axis-y")) $("lcs-axis-y").onchange = updateReferenceSystemFeedback;
+  if ($("lcs-axis-z")) $("lcs-axis-z").onchange = updateReferenceSystemFeedback;
+
+  if ($("btn-swap-xy")) $("btn-swap-xy").onclick = () => {
+    const sx = $("lcs-axis-x"), sy = $("lcs-axis-y");
+    if (sx && sy) { const t = sx.value; sx.value = sy.value; sy.value = t; updateReferenceSystemFeedback(); }
+  };
+  if ($("btn-swap-xz")) $("btn-swap-xz").onclick = () => {
+    const sx = $("lcs-axis-x"), sz = $("lcs-axis-z");
+    if (sx && sz) { const t = sx.value; sx.value = sz.value; sz.value = t; updateReferenceSystemFeedback(); }
+  };
+  if ($("btn-swap-yz")) $("btn-swap-yz").onclick = () => {
+    const sy = $("lcs-axis-y"), sz = $("lcs-axis-z");
+    if (sy && sz) { const t = sy.value; sy.value = sz.value; sz.value = t; updateReferenceSystemFeedback(); }
+  };
+  if ($("btn-invert-x")) $("btn-invert-x").onclick = () => {
+    const s = $("lcs-axis-x");
+    if (s) { s.value = s.value.startsWith("-") ? "+" + s.value.slice(1) : "-" + s.value.slice(1); updateReferenceSystemFeedback(); }
+  };
+  if ($("btn-invert-y")) $("btn-invert-y").onclick = () => {
+    const s = $("lcs-axis-y");
+    if (s) { s.value = s.value.startsWith("-") ? "+" + s.value.slice(1) : "-" + s.value.slice(1); updateReferenceSystemFeedback(); }
+  };
+  if ($("btn-invert-z")) $("btn-invert-z").onclick = () => {
+    const s = $("lcs-axis-z");
+    if (s) { s.value = s.value.startsWith("-") ? "+" + s.value.slice(1) : "-" + s.value.slice(1); updateReferenceSystemFeedback(); }
+  };
+
+  if ($("btn-trans-center-xy")) $("btn-trans-center-xy").onclick = () => {
+    if (!trial || !rawLoadedXYZ) return;
+    const xKey = $("lcs-axis-x")?.value || "+X";
+    const yKey = $("lcs-axis-y")?.value || "+Y";
+    const zKey = $("lcs-axis-z")?.value || "+Z";
+    const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
+    if (!res.valid) return;
+    const R = res.R;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    const stride = Math.max(1, Math.floor(rawLoadedXYZ.length / 50));
+    for (let f = 0; f < rawLoadedXYZ.length; f += stride) {
+      for (const p of rawLoadedXYZ[f]) {
+        if (!valid(p)) continue;
+        const rx = R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2];
+        const ry = R[1][0] * p[0] + R[1][1] * p[1] + R[1][2] * p[2];
+        minX = Math.min(minX, rx); maxX = Math.max(maxX, rx);
+        minY = Math.min(minY, ry); maxY = Math.max(maxY, ry);
+      }
+    }
+    if (Number.isFinite(minX) && Number.isFinite(maxX)) {
+      const midX = (minX + maxX) / 2;
+      const midY = (minY + maxY) / 2;
+      if ($("lcs-trans-x")) $("lcs-trans-x").value = (-midX).toFixed(2);
+      if ($("lcs-trans-y")) $("lcs-trans-y").value = (-midY).toFixed(2);
+    }
+  };
+
+  if ($("btn-trans-zero-floor")) $("btn-trans-zero-floor").onclick = () => {
+    if (!trial || !rawLoadedXYZ) return;
+    const xKey = $("lcs-axis-x")?.value || "+X";
+    const yKey = $("lcs-axis-y")?.value || "+Y";
+    const zKey = $("lcs-axis-z")?.value || "+Z";
+    const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
+    if (!res.valid) return;
+    const R = res.R;
+    let minZ = Infinity;
+    const stride = Math.max(1, Math.floor(rawLoadedXYZ.length / 50));
+    for (let f = 0; f < rawLoadedXYZ.length; f += stride) {
+      for (const p of rawLoadedXYZ[f]) {
+        if (!valid(p)) continue;
+        const rz = R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2];
+        minZ = Math.min(minZ, rz);
+      }
+    }
+    if (Number.isFinite(minZ)) {
+      if ($("lcs-trans-z")) $("lcs-trans-z").value = (-minZ).toFixed(2);
+    }
+  };
+
+  if ($("btn-trans-reset")) $("btn-trans-reset").onclick = () => {
+    if ($("lcs-trans-x")) $("lcs-trans-x").value = "0.00";
+    if ($("lcs-trans-y")) $("lcs-trans-y").value = "0.00";
+    if ($("lcs-trans-z")) $("lcs-trans-z").value = "0.00";
+  };
 
   document.querySelectorAll(".btn-lcs-preset").forEach(btn => {
     btn.onclick = () => {
-      const p = LCS_PRESETS[btn.dataset.preset];
+      const p = REF_SYSTEM_PRESETS[btn.dataset.preset] || LCS_PRESETS[btn.dataset.preset];
       if (p) {
-        if ($("lcs-axial-select")) $("lcs-axial-select").value = p.axial;
-        if ($("lcs-ap-select")) $("lcs-ap-select").value = p.ap;
-        updateLCSFeedback();
+        if (p.x && p.y && p.z) {
+          if ($("lcs-axis-x")) $("lcs-axis-x").value = p.x;
+          if ($("lcs-axis-y")) $("lcs-axis-y").value = p.y;
+          if ($("lcs-axis-z")) $("lcs-axis-z").value = p.z;
+        } else if (p.ap && p.axial) {
+          const res = computeLCSMatrix(p.ap, p.axial);
+          if (res.valid) {
+            if ($("lcs-axis-x")) $("lcs-axis-x").value = res.mlName;
+            if ($("lcs-axis-y")) $("lcs-axis-y").value = p.ap;
+            if ($("lcs-axis-z")) $("lcs-axis-z").value = p.axial;
+          }
+        }
+        updateReferenceSystemFeedback();
       }
     };
   });
@@ -4381,7 +4953,9 @@ if (boot.project) {
 initMarkerControls();
 initLCSAndFilterControls();
 initVerticalSplitter();
+initHorizontalSplitter();
 resize();
 setTheme(currentTheme);
 setMarkerSize(markerSize);
 setMarkerColor(markerColor);
+if (boot && boot.server) checkCompanionVideos();

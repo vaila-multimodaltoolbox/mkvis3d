@@ -56,6 +56,10 @@ def _cmd_gui(args: argparse.Namespace) -> int:
         else:
             initial_trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
             name = args.path.name
+    video_paths = [Path(v).resolve() for v in getattr(args, "video", []) if Path(v).is_file()]
+    kwargs = {}
+    if video_paths:
+        kwargs["initial_videos"] = video_paths
     serve_viewer(
         port=args.port,
         open_browser=not args.no_browser,
@@ -63,6 +67,7 @@ def _cmd_gui(args: argparse.Namespace) -> int:
         name=name,
         source_path=args.path if initial_project is None else None,
         initial_project=initial_project,
+        **kwargs,
     )
     return 0
 
@@ -238,6 +243,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_gui.add_argument("--port", type=int, default=0, help="local port (0 chooses a free port)")
     p_gui.add_argument(
         "--no-browser", action="store_true", help="print the URL without launching a browser"
+    )
+    p_gui.add_argument(
+        "--video",
+        action="append",
+        type=Path,
+        default=[],
+        help="path to reference video file (can be repeated for multiple camera views)",
     )
     p_gui.set_defaults(func=_cmd_gui)
 

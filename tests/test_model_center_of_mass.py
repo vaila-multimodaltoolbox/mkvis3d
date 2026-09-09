@@ -37,9 +37,7 @@ def test_whole_body_com_is_mass_weighted_and_renormalizes_missing_segments():
         "thigh_r": (proximal, distal),
     }
     result = whole_body_com(segments, "male")
-    expected = (
-        0.4346 * 0.5138 + 2 * 0.1416 * 0.4095
-    ) / (0.4346 + 2 * 0.1416)
+    expected = (0.4346 * 0.5138 + 2 * 0.1416 * 0.4095) / (0.4346 + 2 * 0.1416)
     assert_allclose(result, expected)
 
     segments["trunk"] = (missing, missing)

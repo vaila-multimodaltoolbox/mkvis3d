@@ -112,6 +112,7 @@ def test_direct_file_path_routes_to_gui(monkeypatch):
         name="",
         source_path=None,
         initial_project=None,
+        **kwargs,
     ):
         called.append((name, initial_trial is not None, source_path, initial_project))
 

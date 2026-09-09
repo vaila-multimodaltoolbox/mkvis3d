@@ -69,9 +69,7 @@ class MarkerTrial:
     analog_labels: tuple[str, ...] = ()
     analog_units: tuple[str, ...] = ()
     analog_rate_hz: float = 0.0
-    analog: np.ndarray = field(
-        default_factory=lambda: np.zeros((0, 0, 0), dtype=np.float64)
-    )
+    analog: np.ndarray = field(default_factory=lambda: np.zeros((0, 0, 0), dtype=np.float64))
 
     @property
     def n_frames(self) -> int:

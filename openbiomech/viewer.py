@@ -192,6 +192,8 @@ def create_server(
     initial_source_name: str | None = None,
     initial_source_bytes: bytes | None = None,
     initial_project: dict | None = None,
+    source_dir: Path | None = None,
+    initial_videos: list[Path] | None = None,
 ) -> tuple[ThreadingHTTPServer, str]:
     """Bind loopback; uploads need a per-session token, never a disk path."""
     token = secrets.token_urlsafe(32)
@@ -262,6 +264,105 @@ def create_server(
                     self.send_bytes(
                         400, json.dumps({"error": str(exc)}).encode(), "application/json"
                     )
+                return
+
+            if req_path == "/api/companion_videos":
+                videos = []
+                if initial_videos:
+                    for v in initial_videos:
+                        if v.is_file():
+                            videos.append({"name": v.name, "size": v.stat().st_size})
+                if source_dir and source_dir.is_dir():
+                    for ext in (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"):
+                        for f in sorted(source_dir.glob(f"*{ext}")):
+                            if not any(v["name"] == f.name for v in videos):
+                                videos.append({"name": f.name, "size": f.stat().st_size})
+                self.send_bytes(200, json.dumps({"videos": videos}).encode(), "application/json")
+                return
+
+            if req_path == "/api/video":
+                query = parse_qs(parsed.query)
+                video_name = Path(query.get("name", [""])[0]).name
+                target_video = None
+                if initial_videos:
+                    for v in initial_videos:
+                        if v.name == video_name and v.is_file():
+                            target_video = v
+                            break
+                if not target_video and source_dir and source_dir.is_dir():
+                    candidate = source_dir / video_name
+                    if candidate.is_file():
+                        target_video = candidate
+
+                if not target_video or not target_video.is_file():
+                    self.send_bytes(404, b'{"error":"Video not found"}', "application/json")
+                    return
+
+                file_size = target_video.stat().st_size
+                ext = target_video.suffix.lower()
+                mime = (
+                    "video/mp4"
+                    if ext in (".mp4", ".m4v")
+                    else "video/webm"
+                    if ext == ".webm"
+                    else "video/quicktime"
+                    if ext == ".mov"
+                    else "video/x-matroska"
+                    if ext == ".mkv"
+                    else "video/octet-stream"
+                )
+
+                range_header = self.headers.get("Range")
+                if range_header and range_header.startswith("bytes="):
+                    try:
+                        byte_range = range_header.split("=")[1].strip()
+                        parts = byte_range.split("-")
+                        start = int(parts[0]) if parts[0] else 0
+                        end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+                        end = min(end, file_size - 1)
+                        if start > end or start >= file_size:
+                            self.send_response(416)
+                            self.send_header("Content-Range", f"bytes */{file_size}")
+                            self.end_headers()
+                            return
+                        length = end - start + 1
+                        self.send_response(206)
+                        self.send_header("Content-Type", mime)
+                        self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+                        self.send_header("Content-Length", str(length))
+                        self.send_header("Accept-Ranges", "bytes")
+                        self.send_header("Cache-Control", "public, max-age=3600")
+                        self.end_headers()
+                        with open(target_video, "rb") as vf:
+                            vf.seek(start)
+                            chunk_size = 64 * 1024
+                            remaining = length
+                            while remaining > 0:
+                                chunk = vf.read(min(chunk_size, remaining))
+                                if not chunk:
+                                    break
+                                self.wfile.write(chunk)
+                                remaining -= len(chunk)
+                        return
+                    except (ConnectionResetError, BrokenPipeError):
+                        return
+
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(file_size))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Cache-Control", "public, max-age=3600")
+                self.end_headers()
+                try:
+                    with open(target_video, "rb") as vf:
+                        chunk_size = 64 * 1024
+                        while True:
+                            chunk = vf.read(chunk_size)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                except (ConnectionResetError, BrokenPipeError):
+                    pass
                 return
 
             if req_path == "/api/current_trial":
@@ -443,6 +544,7 @@ def serve_viewer(
     name: str = "",
     source_path: Path | None = None,
     initial_project: VailaProject | None = None,
+    initial_videos: list[Path] | None = None,
 ) -> None:
     initial_project_payload = (
         {
@@ -478,6 +580,8 @@ def serve_viewer(
             else None
         ),
         initial_project=initial_project_payload,
+        source_dir=source_path.parent if source_path and source_path.is_file() else None,
+        initial_videos=initial_videos,
     )
     print(f"mkvis3d: {url}", flush=True)
     print("Press Ctrl+C to stop the local viewer.", flush=True)

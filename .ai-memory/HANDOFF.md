@@ -1,31 +1,31 @@
-# Session Handoff: Analog C3D and open .vaila projects
+# Session Handoff: Reference System Simplification, Disappearing Model Fix & Origin Translation
+
 - **Status:** Completed
 - **Current State:**
-  - `MarkerTrial` now carries synchronized calibrated analog samples, labels,
-    units and rate. Native/ezc3d readers, filters and LCS transforms preserve
-    them. Edited C3D export retains them and uses the source C3D as a template
-    to preserve unedited vendor/force-platform parameter groups.
-  - `project_io.py` implements schema-1 `.vaila`: open ZIP + UTF-8 JSON, SHA-256
-    member integrity, source provenance, no pickle/code/encryption/DRM.
-  - GUI and direct `mkvis3d gui work.vaila` save/reopen current/raw trial,
-    analog/force data, FPS, LCS, filter/display state, distance analyses,
-    arbitrary JSON/CSV attachments, and source file.
-  - Marker-defined orientation analysis outputs rotation matrices, scalar-first
-    wxyz quaternions, all six Tait-Bryan sequences and gimbal-lock margins.
-    Dynamics JSON can run through the GUI and its SI CSV is persisted.
-  - Public specification: `docs/vaila-format.md`.
+  - Full arbitrary 3-axis reference system and origin translation engine implemented in both Python backend (`openbiomech/biomech_math/lcs.py`) and Web frontend (`openbiomech/viewer.js`, `openbiomech/viewer.html`).
+  - Simplified UI removing all academic citations and standards jargon, providing intuitive presets (Default Z-Up, Y-Up, X-Up, Walkway along X, Inverted Z, Reverse Walk -Y), target axis selectors (`+X`, `-X`, `+Y`, `-Y`, `+Z`, `-Z`), quick swap buttons ($X \leftrightarrow Y$, $X \leftrightarrow Z$, $Y \leftrightarrow Z$), sign inverts ($\pm X, \pm Y, \pm Z$), and Origin Translation offsets ($\Delta X, \Delta Y, \Delta Z$ in meters) with instant helper actions (`Center X=0, Y=0`, `Floor to Z=0`, `Reset Translation`).
+  - Fixed disappearing 3D model/animation on coordinate frame change: eliminated double-rotation (`orient(p)` now identity in viewer loop), guarded viewport bounding math against non-finite spans, reset camera view (`yaw = -0.45, pitch = 0.22`) on coordinate change, and auto-adjusted floor elevation.
+  - Full synchronization across markers, skeleton, force plate corners, COP, and ground reaction force vectors.
+  - All 218 non-browser tests passing; `ruff check .` passing with 0 errors; live CDP browser tests verified.
+
 - **What Worked:**
-  - Real `pilot0102_squat03.c3d` round-trip preserved all 24 analog channels,
-    labels, units, samples and `FORCE_PLATFORM:CORNERS`.
-  - Browser smoke verified FPS edit, orientation analysis, CoM, edited C3D and
-    `.vaila` save/reopen with 71 markers and saved analyses.
-  - `uv run pytest -q`: 218 passed in 48.40s; focused persistence/analysis
-    suite: 36 passed.
-  - `uv run ruff check .`, `uv run ty check openbiomech tests`, JavaScript
-    syntax and `git diff --check` passed.
-- **Failed Approaches:** A server test initially used arbitrary bytes as a C3D
-  source template; template-preserving export correctly rejected it. Replaced
-  with a valid generated C3D and pinned the behavior.
-- **Open Questions & Next Steps:** Schema migrations must increment
-  `SCHEMA_VERSION` and retain schema-1 reading compatibility. Unknown analysis
-  keys are intentionally preserved for future biomechanical modules.
+  1. **Direct World-Space Coordinate Engine:**
+     - Transforming trial trajectories, force plate corners, and COP into world space directly inside `recomputeTrialXYZ()` while keeping `orient(p)` clean prevented the previous double-transformation bug.
+     - Rotating ground reaction force vectors $\mathbf{F}$ by $R$ while translating positions ($\mathbf{r}' = R\mathbf{r} + \mathbf{T}$) keeps forces physically consistent.
+  2. **Simplified, Jargon-Free Reference System UI:**
+     - Modal provides clear default templates and direct axis mapping.
+     - Quick buttons for axis swap and sign inversion allow 1-click orientation adjustments.
+     - Origin translation controls allow users to bring far-off trial origins to $(0, 0, 0)$ instantly.
+  3. **Verification:**
+     - Non-browser test suite: 218 passed (`uv run pytest -m "not browser"`).
+     - Code style & linting: `uv run ruff check .` passed with 0 errors.
+     - CDP browser tests (`scratch/test_reference_system_live.mjs` and `scratch/test_squat_ref_system.mjs`) verified rendering, marker coordinates, force plate alignment, and camera reset.
+
+- **Failed Approaches:**
+  - Relying on `orient(p)` to handle coordinate switching while also applying `compute_lcs_matrix` in `recomputeTrialXYZ()` caused double rotations, rotating already-rotated data and throwing markers outside the viewport.
+  - Resetting camera view with only `fit()` left `yaw` and `pitch` at extreme orbiting angles, causing the model to stay outside the user's field of view. Restoring default angles (`yaw = -0.45, pitch = 0.22`) in `$("reset").onclick` resolved this.
+
+- **Open Questions & Next Steps:**
+  - System is completely functional and verified across gait and squat trials. User can run `uv run mkvis3d.py` or inspect files directly.
+
+

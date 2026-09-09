@@ -128,7 +128,10 @@ def read_vaila_project(source: str | Path | bytes) -> VailaProject:
                 raise ValueError("project contains an unsafe or encrypted member")
 
         manifest = _read_json_member(archive, "manifest.json")
-        if manifest.get("format") != FORMAT_NAME or manifest.get("schema_version") != SCHEMA_VERSION:
+        if (
+            manifest.get("format") != FORMAT_NAME
+            or manifest.get("schema_version") != SCHEMA_VERSION
+        ):
             raise ValueError("unsupported .vaila format or schema version")
         declared = manifest.get("members")
         if not isinstance(declared, dict):

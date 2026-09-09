@@ -172,3 +172,97 @@ def transform_trial_lcs(
         analog=trial.analog.copy(),
     )
     return new_trial, rot_mat, ml_name
+
+
+def compute_reference_system_matrix(
+    x_axis: str = "+X",
+    y_axis: str = "+Y",
+    z_axis: str = "+Z",
+) -> tuple[np.ndarray, float]:
+    """Compute 3x3 basis mapping matrix for arbitrary target axes.
+
+    Parameters:
+        x_axis: original axis mapping to target X (e.g. '+X', '-Y', '+Z').
+        y_axis: original axis mapping to target Y (e.g. '+Y', '+Z', '-X').
+        z_axis: original axis mapping to target Z (e.g. '+Z', '+Y', '-X').
+
+    Returns:
+        (R, det) where R is a (3, 3) matrix.
+    Raises:
+        ValueError if the axes are not independent (collinear or repeated).
+    """
+    x_name, vx = parse_direction(x_axis)
+    y_name, vy = parse_direction(y_axis)
+    z_name, vz = parse_direction(z_axis)
+
+    R = np.vstack([vx, vy, vz])
+    det = float(np.linalg.det(R))
+    if abs(det) < 1e-4:
+        raise ValueError(
+            f"Axes must be independent. Got degenerate basis with det={det:.4f} "
+            f"for X={x_name}, Y={y_name}, Z={z_name}"
+        )
+    return R, det
+
+
+def transform_trial_reference_system(
+    trial: MarkerTrial,
+    x_axis: str = "+X",
+    y_axis: str = "+Y",
+    z_axis: str = "+Z",
+    translation: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+) -> tuple[MarkerTrial, np.ndarray, float]:
+    """Transform MarkerTrial coordinates with arbitrary 3-axis mapping and origin translation."""
+    R, det = compute_reference_system_matrix(x_axis, y_axis, z_axis)
+    t = np.asarray(translation, dtype=np.float64)
+    if t.shape != (3,):
+        raise ValueError("Translation must be a 3D vector (tx, ty, tz)")
+
+    xyz_rot = np.einsum("ij,fmj->fmi", R, trial.xyz)
+    xyz_transformed = xyz_rot + t
+
+    transformed_fps = None
+    if trial.force_plates:
+        transformed_fps = []
+        for fp in trial.force_plates:
+            new_corners = [tuple(R @ np.array(c) + t) for c in fp.corners]
+            new_cop = None
+            if fp.cop is not None:
+                cop_arr = np.array(fp.cop, dtype=np.float64)
+                valid_mask = ~np.isnan(cop_arr).any(axis=1)
+                new_cop = np.full_like(cop_arr, np.nan)
+                if np.any(valid_mask):
+                    new_cop[valid_mask] = cop_arr[valid_mask] @ R.T + t
+            new_force = None
+            if fp.force is not None:
+                force_arr = np.array(fp.force, dtype=np.float64)
+                new_force = force_arr @ R.T
+            new_moment = None
+            if fp.moment is not None:
+                moment_arr = np.array(fp.moment, dtype=np.float64)
+                new_moment = moment_arr @ R.T
+            transformed_fps.append(
+                fp.__class__(
+                    name=fp.name,
+                    corners=new_corners,
+                    rate_hz=fp.rate_hz,
+                    force=new_force,
+                    moment=new_moment,
+                    cop=new_cop,
+                    origin=tuple(R @ np.array(fp.origin) + t) if hasattr(fp, "origin") and fp.origin else None,
+                )
+            )
+
+    new_trial = MarkerTrial(
+        labels=trial.labels,
+        rate_hz=trial.rate_hz,
+        xyz=xyz_transformed,
+        residuals=trial.residuals.copy(),
+        force_plates=transformed_fps if transformed_fps is not None else trial.force_plates,
+        analog_labels=trial.analog_labels,
+        analog_units=trial.analog_units,
+        analog_rate_hz=trial.analog_rate_hz,
+        analog=trial.analog.copy(),
+    )
+    return new_trial, R, det
+

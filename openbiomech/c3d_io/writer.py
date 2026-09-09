@@ -43,7 +43,9 @@ def write_c3d(
 
     residuals = np.asarray(trial.residuals, dtype=np.float64)
     if residuals.shape == valid.shape:
-        stored_residuals = np.where(valid & np.isfinite(residuals), np.maximum(residuals, 0.0), -1.0)
+        stored_residuals = np.where(
+            valid & np.isfinite(residuals), np.maximum(residuals, 0.0), -1.0
+        )
     else:
         stored_residuals = np.where(valid, 0.0, -1.0)
     points[3] = stored_residuals.T

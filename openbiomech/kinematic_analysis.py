@@ -52,8 +52,7 @@ def marker_frame_orientations(
 
     quaternions = np.full((trial.n_frames, 4), np.nan, dtype=np.float64)
     euler = {
-        sequence: np.full((trial.n_frames, 3), np.nan, dtype=np.float64)
-        for sequence in sequences
+        sequence: np.full((trial.n_frames, 3), np.nan, dtype=np.float64) for sequence in sequences
     }
     margins = {
         sequence: np.full(trial.n_frames, np.nan, dtype=np.float64) for sequence in sequences

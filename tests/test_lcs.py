@@ -98,3 +98,54 @@ def test_transform_trial_preserves_intermarker_distances():
 
     # Rigid rotation preserves all Euclidean distances exactly
     assert np.allclose(orig_dist, new_dist, atol=1e-12)
+
+
+def test_compute_reference_system_matrix():
+    from openbiomech.biomech_math.lcs import compute_reference_system_matrix
+
+    # Identity
+    R, det = compute_reference_system_matrix("+X", "+Y", "+Z")
+    assert np.allclose(R, np.eye(3))
+    assert np.isclose(det, 1.0)
+
+    # Invert X
+    R, det = compute_reference_system_matrix("-X", "+Y", "+Z")
+    assert np.allclose(R, np.diag([-1, 1, 1]))
+    assert np.isclose(det, -1.0)
+
+    # Y-up right handed: X->-X, Y->+Z, Z->+Y
+    R, det = compute_reference_system_matrix("-X", "+Z", "+Y")
+    assert np.isclose(det, 1.0)
+    p = np.array([1.0, 2.0, 3.0])
+    p_trans = R @ p
+    assert np.allclose(p_trans, [-1.0, 3.0, 2.0])
+
+    # Collinear / repeated axis raises ValueError
+    with pytest.raises(ValueError, match="independent"):
+        compute_reference_system_matrix("+X", "+X", "+Z")
+
+
+def test_transform_trial_reference_system_with_translation():
+    from openbiomech.biomech_math.lcs import transform_trial_reference_system
+
+    trial = read_c3d_native(FIXTURE_C3D)
+    translation = (1.5, -2.0, 0.5)
+    transformed, R, det = transform_trial_reference_system(
+        trial, x_axis="+X", y_axis="+Y", z_axis="+Z", translation=translation
+    )
+    assert transformed.n_frames == trial.n_frames
+    assert np.allclose(transformed.xyz, trial.xyz + np.array(translation))
+
+    # Test with rotation and translation
+    transformed_rot, R, det = transform_trial_reference_system(
+        trial, x_axis="-X", y_axis="+Z", z_axis="+Y", translation=translation
+    )
+    orig_p1 = trial.marker("p1")
+    orig_p2 = trial.marker("p2")
+    orig_dist = np.linalg.norm(orig_p1 - orig_p2, axis=-1)
+
+    new_p1 = transformed_rot.marker("p1")
+    new_p2 = transformed_rot.marker("p2")
+    new_dist = np.linalg.norm(new_p1 - new_p2, axis=-1)
+    assert np.allclose(orig_dist, new_dist, atol=1e-12)
+

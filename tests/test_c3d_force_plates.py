@@ -129,9 +129,7 @@ def test_trial_payload_force_plates(squat_c3d):
     assert len(p1["force"]) == trial.n_frames
 
 
-def test_edited_c3d_preserves_real_analog_channels_and_force_plate_parameters(
-    squat_c3d, tmp_path
-):
+def test_edited_c3d_preserves_real_analog_channels_and_force_plate_parameters(squat_c3d, tmp_path):
     import ezc3d
 
     trial = read_c3d_native(squat_c3d)
@@ -142,12 +140,14 @@ def test_edited_c3d_preserves_real_analog_channels_and_force_plate_parameters(
     edited = ezc3d.c3d(str(output))
     assert edited["data"]["analogs"].shape == source["data"]["analogs"].shape
     assert np.allclose(edited["data"]["analogs"], source["data"]["analogs"], atol=1e-6)
-    assert edited["parameters"]["ANALOG"]["LABELS"]["value"] == source["parameters"]["ANALOG"][
-        "LABELS"
-    ]["value"]
-    assert edited["parameters"]["ANALOG"]["UNITS"]["value"] == source["parameters"]["ANALOG"][
-        "UNITS"
-    ]["value"]
+    assert (
+        edited["parameters"]["ANALOG"]["LABELS"]["value"]
+        == source["parameters"]["ANALOG"]["LABELS"]["value"]
+    )
+    assert (
+        edited["parameters"]["ANALOG"]["UNITS"]["value"]
+        == source["parameters"]["ANALOG"]["UNITS"]["value"]
+    )
     assert np.allclose(
         edited["parameters"]["FORCE_PLATFORM"]["CORNERS"]["value"],
         source["parameters"]["FORCE_PLATFORM"]["CORNERS"]["value"],
