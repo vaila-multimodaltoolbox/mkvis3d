@@ -3175,7 +3175,10 @@ function gapFill1D(series, method = "linear", maxGap = 0) {
         out[k] = h00 * y0 + h10 * dx * m0 + h01 * y1 + h11 * dx * m1;
       }
     } else {
-      // Linear default
+      // Linear default. Also covers method === "kalman": vailá's own
+      // apply_interpolation_1d() treats "kalman" as a lightweight linear
+      // fallback for gap-filling (full Kalman only runs in its smoothing
+      // path, see kalmanFilter1D below) — mirrored here intentionally.
       for (let k = gapStart; k <= gapEnd; k++) {
         const t = (k - i0) / dx;
         out[k] = y0 + t * (y1 - y0);
@@ -3321,6 +3324,262 @@ function butterworthLowpassZeroPhase(series, fs, cutoff = 6.0) {
   return out;
 }
 
+// Solve a small dense linear system A*x = b via Gaussian elimination with
+// partial pivoting. Only used for Savitzky-Golay coefficient generation
+// (matrix size = polyorder+1, typically 3-5), so no need for a general
+// numerical library.
+function solveLinearSystem(A, b) {
+  const n = b.length;
+  const M = A.map(row => row.slice());
+  const v = b.slice();
+  for (let col = 0; col < n; col++) {
+    let piv = col;
+    for (let r = col + 1; r < n; r++) {
+      if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+    }
+    if (piv !== col) {
+      [M[col], M[piv]] = [M[piv], M[col]];
+      [v[col], v[piv]] = [v[piv], v[col]];
+    }
+    const pivotVal = M[col][col] || 1e-12;
+    for (let r = col + 1; r < n; r++) {
+      const factor = M[r][col] / pivotVal;
+      for (let c = col; c < n; c++) M[r][c] -= factor * M[col][c];
+      v[r] -= factor * v[col];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let sum = v[r];
+    for (let c = r + 1; c < n; c++) sum -= M[r][c] * x[c];
+    x[r] = sum / (M[r][r] || 1e-12);
+  }
+  return x;
+}
+
+// Least-squares Savitzky-Golay smoothing coefficients for the centre point
+// of a symmetric window [-halfWindow, +halfWindow], fitting a polynomial of
+// the given order (standard formula: c = X (X^T X)^-1 e0, evaluated at 0).
+function savgolCoeffs(halfWindow, polyorder) {
+  const m = 2 * halfWindow + 1;
+  const p = polyorder + 1;
+  const XtX = Array.from({ length: p }, () => new Array(p).fill(0));
+  const Xt = Array.from({ length: p }, () => new Array(m).fill(0));
+  for (let row = 0; row < m; row++) {
+    const i = row - halfWindow;
+    let val = 1;
+    const powers = new Array(p);
+    for (let k = 0; k < p; k++) {
+      powers[k] = val;
+      val *= i;
+    }
+    for (let a = 0; a < p; a++) {
+      Xt[a][row] = powers[a];
+      for (let b = 0; b < p; b++) XtX[a][b] += powers[a] * powers[b];
+    }
+  }
+  const e0 = new Array(p).fill(0);
+  e0[0] = 1;
+  const y = solveLinearSystem(XtX, e0);
+  const coeffs = new Array(m);
+  for (let row = 0; row < m; row++) {
+    let s = 0;
+    for (let a = 0; a < p; a++) s += y[a] * Xt[a][row];
+    coeffs[row] = s;
+  }
+  return coeffs;
+}
+
+// Savitzky-Golay smoothing (vailá reference: interp_smooth_core.savgol_smooth,
+// scipy.signal.savgol_filter). Zero-phase FIR: fits a local polynomial of
+// `polyorder` in a symmetric window and evaluates it at the centre frame.
+// Odd-reflection padding at the edges mirrors butterworthLowpassZeroPhase.
+function savgolFilter1D(series, windowLength = 7, polyorder = 3) {
+  const n = series.length;
+  if (n < 3) return series.slice();
+
+  let win = Math.min(windowLength, n % 2 === 0 ? n - 1 : n);
+  if (win < 3) win = 3;
+  if (win % 2 === 0) win += 1;
+  const half = Math.floor(win / 2);
+  const order = Math.max(1, Math.min(polyorder, win - 1));
+
+  const filled = gapFill1D(series, "linear", 0);
+
+  const totalLen = n + 2 * half;
+  const padded = new Array(totalLen);
+  for (let i = 0; i < half; i++) padded[i] = 2 * filled[0] - filled[half - i];
+  for (let i = 0; i < n; i++) padded[half + i] = filled[i];
+  for (let i = 0; i < half; i++) padded[half + n + i] = 2 * filled[n - 1] - filled[n - 2 - i];
+
+  const coeffs = savgolCoeffs(half, order);
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    for (let k = 0; k < win; k++) sum += coeffs[k] * padded[i + k];
+    out[i] = sum;
+  }
+  return out;
+}
+
+// LOWESS smoothing (vailá reference: interp_smooth_core.lowess_smooth,
+// statsmodels.nonparametric.smoothers_lowess.lowess). Locally weighted
+// linear regression with `iterations` bisquare robustifying passes, same
+// frac/it parameterization as the reference (frames are uniformly spaced,
+// so the neighbor window is contiguous in index space).
+function lowessFilter1D(series, frac = 0.3, iterations = 3) {
+  const n = series.length;
+  if (n < 3) return series.slice();
+  const filled = gapFill1D(series, "linear", 0);
+  const k = Math.max(2, Math.min(n, Math.round(frac * n)));
+
+  let robustness = new Array(n).fill(1);
+  let fitted = filled.slice();
+  const passes = Math.max(1, iterations);
+
+  for (let pass = 0; pass < passes; pass++) {
+    const next = new Array(n);
+    for (let i = 0; i < n; i++) {
+      let lo = Math.max(0, i - Math.floor(k / 2));
+      let hi = Math.min(n - 1, lo + k - 1);
+      lo = Math.max(0, hi - k + 1);
+
+      let maxDist = 1e-9;
+      for (let j = lo; j <= hi; j++) maxDist = Math.max(maxDist, Math.abs(j - i));
+
+      let sw = 0, swx = 0, swy = 0, swxx = 0, swxy = 0;
+      for (let j = lo; j <= hi; j++) {
+        const d = Math.abs(j - i) / maxDist;
+        const tri = d < 1 ? Math.pow(1 - d * d * d, 3) : 0;
+        const w = tri * robustness[j];
+        const x = j - i;
+        sw += w; swx += w * x; swy += w * filled[j];
+        swxx += w * x * x; swxy += w * x * filled[j];
+      }
+
+      const denom = sw * swxx - swx * swx;
+      if (sw <= 1e-9) {
+        next[i] = filled[i];
+      } else if (Math.abs(denom) < 1e-12) {
+        next[i] = swy / sw;
+      } else {
+        const b = (sw * swxy - swx * swy) / denom;
+        const a = (swy - b * swx) / sw;
+        next[i] = a; // linear fit evaluated at local x = 0 (i.e. at frame i)
+      }
+    }
+    fitted = next;
+
+    if (pass < passes - 1) {
+      const residuals = fitted.map((v, i) => Math.abs(filled[i] - v));
+      const sorted = residuals.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const medAbs = sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      const s = Math.max(6 * medAbs, 1e-9);
+      robustness = residuals.map(r => {
+        const u = r / s;
+        return u < 1 ? Math.pow(1 - u * u, 2) : 0;
+      });
+    }
+  }
+  return fitted;
+}
+
+// Minimal 2x2 matrix helpers for kalmanFilter1D's constant-velocity model.
+function mat2mul(A, B) {
+  return [
+    [A[0][0] * B[0][0] + A[0][1] * B[1][0], A[0][0] * B[0][1] + A[0][1] * B[1][1]],
+    [A[1][0] * B[0][0] + A[1][1] * B[1][0], A[1][0] * B[0][1] + A[1][1] * B[1][1]],
+  ];
+}
+function mat2add(A, B) {
+  return [[A[0][0] + B[0][0], A[0][1] + B[0][1]], [A[1][0] + B[1][0], A[1][1] + B[1][1]]];
+}
+function mat2sub(A, B) {
+  return [[A[0][0] - B[0][0], A[0][1] - B[0][1]], [A[1][0] - B[1][0], A[1][1] - B[1][1]]];
+}
+function mat2transpose(A) {
+  return [[A[0][0], A[1][0]], [A[0][1], A[1][1]]];
+}
+function mat2inv(A) {
+  const det = A[0][0] * A[1][1] - A[0][1] * A[1][0];
+  const d = Math.abs(det) < 1e-12 ? 1e-12 : det;
+  return [[A[1][1] / d, -A[0][1] / d], [-A[1][0] / d, A[0][0] / d]];
+}
+
+// Kalman smoothing (vailá reference: interp_smooth_split.kalman_smooth).
+// Constant-velocity 1D state [position, velocity], forward filter pass
+// followed by an RTS backward smoother pass (equivalent in shape to
+// pykalman's kf.em(...).smooth(...), minus the EM covariance re-estimation
+// — fixed process/measurement noise keeps this dependency-free). The final
+// alpha blend against the input mirrors vailá's own blending step, which
+// tempers overshoot on sharp direction changes in marker trajectories.
+function kalmanFilter1D(series, processNoise = 0.1, measurementNoise = 0.1) {
+  const n = series.length;
+  if (n < 2) return series.slice();
+  const filled = gapFill1D(series, "linear", 0);
+
+  const F = [[1, 1], [0, 1]];
+  const Ft = [[1, 0], [1, 1]];
+  const Q = [[processNoise, 0], [0, processNoise]];
+  const R = measurementNoise;
+
+  const xPred = new Array(n), pPred = new Array(n);
+  const xFilt = new Array(n), pFilt = new Array(n);
+
+  let x = [filled[0], 0];
+  let P = [[1, 0], [0, 1]];
+  xFilt[0] = x; pFilt[0] = P; xPred[0] = x; pPred[0] = P;
+
+  for (let k = 1; k < n; k++) {
+    const xp = [F[0][0] * x[0] + F[0][1] * x[1], F[1][0] * x[0] + F[1][1] * x[1]];
+    const Pp = mat2add(mat2mul(mat2mul(F, P), Ft), Q);
+
+    const innov = filled[k] - xp[0]; // H = [1, 0]
+    const S = Pp[0][0] + R;
+    const K0 = Pp[0][0] / S;
+    const K1 = Pp[1][0] / S;
+    const xf = [xp[0] + K0 * innov, xp[1] + K1 * innov];
+    const Pf = [
+      [(1 - K0) * Pp[0][0], (1 - K0) * Pp[0][1]],
+      [Pp[1][0] - K1 * Pp[0][0], Pp[1][1] - K1 * Pp[0][1]],
+    ];
+
+    xPred[k] = xp; pPred[k] = Pp;
+    xFilt[k] = xf; pFilt[k] = Pf;
+    x = xf; P = Pf;
+  }
+
+  const xSmooth = new Array(n);
+  const pSmooth = new Array(n);
+  xSmooth[n - 1] = xFilt[n - 1];
+  pSmooth[n - 1] = pFilt[n - 1];
+
+  for (let k = n - 2; k >= 0; k--) {
+    const C = mat2mul(mat2mul(pFilt[k], Ft), mat2inv(pPred[k + 1]));
+    const dx = [xSmooth[k + 1][0] - xPred[k + 1][0], xSmooth[k + 1][1] - xPred[k + 1][1]];
+    xSmooth[k] = [
+      xFilt[k][0] + C[0][0] * dx[0] + C[0][1] * dx[1],
+      xFilt[k][1] + C[1][0] * dx[0] + C[1][1] * dx[1],
+    ];
+    const dP = mat2sub(pSmooth[k + 1], pPred[k + 1]);
+    pSmooth[k] = mat2add(pFilt[k], mat2mul(mat2mul(C, dP), mat2transpose(C)));
+  }
+
+  const alpha = 0.7;
+  const out = new Array(n);
+  for (let k = 0; k < n; k++) {
+    out[k] = alpha * xSmooth[k][0] + (1 - alpha) * filled[k];
+  }
+  return out;
+}
+
+// NOTE: GCV smoothing splines and ARIMA smoothing (also present in vailá's
+// interp_smooth_split.py) are intentionally not offered here — they add
+// significant implementation cost in dependency-free JS for little gain
+// over Butterworth/Savitzky-Golay on marker trajectories. For spline-based
+// analysis, see openbiomech/biomech_math/splines.py (GCV smoothing splines,
+// server/Python side).
 function processSeries1D(series, fs, options) {
   let cur = series.slice();
   if (options.hampel) {
@@ -3335,6 +3594,12 @@ function processSeries1D(series, fs, options) {
     cur = movingAverage1D(cur, options.windowSize || 5);
   } else if (options.smooth === "median") {
     cur = medianFilter1D(cur, options.windowSize || 5);
+  } else if (options.smooth === "savgol") {
+    cur = savgolFilter1D(cur, options.windowSize || 7, options.sgPolyorder || 3);
+  } else if (options.smooth === "lowess") {
+    cur = lowessFilter1D(cur, options.lowessFrac || 0.3, 3);
+  } else if (options.smooth === "kalman") {
+    cur = kalmanFilter1D(cur, 0.1, 0.1);
   }
   return cur;
 }
@@ -3480,6 +3745,12 @@ function updateFilterUI() {
       desc = `MA (${activeFilterConfig.windowSize}f)`;
     } else if (activeFilterConfig.smooth === "median") {
       desc = `Median (${activeFilterConfig.windowSize}f)`;
+    } else if (activeFilterConfig.smooth === "savgol") {
+      desc = `SavGol (${activeFilterConfig.windowSize}f, p${activeFilterConfig.sgPolyorder})`;
+    } else if (activeFilterConfig.smooth === "lowess") {
+      desc = `LOWESS (${activeFilterConfig.lowessFrac.toFixed(2)})`;
+    } else if (activeFilterConfig.smooth === "kalman") {
+      desc = "Kalman";
     } else {
       desc = "Gap Fill";
     }
@@ -3588,6 +3859,8 @@ function getModalFilterConfig() {
   const smooth = $("flt-smooth-method")?.value || "butterworth";
   const cutoff = parseFloat($("flt-cutoff-slider")?.value || "6.0");
   const windowSize = parseInt($("flt-window-size")?.value || "5", 10);
+  const sgPolyorder = parseInt($("flt-savgol-polyorder")?.value || "3", 10);
+  const lowessFrac = parseFloat($("flt-lowess-frac")?.value || "0.3");
   const scopeEl = document.querySelector('input[name="flt-scope"]:checked');
   const scope = scopeEl ? scopeEl.value : "all";
 
@@ -3600,6 +3873,8 @@ function getModalFilterConfig() {
     smooth,
     cutoff,
     windowSize,
+    sgPolyorder,
+    lowessFrac,
     scope
   };
 }
@@ -3759,21 +4034,24 @@ function initLCSAndFilterControls() {
   if ($("flt-smooth-method")) {
     $("flt-smooth-method").onchange = () => {
       const val = $("flt-smooth-method").value;
-      if (val === "butterworth") {
-        if ($("flt-cutoff-group")) $("flt-cutoff-group").style.display = "block";
-        if ($("flt-window-group")) $("flt-window-group").style.display = "none";
-      } else if (val === "moving_average" || val === "median") {
-        if ($("flt-cutoff-group")) $("flt-cutoff-group").style.display = "none";
-        if ($("flt-window-group")) $("flt-window-group").style.display = "block";
-      } else {
-        if ($("flt-cutoff-group")) $("flt-cutoff-group").style.display = "none";
-        if ($("flt-window-group")) $("flt-window-group").style.display = "none";
-      }
+      if ($("flt-cutoff-group")) $("flt-cutoff-group").style.display = val === "butterworth" ? "block" : "none";
+      if ($("flt-window-group")) $("flt-window-group").style.display = (val === "moving_average" || val === "median" || val === "savgol") ? "block" : "none";
+      if ($("flt-savgol-group")) $("flt-savgol-group").style.display = val === "savgol" ? "block" : "none";
+      if ($("flt-lowess-group")) $("flt-lowess-group").style.display = val === "lowess" ? "block" : "none";
+      if ($("flt-kalman-hint")) $("flt-kalman-hint").style.display = val === "kalman" ? "block" : "none";
       updateFilterPreview();
     };
   }
 
-  for (const id of ["flt-hampel-enable", "flt-hampel-window", "flt-hampel-sigmas", "flt-interp-method", "flt-max-gap", "flt-window-size", "flt-preview-check"]) {
+  if ($("flt-lowess-frac")) {
+    $("flt-lowess-frac").oninput = () => {
+      const v = parseFloat($("flt-lowess-frac").value);
+      if ($("flt-lowess-frac-val")) $("flt-lowess-frac-val").textContent = v.toFixed(2);
+      updateFilterPreview();
+    };
+  }
+
+  for (const id of ["flt-hampel-enable", "flt-hampel-window", "flt-hampel-sigmas", "flt-interp-method", "flt-max-gap", "flt-window-size", "flt-savgol-polyorder", "flt-preview-check"]) {
     if ($(id)) $(id).onchange = updateFilterPreview;
   }
   document.querySelectorAll('input[name="flt-scope"]').forEach(r => {

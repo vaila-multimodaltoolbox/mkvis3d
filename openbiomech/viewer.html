@@ -1336,6 +1336,7 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
               <option value="linear" selected>Linear Interpolation</option>
               <option value="cubic">Cubic Spline (Hermite)</option>
               <option value="nearest">Nearest Neighbor</option>
+              <option value="kalman">Kalman (constant-velocity)</option>
               <option value="none">— Do Not Fill Gaps —</option>
             </select>
           </div>
@@ -1356,6 +1357,9 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
               <option value="butterworth" selected>Butterworth Lowpass (Zero-phase 4th)</option>
               <option value="moving_average">Moving Average</option>
               <option value="median">Median Filter</option>
+              <option value="savgol">Savitzky-Golay</option>
+              <option value="lowess">LOWESS (Locally Weighted)</option>
+              <option value="kalman">Kalman (constant-velocity)</option>
               <option value="none">— None (Gap Fill Only) —</option>
             </select>
           </div>
@@ -1373,6 +1377,24 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
             <label for="flt-window-size">Window Size (frames):</label>
             <input type="number" id="flt-window-size" value="5" min="3" max="51" step="2">
           </div>
+          <div id="flt-savgol-group" style="display: none;">
+            <label for="flt-savgol-polyorder">Polynomial Order:</label>
+            <select id="flt-savgol-polyorder">
+              <option value="2">2 (Quadratic)</option>
+              <option value="3" selected>3 (Cubic)</option>
+              <option value="4">4 (Quartic)</option>
+            </select>
+          </div>
+          <div id="flt-lowess-group" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label for="flt-lowess-frac" style="margin: 0;">Smoothing Fraction:</label>
+              <span id="flt-lowess-frac-val" style="font-size: 11px; font-weight: 700; color: var(--accent);">0.30</span>
+            </div>
+            <input type="range" id="flt-lowess-frac" min="0.05" max="0.9" step="0.05" value="0.3" style="margin-top: 6px;">
+          </div>
+        </div>
+        <div id="flt-kalman-hint" style="display: none; font-size: 10px; color: var(--text-muted); margin-top: 6px;">
+          Constant-velocity Kalman smoother (forward filter + RTS backward pass). No extra parameters — tuned for typical marker trajectory noise.
         </div>
       </fieldset>
 
