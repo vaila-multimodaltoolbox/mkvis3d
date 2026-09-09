@@ -15,6 +15,11 @@ const token = location.hash.slice(1);
 
 let trial = null, frame = 0, playing = false, lastTick = 0, elapsed = 0;
 let yaw = -0.45, pitch = 0.22, zoom = 1, pan = [0, 0], center = [0, 0, 0], span = 1;
+// Trial-wide lowest marker height (oriented Z), used as the "auto" ground
+// plane reference. Computed once per fit() instead of per-frame so the grid
+// does not flicker when the lowest marker changes frame-to-frame (e.g. feet
+// alternating, or transient marker dropout) — see getFloorHeight().
+let autoFloorZ = 0;
 let distances = [], activeMarkerIndex = 0, showDistance = true;
 let skeletonPairs = [];
 let activeSkeletonTemplate = "none";
@@ -233,6 +238,7 @@ function fit() {
   }
   center = lo.map((v, j) => (v + hi[j]) / 2);
   span = Math.max(...hi.map((v, j) => v - lo[j]), 0.01);
+  autoFloorZ = Number.isFinite(lo[2]) ? lo[2] : 0;
   zoom = 1;
   pan = [0, 0];
   draw();
@@ -259,14 +265,13 @@ function getFloorHeight() {
     if (Number.isFinite(minFpZ)) return minFpZ;
   }
 
-  let minH = Infinity;
-  for (const raw of trial.xyz[frame] || []) {
-    if (valid(raw)) {
-      const p = orient(raw);
-      minH = Math.min(minH, p[2]);
-    }
-  }
-  return Number.isFinite(minH) ? minH : 0;
+  // Trial-wide lowest marker height, computed once in fit() rather than
+  // per-frame here: with no force plates to anchor it, recomputing from
+  // just the current frame's markers made the floor track whichever marker
+  // happened to be lowest at each instant (feet alternating during gait,
+  // brief marker dropout, reconstruction noise near the ground), so the
+  // grid visibly flickered/shifted every frame instead of staying still.
+  return autoFloorZ;
 }
 
 // 3D Ground Plane Grid
