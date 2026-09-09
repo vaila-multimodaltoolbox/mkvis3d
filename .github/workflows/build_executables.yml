@@ -1,0 +1,84 @@
+name: Build Cross-Platform Standalone Executables
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: mkvis3d-linux-x86_64
+            dist_file: dist/mkvis3d
+          - os: windows-latest
+            artifact_name: mkvis3d-windows-x86_64.exe
+            dist_file: dist/mkvis3d.exe
+          - os: macos-latest
+            artifact_name: mkvis3d-macos-app
+            dist_file: dist/mkvis3d.app
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.12
+        run: uv python install 3.12
+
+      - name: Install Dependencies
+        run: uv sync --dev
+
+      - name: Build Standalone Application
+        run: uv run python scripts/build_app.py
+
+      - name: Package macOS App Bundle
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r mkvis3d-macos-app.zip mkvis3d.app
+          echo "DIST_UPLOAD=dist/mkvis3d-macos-app.zip" >> $GITHUB_ENV
+
+      - name: Set Upload Path (Linux / Windows)
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          echo "DIST_UPLOAD=${{ matrix.dist_file }}" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ env.DIST_UPLOAD }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mkvis3d-linux-x86_64/*
+            mkvis3d-windows-x86_64.exe/*
+            mkvis3d-macos-app/*
+          generate_release_notes: true

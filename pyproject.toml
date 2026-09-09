@@ -23,6 +23,7 @@ mkvis3d = "openbiomech.cli:main"
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.15.0",
+    "selenium>=4.48.0",
     "ty>=0.0.16",
 ]
 
@@ -56,3 +57,6 @@ exclude = [".git", ".venv", "__pycache__", "*.pyc", "build", "dist", "skeleton_t
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "browser: cross-browser integration tests using Chrome, Chromium, and Firefox",
+]

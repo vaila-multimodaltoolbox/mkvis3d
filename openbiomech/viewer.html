@@ -602,6 +602,29 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
 .key-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; margin-top: 10px; }
 .key-cap { background: var(--input-bg); border: 1px solid var(--border-color); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11px; text-align: center; display: inline-block; color: var(--accent); }
 
+.btn-lcs-preset {
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border-color);
+  color: var(--text-normal);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 6px 4px;
+  font-size: 11px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.btn-lcs-preset:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-lcs-preset.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
 /* Utility */
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
@@ -658,6 +681,10 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="dropdown-item" id="action-theme-dark">✓ Dark Mode (Escuro)</div>
       <div class="dropdown-item" id="action-theme-light">  Light Mode (Claro)</div>
       <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Signal Processing & Lab LCS</div>
+      <div class="dropdown-item" id="action-view-lcs">📐 Visual3D Coordinate System (LCS)...</div>
+      <div class="dropdown-item" id="action-view-filter">🌊 Smooth, Filter & Gap Fill...</div>
+      <div class="dropdown-divider"></div>
       <div class="dropdown-item" id="action-view-shortcuts">Keyboard & Mouse Controls <span class="shortcut-hint">F1 / ?</span></div>
     </div>
   </div>
@@ -708,6 +735,12 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       <div class="dropdown-item" id="action-inc-marker-size">Increase Marker Size <span class="shortcut-hint">+</span></div>
       <div class="dropdown-item" id="action-dec-marker-size">Decrease Marker Size <span class="shortcut-hint">-</span></div>
       <div class="dropdown-item" id="action-reset-marker-style">Reset Marker Style</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Visual3D Coordinate System</div>
+      <div class="dropdown-item" id="action-opt-lcs">📐 Set Laboratory Coordinate System (LCS)...</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Signal Conditioning</div>
+      <div class="dropdown-item" id="action-opt-filter">🌊 Smooth, Filter & Gap Fill...</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-item" id="action-toggle-loop">✓ Loop Playback</div>
     </div>
@@ -853,6 +886,49 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       </div>
     </section>
 
+    <!-- Force Platforms & Kinetics (Visual3D & Mokka Parity) -->
+    <section id="force-platforms-section" class="sidebar-section" hidden>
+      <div class="sidebar-header">
+        <span>Force Platforms & GRF</span>
+        <span id="force-plate-count-badge" style="font-size: 10px; color: var(--accent);">0 plates</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+        <label style="display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer;">
+          <input type="checkbox" id="show-force-plates" checked>
+          <span>Show Force Plates</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer;">
+          <input type="checkbox" id="show-force-vectors" checked>
+          <span>Show Force Vectors (GRF)</span>
+        </label>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+        <label for="force-scale-slider" style="margin: 0;">Vector Scale</label>
+        <span id="force-scale-val" style="font-size: 11px; font-weight: 600; color: var(--accent);">1.0 mm/N</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <input type="range" id="force-scale-slider" min="0.2" max="5.0" step="0.1" value="1.0" style="flex: 1;">
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+        <label for="force-threshold-slider" style="margin: 0;">Contact Threshold</label>
+        <span id="force-threshold-val" style="font-size: 11px; font-weight: 600; color: var(--accent);">15 N</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <input type="range" id="force-threshold-slider" min="5" max="100" step="5" value="15" style="flex: 1;">
+      </div>
+
+      <div id="force-readouts-card" style="margin-top: 10px; padding: 8px; border-radius: 6px; background: var(--metric-card-bg); border: 1px solid var(--border-color); font-size: 11px; display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; justify-content: space-between; font-weight: 600;">
+          <span>Active Vertical GRF</span>
+          <span id="total-fz-val" style="color: var(--accent);">0 N</span>
+        </div>
+        <div id="plate-mini-readouts" style="color: var(--text-muted); font-size: 10px; margin-top: 2px;"></div>
+      </div>
+    </section>
+
     <!-- View & Camera Controls -->
     <section class="sidebar-section">
       <div class="sidebar-header">Camera & Orientation</div>
@@ -878,6 +954,34 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       </div>
       
       <button id="reset" style="margin-top: 12px; width: 100%;">Reset Camera View</button>
+
+      <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-color);">
+        <button id="btn-open-lcs" type="button" style="width: 100%; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span>📐 Visual3D Lab LCS...</span>
+        </button>
+        <div id="lcs-active-badge" style="font-size: 10px; color: var(--text-muted); margin-top: 4px; text-align: center;">
+          LCS: ISB (+Y AP, +Z Axial)
+        </div>
+      </div>
+    </section>
+
+    <!-- Processing & Filtering (interp_smooth_split) -->
+    <section class="sidebar-section">
+      <div class="sidebar-header">
+        <span>Processing & Filter</span>
+        <span id="filter-status-badge" style="font-size: 10px; color: var(--text-muted);">Raw</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <button id="btn-open-filter" type="button" style="width: 100%; font-size: 11px;">
+          <span>🌊 Filter & Gap Fill...</span>
+        </button>
+        <button id="btn-quick-filter" type="button" style="width: 100%; font-size: 11px;" title="Quick Butterworth 6Hz lowpass and linear interpolation">
+          ⚡ Quick Smooth (6 Hz)
+        </button>
+        <button id="btn-revert-filter" type="button" style="width: 100%; font-size: 11px;" disabled>
+          ↺ Revert to Raw Trial
+        </button>
+      </div>
     </section>
 
     <!-- Quick Export -->
@@ -1063,7 +1167,194 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
         <div><span class="key-cap">C</span></div><div>Cycle marker color (11 colors from viewc3d)</div>
         <div><span class="key-cap">+</span> / <span class="key-cap">-</span></div><div>Increase / decrease marker size</div>
         <div><span class="key-cap">Alt + T</span></div><div>Toggle Light / Dark theme mode</div>
+        <div><span class="key-cap">Alt + L</span></div><div>Open Visual3D Coordinate System (LCS) dialog</div>
+        <div><span class="key-cap">Alt + F</span></div><div>Open Signal Filtering & Gap Fill dialog</div>
         <div><span class="key-cap">Esc</span></div><div>Close open dialog / modal window</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Visual3D Laboratory Coordinate System (LCS) Modal -->
+<div id="modal-lcs" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-lcs-title">
+  <div class="modal-dialog" style="width: 560px;">
+    <div class="modal-header">
+      <h3 id="modal-lcs-title">Visual3D Laboratory Coordinate System (LCS)</h3>
+      <button class="modal-close" id="btn-close-lcs" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-top:0; font-size: 12px; color: var(--text-muted);">
+        Configure laboratory orientation following the <strong>Visual3D Set_Laboratory_Coordinate_System</strong> standard.
+        Fix trials where <em>Y is vertical</em> (BVH, Unity, 3D CSV) or walkway direction is along X.
+      </p>
+
+      <div style="margin-bottom: 12px;">
+        <label style="font-weight: 600; margin-bottom: 6px;">Presets:</label>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+          <button type="button" class="btn-lcs-preset active" data-preset="isb_default">ISB (+Z Up, +Y AP)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="y_up_bvh">BVH / Unity (+Y Up, +Z AP)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="y_up_threejs">Three.js (+Y Up, -Z AP)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="x_up">X-Up (+X Up, +Y AP)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="walkway_x">Walkway X (+Z Up, +X AP)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="reverse_walkway">Reverse Walk (-Y AP)</button>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: var(--bg-panel-alt); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+        <div>
+          <label for="lcs-axial-select" style="font-weight: 600; margin-top:0;">AXIAL Direction (Up/Vertical):</label>
+          <select id="lcs-axial-select">
+            <option value="+Z" selected>+Z (ISB / Vicon standard)</option>
+            <option value="-Z">-Z</option>
+            <option value="+Y">+Y (BVH / Unity / Blender)</option>
+            <option value="-Y">-Y</option>
+            <option value="+X">+X</option>
+            <option value="-X">-X</option>
+          </select>
+        </div>
+        <div>
+          <label for="lcs-ap-select" style="font-weight: 600; margin-top:0;">AP Direction (Anterior-Posterior):</label>
+          <select id="lcs-ap-select">
+            <option value="+Y" selected>+Y (Forward)</option>
+            <option value="-Y">-Y (Backward)</option>
+            <option value="+X">+X (Walk along X)</option>
+            <option value="-X">-X (Walk along -X)</option>
+            <option value="+Z">+Z</option>
+            <option value="-Z">-Z</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="lcs-feedback-box" style="margin-top: 12px; padding: 10px; border-radius: 5px; background: var(--metric-card-bg); border: 1px solid var(--border-color); font-size: 11px;">
+        <div style="display: flex; justify-content: space-between;">
+          <span>Computed ML (Right / Lateral):</span>
+          <strong id="lcs-ml-result" style="color: var(--accent);">+X</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+          <span>Orientation / Handedness:</span>
+          <span id="lcs-det-result" style="color: #22c55e; font-weight: 600;">Right-Handed System (det = +1.0)</span>
+        </div>
+        <div id="lcs-error-msg" style="color: #ef4444; margin-top: 4px; display: none;"></div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+        <button type="button" id="btn-reset-lcs" style="font-size: 11px;">Reset to Original System</button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btn-cancel-lcs">Cancel</button>
+          <button type="button" id="btn-apply-lcs" class="primary" style="font-weight: 700;">Apply LCS Transformation</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Signal Smoothing, Filtering & Gap-Fill Modal -->
+<div id="modal-filter" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-filter-title">
+  <div class="modal-dialog" style="width: 580px;">
+    <div class="modal-header">
+      <h3 id="modal-filter-title">Smooth, Filter & Gap Fill (interp_smooth_split)</h3>
+      <button class="modal-close" id="btn-close-filter" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-top:0; font-size: 12px; color: var(--text-muted);">
+        Biomechanics signal conditioning pipeline: Hampel outlier spike removal, interpolation of missing frames, and zero-phase Butterworth smoothing.
+      </p>
+
+      <!-- Step 1: Hampel Outlier Removal -->
+      <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;">
+        <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">1. Outlier Spike Removal (Hampel Filter)</legend>
+        <label style="display: flex; align-items: center; gap: 6px; margin: 2px 0 6px; cursor: pointer;">
+          <input type="checkbox" id="flt-hampel-enable">
+          <span style="font-weight: 600; color: var(--text-bright);">Enable Hampel Outlier Detection (MAD)</span>
+        </label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div>
+            <label for="flt-hampel-window">Window Size (frames):</label>
+            <input type="number" id="flt-hampel-window" value="7" min="3" max="31" step="2">
+          </div>
+          <div>
+            <label for="flt-hampel-sigmas">Threshold (× Sigmas MAD):</label>
+            <input type="number" id="flt-hampel-sigmas" value="3.0" min="1.0" max="10.0" step="0.5">
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- Step 2: Gap Fill / Interpolation -->
+      <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;">
+        <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">2. Missing Frames Gap Filling (Interpolation)</legend>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div>
+            <label for="flt-interp-method">Interpolation Method:</label>
+            <select id="flt-interp-method">
+              <option value="linear" selected>Linear Interpolation</option>
+              <option value="cubic">Cubic Spline (Hermite)</option>
+              <option value="nearest">Nearest Neighbor</option>
+              <option value="none">— Do Not Fill Gaps —</option>
+            </select>
+          </div>
+          <div>
+            <label for="flt-max-gap">Max Gap to Fill (frames, 0 = all):</label>
+            <input type="number" id="flt-max-gap" value="10" min="0" max="500">
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- Step 3: Smoothing Filter -->
+      <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;">
+        <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">3. Signal Smoothing Filter</legend>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div>
+            <label for="flt-smooth-method">Filter Algorithm:</label>
+            <select id="flt-smooth-method">
+              <option value="butterworth" selected>Butterworth Lowpass (Zero-phase 4th)</option>
+              <option value="moving_average">Moving Average</option>
+              <option value="median">Median Filter</option>
+              <option value="none">— None (Gap Fill Only) —</option>
+            </select>
+          </div>
+          <div id="flt-cutoff-group">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label for="flt-cutoff-slider" style="margin: 0;">Cutoff Frequency:</label>
+              <span id="flt-cutoff-val" style="font-size: 11px; font-weight: 700; color: var(--accent);">6.0 Hz</span>
+            </div>
+            <input type="range" id="flt-cutoff-slider" min="0.5" max="30" step="0.5" value="6.0" style="margin-top: 6px;">
+            <div id="flt-nyquist-hint" style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">
+              Sampling rate: <span id="flt-fs-readout">100</span> Hz (Nyquist: <span id="flt-nyq-readout">50</span> Hz)
+            </div>
+          </div>
+          <div id="flt-window-group" style="display: none;">
+            <label for="flt-window-size">Window Size (frames):</label>
+            <input type="number" id="flt-window-size" value="5" min="3" max="51" step="2">
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- Step 4: Target Scope & Live Preview -->
+      <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-panel-alt); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 14px;">
+        <div>
+          <span style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px;">Target Scope:</span>
+          <label style="display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; cursor: pointer;">
+            <input type="radio" name="flt-scope" value="all" checked> All Markers
+          </label>
+          <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+            <input type="radio" name="flt-scope" value="active"> Active Marker Only (<span id="flt-active-marker-name">#1</span>)
+          </label>
+        </div>
+        <div>
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11px; font-weight: 600;">
+            <input type="checkbox" id="flt-preview-check" checked>
+            <span style="color: var(--accent);">Live Preview on Plot 1</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" id="btn-dialog-revert-filter" style="font-size: 11px;">↺ Revert to Raw Trial</button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btn-cancel-filter">Cancel</button>
+          <button type="button" id="btn-apply-filter" class="primary" style="font-weight: 700;">Apply Processing</button>
+        </div>
       </div>
     </div>
   </div>

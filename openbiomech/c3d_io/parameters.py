@@ -92,12 +92,18 @@ def _read_parameter_data(
 
     if data_type == TYPE_BYTE:
         value = np.frombuffer(buf, dtype="i1", count=count, offset=pos).astype(np.int64)
+        if len(dims) > 1 and count > 0:
+            value = value.reshape(dims, order="F")
         return value, count
     if data_type == TYPE_INT16:
         value = order.i16_array(buf, pos, count).astype(np.int64)
+        if len(dims) > 1 and count > 0:
+            value = value.reshape(dims, order="F")
         return value, count * 2
     if data_type == TYPE_FLOAT:
         value = order.f32_array(buf, pos, count).astype(np.float64)
+        if len(dims) > 1 and count > 0:
+            value = value.reshape(dims, order="F")
         return value, count * 4
 
     raise C3DParseError(f"Unknown parameter data type {data_type}")

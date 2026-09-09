@@ -32,6 +32,8 @@ hiddenimports = [
     "openbiomech.analysis_io",
     "openbiomech.marker_trial",
     "openbiomech.biomech_math",
+    "openbiomech.biomech_math.lcs",
+    "openbiomech.biomech_math.filtering",
     "openbiomech.model",
     "openbiomech.inverse_dynamics",
     "ezc3d",
@@ -39,11 +41,12 @@ hiddenimports = [
     "scipy",
     "scipy.interpolate",
     "scipy.spatial.transform",
+    "scipy.signal",
     "pandas",
 ]
 
 a = Analysis(
-    ["run_app.py"],
+    ["mkvis3d.py"],
     pathex=[str(root)],
     binaries=[],
     datas=datas,

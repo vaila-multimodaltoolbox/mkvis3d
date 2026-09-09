@@ -49,12 +49,38 @@ def trial_payload(trial: MarkerTrial, name: str) -> dict:
         raise ValueError("trial has no visible marker samples")
     safe = xyz.astype(object)
     safe[~np.isfinite(xyz)] = None
-    return {
+
+    force_plates_data = []
+    for fp in getattr(trial, "force_plates", []):
+        cop_safe = fp.cop.astype(object)
+        cop_safe[~np.isfinite(fp.cop)] = None
+        force_safe = fp.force.astype(object)
+        force_safe[~np.isfinite(fp.force)] = 0.0
+        force_plates_data.append(
+            {
+                "id": fp.id,
+                "name": fp.name,
+                "type": fp.plate_type,
+                "corners": fp.corners.tolist(),
+                "origin": fp.origin.tolist(),
+                "cop": cop_safe.tolist(),
+                "force": force_safe.tolist(),
+                "contact": fp.contact.tolist(),
+            }
+        )
+
+    payload = {
         "name": name,
         "labels": list(trial.labels),
         "rate_hz": float(trial.rate_hz),
         "xyz": safe.tolist(),
     }
+    if force_plates_data:
+        payload["force_plates"] = force_plates_data
+    if getattr(trial, "analog_labels", ()):
+        payload["analog_labels"] = list(trial.analog_labels)
+        payload["analog_rate_hz"] = float(trial.analog_rate_hz)
+    return payload
 
 
 def render_viewer(

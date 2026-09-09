@@ -17,6 +17,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
+
 from .marker_trial import MarkerTrial
 from .model import Landmark, Segment, landmark_from_trial
 from .trial_io import load_trial
@@ -75,6 +77,48 @@ def _cmd_dynamics(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_lcs(args: argparse.Namespace) -> int:
+    from .biomech_math.lcs import transform_trial_lcs
+    from .csv_io import write_wide_csv
+    from .viewer import export_viewer
+
+    trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
+    transformed, rot, ml = transform_trial_lcs(
+        trial, ap_direction=args.ap, axial_direction=args.axial
+    )
+    output: Path = args.output
+    if output.suffix.lower() in (".html", ".htm"):
+        export_viewer(transformed, f"{args.path.stem}_lcs", output)
+    else:
+        write_wide_csv(transformed, output)
+    print(f"lcs: AP={args.ap}, AXIAL={args.axial}, ML={ml} -> {output.resolve()}")
+    return 0
+
+
+def _cmd_filter(args: argparse.Namespace) -> int:
+    from .biomech_math.filtering import process_marker_trial
+    from .csv_io import write_wide_csv
+    from .viewer import export_viewer
+
+    trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
+    processed = process_marker_trial(
+        trial,
+        interp_method=args.interp,
+        max_gap=args.max_gap,
+        smooth_method=args.smooth,
+        cutoff_hz=args.cutoff,
+        order=args.order,
+        window_size=args.window,
+    )
+    output: Path = args.output
+    if output.suffix.lower() in (".html", ".htm"):
+        export_viewer(processed, f"{args.path.stem}_filtered", output)
+    else:
+        write_wide_csv(processed, output)
+    print(f"filtered: interp={args.interp}, smooth={args.smooth} -> {output.resolve()}")
+    return 0
+
+
 def _cmd_info(args: argparse.Namespace) -> int:
     trial = _load_trial(args.path, rate_hz=args.rate, units=args.units)
     print(f"file:     {args.path}")
@@ -82,6 +126,18 @@ def _cmd_info(args: argparse.Namespace) -> int:
     print(f"markers:  {trial.n_markers}")
     print(f"rate:     {trial.rate_hz:g} Hz")
     print(f"labels:   {', '.join(trial.labels)}")
+    if getattr(trial, "force_plates", None):
+        print(f"force plates: {len(trial.force_plates)}")
+        for fp in trial.force_plates:
+            dim_x = np.linalg.norm(fp.corners[1] - fp.corners[0])
+            dim_y = np.linalg.norm(fp.corners[3] - fp.corners[0])
+            n_contact = int(np.sum(fp.contact))
+            print(
+                f"  [{fp.name}] type={fp.plate_type}, dimensions={dim_x:.2f}m x {dim_y:.2f}m, "
+                f"active_contact={n_contact}/{trial.n_frames} frames"
+            )
+    if getattr(trial, "analog_labels", None):
+        print(f"analog:   {len(trial.analog_labels)} channels @ {trial.analog_rate_hz:g} Hz")
     return 0
 
 
@@ -222,6 +278,48 @@ def build_parser() -> argparse.ArgumentParser:
     p_dynamics.add_argument("path", type=Path)
     p_dynamics.add_argument("--output", "-o", type=Path, required=True)
     p_dynamics.set_defaults(func=_cmd_dynamics)
+
+    p_lcs = sub.add_parser(
+        "lcs", help="transform trial to canonical Visual3D Laboratory Coordinate System"
+    )
+    p_lcs.add_argument("path", type=Path, help="input trial file (.c3d, .csv, .3d)")
+    p_lcs.add_argument("--ap", default="+Y", help="AP (progression) direction, e.g. +Y, +Z, +X")
+    p_lcs.add_argument("--axial", default="+Z", help="Axial (vertical up) direction, e.g. +Z, +Y")
+    p_lcs.add_argument("--output", "-o", type=Path, required=True, help="output file path")
+    p_lcs.add_argument("--rate", type=float, default=100.0, help="sampling rate in Hz")
+    p_lcs.add_argument("--units", choices=("m", "cm", "mm"), default="m")
+    p_lcs.set_defaults(func=_cmd_lcs)
+
+    p_filter = sub.add_parser(
+        "filter", help="gap-fill and smooth trial trajectories (Butterworth, cubic, linear, etc.)"
+    )
+    p_filter.add_argument("path", type=Path, help="input trial file (.c3d, .csv, .3d)")
+    p_filter.add_argument(
+        "--interp",
+        choices=("none", "linear", "cubic", "nearest"),
+        default="linear",
+        help="gap filling method",
+    )
+    p_filter.add_argument(
+        "--max-gap", type=int, default=10, help="max consecutive frames to interpolate"
+    )
+    p_filter.add_argument(
+        "--smooth",
+        choices=("none", "butterworth", "median", "moving_average", "hampel"),
+        default="butterworth",
+        help="smoothing / filtering method",
+    )
+    p_filter.add_argument(
+        "--cutoff", type=float, default=6.0, help="Butterworth cutoff frequency in Hz"
+    )
+    p_filter.add_argument("--order", type=int, default=4, help="Butterworth filter order")
+    p_filter.add_argument(
+        "--window", type=int, default=5, help="window size for median/MA/Hampel filter"
+    )
+    p_filter.add_argument("--output", "-o", type=Path, required=True, help="output file path")
+    p_filter.add_argument("--rate", type=float, default=100.0, help="sampling rate in Hz")
+    p_filter.add_argument("--units", choices=("m", "cm", "mm"), default="m")
+    p_filter.set_defaults(func=_cmd_filter)
     return parser
 
 
@@ -236,6 +334,8 @@ def main(argv: list[str] | None = None) -> int:
         "dynamics",
         "blender",
         "bvh",
+        "lcs",
+        "filter",
         "-h",
         "--help",
     }

@@ -9,13 +9,14 @@ the two are asserted to agree on the golden fixture in
 """
 
 from .ezc3d_reader import read_c3d
-from .legacy_binary import AnalogData, C3DFile, PointData, read_c3d_file
+from .legacy_binary import AnalogData, C3DFile, PointData, extract_force_platforms, read_c3d_file
 from .legacy_binary import read_c3d as read_c3d_native
 
 __all__ = [
     "AnalogData",
     "C3DFile",
     "PointData",
+    "extract_force_platforms",
     "read_c3d",
     "read_c3d_file",
     "read_c3d_native",

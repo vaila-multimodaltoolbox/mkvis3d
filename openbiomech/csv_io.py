@@ -55,3 +55,17 @@ def read_wide_csv(path: str | Path, *, rate_hz: float = 100.0) -> MarkerTrial:
 
     residuals = np.zeros((n_frames, n_markers), dtype=np.float64)
     return MarkerTrial(labels=labels, rate_hz=rate_hz, xyz=xyz, residuals=residuals)
+
+
+def write_wide_csv(trial: MarkerTrial, path: str | Path) -> None:
+    """Export MarkerTrial to wide CSV format (frame, p1_x, p1_y, p1_z, ...)."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    n_frames = trial.n_frames
+    cols: dict[str, np.ndarray] = {"frame": np.arange(1, n_frames + 1, dtype=int)}
+    for i, label in enumerate(trial.labels):
+        cols[f"{label}_x"] = trial.xyz[:, i, 0]
+        cols[f"{label}_y"] = trial.xyz[:, i, 1]
+        cols[f"{label}_z"] = trial.xyz[:, i, 2]
+    df = pd.DataFrame(cols)
+    df.to_csv(p, index=False)

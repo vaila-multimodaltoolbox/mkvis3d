@@ -21,6 +21,13 @@ let activeSkeletonTemplate = "none";
 let loadedCustomTemplate = null;
 let popoutWindows = {};
 
+// Visual3D LCS and Signal Conditioning State
+let rawLoadedXYZ = null;
+let currentLCS = { ap: "+Y", axial: "+Z" };
+let activeFilterConfig = null;
+let filterPreviewActive = false;
+let filterPreviewSeries = null;
+
 // Marker Appearance Palette (matching /home/preto/data/vaila/vaila/viewc3d.py)
 const MARKER_PALETTE = [
   { name: "Orange", hex: "#f97316" }, // [1.0, 0.65, 0.0] - Default in viewc3d.py
@@ -496,6 +503,11 @@ function drawPlot2() {
   drawSinglePlot(canvasG, gx, mode, $("plot2-readout"), 2);
 }
 
+function drawPlots() {
+  drawPlot1();
+  drawPlot2();
+}
+
 function getSeriesForMode(mode) {
   const isLight = currentTheme === "light";
   const colDistance = isLight ? "#b45309" : "#f2c875";
@@ -549,15 +561,31 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
       }
     }
   }
+
+  const isPlot1 = plotId === 1 || plotId === "panel-plot1";
+  const hasPreview = isPlot1 && filterPreviewActive && filterPreviewSeries && Array.isArray(filterPreviewSeries.values);
+  if (hasPreview) {
+    for (const v of filterPreviewSeries.values) {
+      if (Number.isFinite(v)) {
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+      }
+    }
+  }
+
   if (!Number.isFinite(lo)) return;
   const extent = Math.max(hi - lo, 0.001);
   const totalFrames = trial.xyz.length;
 
   if (readoutEl) {
-    const curVals = series.map(s => {
+    let curVals = series.map(s => {
       const v = s.values[frame];
       return `${s.name}: ${Number.isFinite(v) ? v.toFixed(3) : "—"}`;
     }).join("  |  ");
+    if (hasPreview) {
+      const pv = filterPreviewSeries.values[frame];
+      curVals += `  |  [Preview: ${Number.isFinite(pv) ? pv.toFixed(3) : "—"}]`;
+    }
     readoutEl.textContent = curVals;
   }
 
@@ -588,6 +616,29 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
       started = true;
     });
     gx.stroke();
+  }
+
+  // Overlay Live Filter Preview series as dashed line
+  if (hasPreview) {
+    gx.save();
+    gx.strokeStyle = isLight ? "#ea580c" : "#38bdf8";
+    gx.lineWidth = 2.0;
+    gx.setLineDash([5, 3]);
+    gx.beginPath();
+    let started = false;
+    filterPreviewSeries.values.forEach((d, i) => {
+      if (!Number.isFinite(d)) {
+        started = false;
+        return;
+      }
+      const x = 50 + i * (w - 65) / Math.max(1, totalFrames - 1);
+      const y = h - 16 - (d - lo) * (h - 34) / extent;
+      if (started) gx.lineTo(x, y);
+      else gx.moveTo(x, y);
+      started = true;
+    });
+    gx.stroke();
+    gx.restore();
   }
 
   gx.fillStyle = isLight ? "#64748b" : "#8298ad";
@@ -703,6 +754,8 @@ function saveSessionState() {
       theme: currentTheme,
       markerSize,
       markerColor,
+      currentLCS,
+      activeFilterConfig,
       plotHeight: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--plot-height").trim() : "170px"
     };
     sessionStorage.setItem("mkvis3d_session", JSON.stringify(state));
@@ -717,6 +770,13 @@ function restoreSessionState(data) {
     if (!raw) return;
     const state = JSON.parse(raw);
     if (!state || state.trialName !== data.name) return;
+
+    if (state.currentLCS && typeof state.currentLCS === "object" && state.currentLCS.ap && state.currentLCS.axial) {
+      currentLCS = state.currentLCS;
+    }
+    if (state.activeFilterConfig && typeof state.activeFilterConfig === "object") {
+      activeFilterConfig = state.activeFilterConfig;
+    }
 
     if (Number.isFinite(state.frame) && state.frame >= 0 && state.frame < data.xyz.length) {
       frame = state.frame;
@@ -772,6 +832,13 @@ function load(data) {
   activeMarkerIndex = 0;
   skeletonPairs = [];
 
+  // Deep copy raw coordinates for lossless LCS and filter transformations
+  rawLoadedXYZ = data.xyz.map(f => f.map(p => p ? [p[0], p[1], p[2]] : null));
+  currentLCS = { ap: "+Y", axial: "+Z" };
+  activeFilterConfig = null;
+  filterPreviewActive = false;
+  filterPreviewSeries = null;
+
   $("title").textContent = data.name;
   $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
   if ($("marker-count-badge")) $("marker-count-badge").textContent = `${data.labels.length} markers`;
@@ -798,6 +865,11 @@ function load(data) {
   fit();
   measure();
   restoreSessionState(data);
+  if (currentLCS.ap !== "+Y" || currentLCS.axial !== "+Z" || activeFilterConfig) {
+    recomputeTrialXYZ();
+  }
+  updateLCSUI();
+  updateFilterUI();
   saveSessionState();
   status("File loaded. Coordinates in meters; missing frames are preserved.");
 }
@@ -1171,7 +1243,7 @@ function setDistanceVisible(visible) {
     $("action-toggle-distance").textContent = (showDistance ? "✓ " : "  ") + "Distance Line (A–B)  D";
   }
   saveSessionState();
-  render();
+  draw();
 }
 
 if ($("chk-show-distance")) {
@@ -1188,6 +1260,11 @@ if ($("action-toggle-distance")) {
 // Subwindows Floating & Pop-out Manager
 // ==========================================
 let activeFloatingPanes = new Set();
+window.activeFloatingPanes = activeFloatingPanes;
+window.floatPane = floatPane;
+window.dockPane = dockPane;
+window.dockAllPanes = dockAllPanes;
+window.popoutPane = popoutPane;
 
 function toggleFloatPane(paneId) {
   if (activeFloatingPanes.has(paneId)) {
@@ -1948,6 +2025,16 @@ document.addEventListener("keydown", e => {
     toggleTheme();
     return;
   }
+  if (e.altKey && (e.key === "l" || e.key === "L")) {
+    e.preventDefault();
+    openLCSModal();
+    return;
+  }
+  if (e.altKey && (e.key === "f" || e.key === "F")) {
+    e.preventDefault();
+    openFilterModal();
+    return;
+  }
   if (!e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === "t" || e.key === "T")) {
     if ($("trail")) { $("trail").checked = !$("trail").checked; draw(); saveSessionState(); }
   }
@@ -2158,6 +2245,741 @@ function initVerticalSplitter() {
   });
 }
 
+// ============================================================================
+// Visual3D Laboratory Coordinate System (LCS) & Signal Conditioning Module
+// ============================================================================
+
+const DIRECTION_VECTORS = {
+  "+X": [1, 0, 0],
+  "-X": [-1, 0, 0],
+  "+Y": [0, 1, 0],
+  "-Y": [0, -1, 0],
+  "+Z": [0, 0, 1],
+  "-Z": [0, 0, -1]
+};
+
+const LCS_PRESETS = {
+  isb_default: { ap: "+Y", axial: "+Z", label: "ISB (+Z Up, +Y AP)" },
+  y_up_bvh: { ap: "+Z", axial: "+Y", label: "BVH / Unity (+Y Up, +Z AP)" },
+  y_up_threejs: { ap: "-Z", axial: "+Y", label: "Three.js (+Y Up, -Z AP)" },
+  x_up: { ap: "+Y", axial: "+X", label: "X-Up (+X Up, +Y AP)" },
+  walkway_x: { ap: "+X", axial: "+Z", label: "Walkway X (+Z Up, +X AP)" },
+  reverse_walkway: { ap: "-Y", axial: "+Z", label: "Reverse Walk (-Y AP)" }
+};
+
+function dot3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function cross3(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+  ];
+}
+
+function computeLCSMatrix(apKey, axialKey) {
+  const v_ap = DIRECTION_VECTORS[apKey];
+  const v_axial = DIRECTION_VECTORS[axialKey];
+  if (!v_ap || !v_axial) {
+    return { valid: false, error: "Invalid vector direction specified." };
+  }
+  const dot = dot3(v_ap, v_axial);
+  if (Math.abs(dot) > 1e-4) {
+    return { valid: false, error: `AP direction (${apKey}) and Axial direction (${axialKey}) must be orthogonal.` };
+  }
+  // Visual3D convention: ML = AP x AXIAL
+  const v_ml = cross3(v_ap, v_axial);
+  let mlName = "?";
+  for (const [name, vec] of Object.entries(DIRECTION_VECTORS)) {
+    if (Math.abs(vec[0] - v_ml[0]) < 1e-4 &&
+        Math.abs(vec[1] - v_ml[1]) < 1e-4 &&
+        Math.abs(vec[2] - v_ml[2]) < 1e-4) {
+      mlName = name;
+      break;
+    }
+  }
+
+  // Row 0 = v_ml, Row 1 = v_ap, Row 2 = v_axial
+  const R = [v_ml, v_ap, v_axial];
+  const det = R[0][0] * (R[1][1] * R[2][2] - R[1][2] * R[2][1]) -
+              R[0][1] * (R[1][0] * R[2][2] - R[1][2] * R[2][0]) +
+              R[0][2] * (R[1][0] * R[2][1] - R[1][1] * R[2][0]);
+
+  return { valid: true, R, mlName, det };
+}
+
+function applyLCSToXYZ(xyz, R) {
+  const nFrames = xyz.length;
+  const out = new Array(nFrames);
+  const r00 = R[0][0], r01 = R[0][1], r02 = R[0][2];
+  const r10 = R[1][0], r11 = R[1][1], r12 = R[1][2];
+  const r20 = R[2][0], r21 = R[2][1], r22 = R[2][2];
+
+  for (let f = 0; f < nFrames; f++) {
+    const framePts = xyz[f];
+    const nMarkers = framePts.length;
+    const newPts = new Array(nMarkers);
+    for (let m = 0; m < nMarkers; m++) {
+      const p = framePts[m];
+      if (p && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Number.isFinite(p[2])) {
+        const x = p[0], y = p[1], z = p[2];
+        newPts[m] = [
+          r00 * x + r01 * y + r02 * z,
+          r10 * x + r11 * y + r12 * z,
+          r20 * x + r21 * y + r22 * z
+        ];
+      } else {
+        newPts[m] = null;
+      }
+    }
+    out[f] = newPts;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// 1D Signal Processing Algorithms (Pure JavaScript, Zero External CDN)
+// ---------------------------------------------------------------------------
+
+function gapFill1D(series, method = "linear", maxGap = 0) {
+  const n = series.length;
+  const out = series.slice();
+  let i = 0;
+  while (i < n) {
+    if (out[i] !== null && Number.isFinite(out[i])) {
+      i++;
+      continue;
+    }
+    const gapStart = i;
+    while (i < n && (out[i] === null || !Number.isFinite(out[i]))) {
+      i++;
+    }
+    const gapEnd = i - 1;
+    const gapLen = gapEnd - gapStart + 1;
+
+    const i0 = gapStart - 1;
+    const i1 = gapEnd + 1;
+    const hasLeft = i0 >= 0 && out[i0] !== null && Number.isFinite(out[i0]);
+    const hasRight = i1 < n && out[i1] !== null && Number.isFinite(out[i1]);
+
+    if (maxGap > 0 && gapLen > maxGap) {
+      continue;
+    }
+    if (!hasLeft && !hasRight) {
+      continue;
+    }
+    if (!hasLeft) {
+      for (let k = gapStart; k <= gapEnd; k++) out[k] = out[i1];
+      continue;
+    }
+    if (!hasRight) {
+      for (let k = gapStart; k <= gapEnd; k++) out[k] = out[i0];
+      continue;
+    }
+
+    const y0 = out[i0], y1 = out[i1];
+    const dx = i1 - i0;
+
+    if (method === "nearest") {
+      const mid = (i0 + i1) / 2;
+      for (let k = gapStart; k <= gapEnd; k++) {
+        out[k] = k < mid ? y0 : y1;
+      }
+    } else if (method === "cubic" && i0 > 0 && i1 < n - 1) {
+      const prevIdx = i0 > 0 && Number.isFinite(out[i0 - 1]) ? i0 - 1 : i0;
+      const nextIdx = i1 < n - 1 && Number.isFinite(out[i1 + 1]) ? i1 + 1 : i1;
+      const m0 = (out[i1] - out[prevIdx]) / Math.max(1, i1 - prevIdx);
+      const m1 = (out[nextIdx] - out[i0]) / Math.max(1, nextIdx - i0);
+
+      for (let k = gapStart; k <= gapEnd; k++) {
+        const t = (k - i0) / dx;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const h00 = 2 * t3 - 3 * t2 + 1;
+        const h10 = t3 - 2 * t2 + t;
+        const h01 = -2 * t3 + 3 * t2;
+        const h11 = t3 - t2;
+        out[k] = h00 * y0 + h10 * dx * m0 + h01 * y1 + h11 * dx * m1;
+      }
+    } else {
+      // Linear default
+      for (let k = gapStart; k <= gapEnd; k++) {
+        const t = (k - i0) / dx;
+        out[k] = y0 + t * (y1 - y0);
+      }
+    }
+  }
+  return out;
+}
+
+function hampelFilter1D(series, windowSize = 7, nSigmas = 3.0) {
+  const n = series.length;
+  const out = series.slice();
+  const half = Math.floor(windowSize / 2);
+
+  for (let i = 0; i < n; i++) {
+    if (out[i] === null || !Number.isFinite(out[i])) continue;
+    const windowVals = [];
+    const wStart = Math.max(0, i - half);
+    const wEnd = Math.min(n - 1, i + half);
+    for (let k = wStart; k <= wEnd; k++) {
+      if (series[k] !== null && Number.isFinite(series[k])) {
+        windowVals.push(series[k]);
+      }
+    }
+    if (windowVals.length < 3) continue;
+    windowVals.sort((a, b) => a - b);
+    const midIdx = Math.floor(windowVals.length / 2);
+    const med = windowVals.length % 2 === 1
+      ? windowVals[midIdx]
+      : (windowVals[midIdx - 1] + windowVals[midIdx]) / 2;
+
+    const diffs = windowVals.map(v => Math.abs(v - med)).sort((a, b) => a - b);
+    const mad = diffs.length % 2 === 1
+      ? diffs[midIdx]
+      : (diffs[midIdx - 1] + diffs[midIdx]) / 2;
+
+    const threshold = 1.4826 * nSigmas * Math.max(mad, 1e-6);
+    if (Math.abs(series[i] - med) > threshold) {
+      out[i] = med;
+    }
+  }
+  return out;
+}
+
+function medianFilter1D(series, windowSize = 5) {
+  const n = series.length;
+  const filled = gapFill1D(series, "nearest", 0);
+  const out = new Array(n);
+  const half = Math.floor(windowSize / 2);
+
+  for (let i = 0; i < n; i++) {
+    const vals = [];
+    const wStart = Math.max(0, i - half);
+    const wEnd = Math.min(n - 1, i + half);
+    for (let k = wStart; k <= wEnd; k++) {
+      vals.push(filled[k]);
+    }
+    vals.sort((a, b) => a - b);
+    const mid = Math.floor(vals.length / 2);
+    out[i] = vals.length % 2 === 1 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+  }
+  return out;
+}
+
+function movingAverage1D(series, windowSize = 5) {
+  const n = series.length;
+  const filled = gapFill1D(series, "nearest", 0);
+  const out = new Array(n);
+  const half = Math.floor(windowSize / 2);
+
+  for (let i = 0; i < n; i++) {
+    let sum = 0, count = 0;
+    const wStart = Math.max(0, i - half);
+    const wEnd = Math.min(n - 1, i + half);
+    for (let k = wStart; k <= wEnd; k++) {
+      sum += filled[k];
+      count++;
+    }
+    out[i] = sum / count;
+  }
+  return out;
+}
+
+function butterworthLowpassZeroPhase(series, fs, cutoff = 6.0) {
+  const n = series.length;
+  if (n < 6) return series.slice();
+
+  // Gap-fill NaNs linearly before filtering to avoid boundary explosion
+  const filled = gapFill1D(series, "linear", 0);
+
+  const nyq = 0.5 * fs;
+  const fcClamped = Math.max(0.1, Math.min(cutoff, nyq * 0.95));
+  const wa = Math.tan(Math.PI * fcClamped / fs);
+
+  const a0 = 1.0 + Math.SQRT2 * wa + wa * wa;
+  const b0 = (wa * wa) / a0;
+  const b1 = 2.0 * b0;
+  const b2 = b0;
+  const a1 = 2.0 * (wa * wa - 1.0) / a0;
+  const a2 = (1.0 - Math.SQRT2 * wa + wa * wa) / a0;
+
+  // Odd reflection padding
+  const pad = Math.min(30, n - 1);
+  const totalLen = n + 2 * pad;
+  const padded = new Float64Array(totalLen);
+
+  for (let i = 0; i < pad; i++) {
+    padded[i] = 2 * filled[0] - filled[pad - i];
+  }
+  for (let i = 0; i < n; i++) {
+    padded[pad + i] = filled[i];
+  }
+  for (let i = 0; i < pad; i++) {
+    padded[pad + n + i] = 2 * filled[n - 1] - filled[n - 2 - i];
+  }
+
+  // Forward pass
+  const forward = new Float64Array(totalLen);
+  for (let i = 0; i < totalLen; i++) {
+    const x0 = padded[i];
+    const x1 = i > 0 ? padded[i - 1] : padded[0];
+    const x2 = i > 1 ? padded[i - 2] : padded[0];
+    const y1 = i > 0 ? forward[i - 1] : padded[0];
+    const y2 = i > 1 ? forward[i - 2] : padded[0];
+    forward[i] = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+  }
+
+  // Backward pass
+  const backward = new Float64Array(totalLen);
+  for (let i = totalLen - 1; i >= 0; i--) {
+    const x0 = forward[i];
+    const x1 = i < totalLen - 1 ? forward[i + 1] : forward[totalLen - 1];
+    const x2 = i < totalLen - 2 ? forward[i + 2] : forward[totalLen - 1];
+    const y1 = i < totalLen - 1 ? backward[i + 1] : forward[totalLen - 1];
+    const y2 = i < totalLen - 2 ? backward[i + 2] : forward[totalLen - 1];
+    backward[i] = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+  }
+
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = backward[pad + i];
+  }
+  return out;
+}
+
+function processSeries1D(series, fs, options) {
+  let cur = series.slice();
+  if (options.hampel) {
+    cur = hampelFilter1D(cur, options.hampelWindow || 7, options.hampelSigmas || 3.0);
+  }
+  if (options.interp && options.interp !== "none") {
+    cur = gapFill1D(cur, options.interp, options.maxGap || 0);
+  }
+  if (options.smooth === "butterworth") {
+    cur = butterworthLowpassZeroPhase(cur, fs, options.cutoff || 6.0);
+  } else if (options.smooth === "moving_average") {
+    cur = movingAverage1D(cur, options.windowSize || 5);
+  } else if (options.smooth === "median") {
+    cur = medianFilter1D(cur, options.windowSize || 5);
+  }
+  return cur;
+}
+
+function applyFilterToXYZ(xyz, fs, config) {
+  const nFrames = xyz.length;
+  if (nFrames === 0) return xyz;
+  const nMarkers = xyz[0].length;
+  const out = new Array(nFrames);
+  for (let f = 0; f < nFrames; f++) {
+    out[f] = new Array(nMarkers);
+  }
+
+  const markersToProcess = [];
+  if (config.scope === "active" && activeMarkerIndex >= 0 && activeMarkerIndex < nMarkers) {
+    markersToProcess.push(activeMarkerIndex);
+  } else {
+    for (let m = 0; m < nMarkers; m++) markersToProcess.push(m);
+  }
+
+  for (let m = 0; m < nMarkers; m++) {
+    if (!markersToProcess.includes(m)) {
+      for (let f = 0; f < nFrames; f++) {
+        const p = xyz[f][m];
+        out[f][m] = p ? [p[0], p[1], p[2]] : null;
+      }
+    }
+  }
+
+  for (const m of markersToProcess) {
+    const xRaw = new Array(nFrames);
+    const yRaw = new Array(nFrames);
+    const zRaw = new Array(nFrames);
+    for (let f = 0; f < nFrames; f++) {
+      const p = xyz[f][m];
+      if (p && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Number.isFinite(p[2])) {
+        xRaw[f] = p[0];
+        yRaw[f] = p[1];
+        zRaw[f] = p[2];
+      } else {
+        xRaw[f] = NaN;
+        yRaw[f] = NaN;
+        zRaw[f] = NaN;
+      }
+    }
+
+    const xProc = processSeries1D(xRaw, fs, config);
+    const yProc = processSeries1D(yRaw, fs, config);
+    const zProc = processSeries1D(zRaw, fs, config);
+
+    for (let f = 0; f < nFrames; f++) {
+      const x = xProc[f], y = yProc[f], z = zProc[f];
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+        out[f][m] = [x, y, z];
+      } else {
+        out[f][m] = null;
+      }
+    }
+  }
+
+  return out;
+}
+
+function recomputeTrialXYZ() {
+  if (!trial || !rawLoadedXYZ) return;
+
+  let workingXYZ = rawLoadedXYZ;
+
+  // Apply LCS
+  if (currentLCS.ap !== "+Y" || currentLCS.axial !== "+Z") {
+    const lcsRes = computeLCSMatrix(currentLCS.ap, currentLCS.axial);
+    if (lcsRes.valid) {
+      workingXYZ = applyLCSToXYZ(workingXYZ, lcsRes.R);
+    }
+  }
+
+  // Apply Filter
+  if (activeFilterConfig) {
+    workingXYZ = applyFilterToXYZ(workingXYZ, trial.rate_hz, activeFilterConfig);
+  }
+
+  trial.xyz = workingXYZ;
+  fit();
+  measure();
+  updateTable();
+  draw();
+  saveSessionState();
+}
+
+function updateLCSUI() {
+  const badge = $("lcs-active-badge");
+  if (!badge) return;
+  if (currentLCS.ap === "+Y" && currentLCS.axial === "+Z") {
+    badge.textContent = "LCS: ISB (+Y AP, +Z Axial)";
+    badge.style.color = "var(--text-muted)";
+  } else {
+    let label = `LCS: ${currentLCS.ap} AP, ${currentLCS.axial} Axial`;
+    for (const key in LCS_PRESETS) {
+      if (LCS_PRESETS[key].ap === currentLCS.ap && LCS_PRESETS[key].axial === currentLCS.axial) {
+        label = `LCS: ${LCS_PRESETS[key].label}`;
+        break;
+      }
+    }
+    badge.textContent = label;
+    badge.style.color = "var(--accent)";
+  }
+}
+
+function updateFilterUI() {
+  const badge = $("filter-status-badge");
+  const btnRevert = $("btn-revert-filter");
+  const btnDialogRevert = $("btn-dialog-revert-filter");
+
+  if (!badge) return;
+  if (activeFilterConfig) {
+    let desc = "";
+    if (activeFilterConfig.smooth === "butterworth") {
+      desc = `BW ${activeFilterConfig.cutoff}Hz`;
+    } else if (activeFilterConfig.smooth === "moving_average") {
+      desc = `MA (${activeFilterConfig.windowSize}f)`;
+    } else if (activeFilterConfig.smooth === "median") {
+      desc = `Median (${activeFilterConfig.windowSize}f)`;
+    } else {
+      desc = "Gap Fill";
+    }
+    if (activeFilterConfig.interp && activeFilterConfig.interp !== "none") {
+      desc += ` + ${activeFilterConfig.interp}`;
+    }
+    if (activeFilterConfig.scope === "active") {
+      desc += " [Active]";
+    }
+    badge.textContent = desc;
+    badge.style.color = "var(--accent)";
+    if (btnRevert) btnRevert.disabled = false;
+    if (btnDialogRevert) btnDialogRevert.disabled = false;
+  } else {
+    badge.textContent = "Raw";
+    badge.style.color = "var(--text-muted)";
+    if (btnRevert) btnRevert.disabled = true;
+    if (btnDialogRevert) btnDialogRevert.disabled = true;
+  }
+}
+
+function openLCSModal() {
+  const modal = $("modal-lcs");
+  if (!modal) return;
+  if ($("lcs-axial-select")) $("lcs-axial-select").value = currentLCS.axial;
+  if ($("lcs-ap-select")) $("lcs-ap-select").value = currentLCS.ap;
+  updateLCSFeedback();
+  modal.classList.add("open");
+}
+
+function closeLCSModal() {
+  const modal = $("modal-lcs");
+  if (modal) modal.classList.remove("open");
+}
+
+function updateLCSFeedback() {
+  const axial = $("lcs-axial-select") ? $("lcs-axial-select").value : "+Z";
+  const ap = $("lcs-ap-select") ? $("lcs-ap-select").value : "+Y";
+  const res = computeLCSMatrix(ap, axial);
+
+  const mlEl = $("lcs-ml-result");
+  const detEl = $("lcs-det-result");
+  const errEl = $("lcs-error-msg");
+  const btnApply = $("btn-apply-lcs");
+
+  if (res.valid) {
+    if (mlEl) mlEl.textContent = res.mlName;
+    if (detEl) {
+      detEl.textContent = `Right-Handed System (det = +${res.det.toFixed(1)})`;
+      detEl.style.color = "#22c55e";
+    }
+    if (errEl) errEl.style.display = "none";
+    if (btnApply) btnApply.disabled = false;
+  } else {
+    if (mlEl) mlEl.textContent = "Invalid (Collinear)";
+    if (detEl) {
+      detEl.textContent = "Cannot construct basis";
+      detEl.style.color = "#ef4444";
+    }
+    if (errEl) {
+      errEl.textContent = res.error;
+      errEl.style.display = "block";
+    }
+    if (btnApply) btnApply.disabled = true;
+  }
+
+  document.querySelectorAll(".btn-lcs-preset").forEach(btn => {
+    const p = LCS_PRESETS[btn.dataset.preset];
+    btn.classList.toggle("active", p && p.ap === ap && p.axial === axial);
+  });
+}
+
+function applyLCS(apKey, axialKey) {
+  const res = computeLCSMatrix(apKey, axialKey);
+  if (!res.valid) {
+    status(`LCS Error: ${res.error}`);
+    return;
+  }
+  currentLCS = { ap: apKey, axial: axialKey };
+  recomputeTrialXYZ();
+  updateLCSUI();
+  closeLCSModal();
+  status(`Laboratory Coordinate System (LCS) applied: AP=${apKey}, Axial=${axialKey}, ML=${res.mlName}.`);
+}
+
+function resetLCS() {
+  currentLCS = { ap: "+Y", axial: "+Z" };
+  if ($("lcs-axial-select")) $("lcs-axial-select").value = "+Z";
+  if ($("lcs-ap-select")) $("lcs-ap-select").value = "+Y";
+  updateLCSFeedback();
+  recomputeTrialXYZ();
+  updateLCSUI();
+  closeLCSModal();
+  status("Laboratory Coordinate System reset to standard ISB (+Y AP, +Z Axial).");
+}
+
+function getModalFilterConfig() {
+  const hampel = $("flt-hampel-enable") ? $("flt-hampel-enable").checked : false;
+  const hampelWindow = parseInt($("flt-hampel-window")?.value || "7", 10);
+  const hampelSigmas = parseFloat($("flt-hampel-sigmas")?.value || "3.0");
+  const interp = $("flt-interp-method")?.value || "linear";
+  const maxGap = parseInt($("flt-max-gap")?.value || "10", 10);
+  const smooth = $("flt-smooth-method")?.value || "butterworth";
+  const cutoff = parseFloat($("flt-cutoff-slider")?.value || "6.0");
+  const windowSize = parseInt($("flt-window-size")?.value || "5", 10);
+  const scopeEl = document.querySelector('input[name="flt-scope"]:checked');
+  const scope = scopeEl ? scopeEl.value : "all";
+
+  return {
+    hampel,
+    hampelWindow,
+    hampelSigmas,
+    interp,
+    maxGap,
+    smooth,
+    cutoff,
+    windowSize,
+    scope
+  };
+}
+
+function updateFilterPreview() {
+  if (!trial) return;
+  const previewCheck = $("flt-preview-check");
+  if (!previewCheck || !previewCheck.checked) {
+    filterPreviewActive = false;
+    filterPreviewSeries = null;
+    drawPlots();
+    return;
+  }
+
+  const config = getModalFilterConfig();
+  const mode = $("plot1-mode") ? $("plot1-mode").value : "active-z";
+
+  let rawValues = null;
+  if (mode === "active-z") {
+    rawValues = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
+  } else if (mode === "distance") {
+    rawValues = distances.slice();
+  } else if (mode === "active-xyz") {
+    rawValues = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
+  } else if (mode === "active-speed") {
+    const speedVals = [0];
+    for (let i = 1; i < trial.xyz.length; i++) {
+      const p = trial.xyz[i - 1][activeMarkerIndex], q = trial.xyz[i][activeMarkerIndex];
+      if (valid(p) && valid(q)) {
+        speedVals.push(Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) * trial.rate_hz);
+      } else {
+        speedVals.push(NaN);
+      }
+    }
+    rawValues = speedVals;
+  }
+
+  if (rawValues) {
+    const processed = processSeries1D(rawValues, trial.rate_hz, config);
+    filterPreviewSeries = {
+      name: "Candidate Filter",
+      color: currentTheme === "light" ? "#dc2626" : "#38bdf8",
+      values: processed
+    };
+    filterPreviewActive = true;
+  } else {
+    filterPreviewActive = false;
+    filterPreviewSeries = null;
+  }
+  drawPlots();
+}
+
+function openFilterModal() {
+  const modal = $("modal-filter");
+  if (!modal) return;
+  if (trial && $("flt-fs-readout")) $("flt-fs-readout").textContent = trial.rate_hz.toFixed(1);
+  if (trial && $("flt-nyq-readout")) $("flt-nyq-readout").textContent = (trial.rate_hz / 2).toFixed(1);
+  if (trial && trial.labels && trial.labels[activeMarkerIndex] && $("flt-active-marker-name")) {
+    $("flt-active-marker-name").textContent = trial.labels[activeMarkerIndex];
+  }
+  updateFilterPreview();
+  modal.classList.add("open");
+}
+
+function closeFilterModal() {
+  const modal = $("modal-filter");
+  if (modal) modal.classList.remove("open");
+  filterPreviewActive = false;
+  filterPreviewSeries = null;
+  drawPlots();
+}
+
+function applyFilter() {
+  const config = getModalFilterConfig();
+  activeFilterConfig = config;
+  closeFilterModal();
+  recomputeTrialXYZ();
+  updateFilterUI();
+  status(`Applied signal conditioning: ${activeFilterConfig.smooth} filter, gap-fill: ${activeFilterConfig.interp}.`);
+}
+
+function revertFilter() {
+  activeFilterConfig = null;
+  recomputeTrialXYZ();
+  updateFilterUI();
+  closeFilterModal();
+  status("Reverted trial trajectories to raw unfiltered data.");
+}
+
+function initLCSAndFilterControls() {
+  // Sidebar buttons
+  if ($("btn-open-lcs")) $("btn-open-lcs").onclick = openLCSModal;
+  if ($("btn-open-filter")) $("btn-open-filter").onclick = openFilterModal;
+  if ($("btn-quick-filter")) $("btn-quick-filter").onclick = () => {
+    activeFilterConfig = {
+      hampel: false,
+      interp: "linear",
+      maxGap: 10,
+      smooth: "butterworth",
+      cutoff: 6.0,
+      windowSize: 5,
+      scope: "all"
+    };
+    recomputeTrialXYZ();
+    updateFilterUI();
+    status("Applied Quick Smooth: Zero-phase 6 Hz Butterworth filter & linear gap-fill.");
+  };
+  if ($("btn-revert-filter")) $("btn-revert-filter").onclick = revertFilter;
+
+  // View & Options menu items
+  if ($("action-view-lcs")) $("action-view-lcs").onclick = openLCSModal;
+  if ($("action-view-filter")) $("action-view-filter").onclick = openFilterModal;
+  if ($("action-opt-lcs")) $("action-opt-lcs").onclick = openLCSModal;
+  if ($("action-opt-filter")) $("action-opt-filter").onclick = openFilterModal;
+
+  // LCS Dialog
+  if ($("btn-close-lcs")) $("btn-close-lcs").onclick = closeLCSModal;
+  if ($("btn-cancel-lcs")) $("btn-cancel-lcs").onclick = closeLCSModal;
+  if ($("btn-reset-lcs")) $("btn-reset-lcs").onclick = resetLCS;
+  if ($("btn-apply-lcs")) $("btn-apply-lcs").onclick = () => {
+    const axial = $("lcs-axial-select") ? $("lcs-axial-select").value : "+Z";
+    const ap = $("lcs-ap-select") ? $("lcs-ap-select").value : "+Y";
+    applyLCS(ap, axial);
+  };
+  if ($("lcs-axial-select")) $("lcs-axial-select").onchange = updateLCSFeedback;
+  if ($("lcs-ap-select")) $("lcs-ap-select").onchange = updateLCSFeedback;
+
+  document.querySelectorAll(".btn-lcs-preset").forEach(btn => {
+    btn.onclick = () => {
+      const p = LCS_PRESETS[btn.dataset.preset];
+      if (p) {
+        if ($("lcs-axial-select")) $("lcs-axial-select").value = p.axial;
+        if ($("lcs-ap-select")) $("lcs-ap-select").value = p.ap;
+        updateLCSFeedback();
+      }
+    };
+  });
+
+  // Filter Dialog
+  if ($("btn-close-filter")) $("btn-close-filter").onclick = closeFilterModal;
+  if ($("btn-cancel-filter")) $("btn-cancel-filter").onclick = closeFilterModal;
+  if ($("btn-apply-filter")) $("btn-apply-filter").onclick = applyFilter;
+  if ($("btn-dialog-revert-filter")) $("btn-dialog-revert-filter").onclick = revertFilter;
+
+  if ($("flt-cutoff-slider")) {
+    $("flt-cutoff-slider").oninput = () => {
+      const v = parseFloat($("flt-cutoff-slider").value);
+      if ($("flt-cutoff-val")) $("flt-cutoff-val").textContent = `${v.toFixed(1)} Hz`;
+      updateFilterPreview();
+    };
+  }
+
+  if ($("flt-smooth-method")) {
+    $("flt-smooth-method").onchange = () => {
+      const val = $("flt-smooth-method").value;
+      if (val === "butterworth") {
+        if ($("flt-cutoff-group")) $("flt-cutoff-group").style.display = "block";
+        if ($("flt-window-group")) $("flt-window-group").style.display = "none";
+      } else if (val === "moving_average" || val === "median") {
+        if ($("flt-cutoff-group")) $("flt-cutoff-group").style.display = "none";
+        if ($("flt-window-group")) $("flt-window-group").style.display = "block";
+      } else {
+        if ($("flt-cutoff-group")) $("flt-cutoff-group").style.display = "none";
+        if ($("flt-window-group")) $("flt-window-group").style.display = "none";
+      }
+      updateFilterPreview();
+    };
+  }
+
+  for (const id of ["flt-hampel-enable", "flt-hampel-window", "flt-hampel-sigmas", "flt-interp-method", "flt-max-gap", "flt-window-size", "flt-preview-check"]) {
+    if ($(id)) $(id).onchange = updateFilterPreview;
+  }
+  document.querySelectorAll('input[name="flt-scope"]').forEach(r => {
+    r.onchange = updateFilterPreview;
+  });
+}
+
 $("open-panel").hidden = !boot.server;
 
 // Initial loading: check inlined trial, then check server active trial
@@ -2173,6 +2995,7 @@ if (boot.trial) {
 }
 
 initMarkerControls();
+initLCSAndFilterControls();
 initVerticalSplitter();
 resize();
 setTheme(currentTheme);

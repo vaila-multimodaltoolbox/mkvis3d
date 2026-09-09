@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..marker_trial import MarkerTrial
+from ..marker_trial import ForcePlatform, MarkerTrial
 from .binary_stream import ByteOrder, C3DParseError
 from .header import BLOCK_SIZE, C3DHeader, parse_header
 from .parameters import Group, parse_parameters
@@ -261,6 +261,159 @@ def read_c3d_file(path: str | Path) -> C3DFile:
     )
 
 
+def extract_force_platforms(
+    parsed: C3DFile, point_factor: float, *, f_threshold: float = 15.0
+) -> list[ForcePlatform]:
+    """Extract and calibrate physical force platforms from a parsed C3D file.
+
+    Follows the BTK / Visual3D / Shimba (1984) formulation for Type-2 (AMTI / Bertec)
+    6-component force plates, transforming Center of Pressure (COP) and Ground
+    Reaction Force (GRF) into the global laboratory frame.
+    """
+    if "FORCE_PLATFORM" not in parsed.groups or not parsed.analog or parsed.analog.n_channels == 0:
+        return []
+
+    fp_grp = parsed.groups["FORCE_PLATFORM"]
+    used_val = fp_grp.get("USED")
+    if used_val is None:
+        return []
+    n_used = int(np.atleast_1d(used_val.value)[0])
+    if n_used <= 0:
+        return []
+
+    corners_val = fp_grp.get("CORNERS")
+    origin_val = fp_grp.get("ORIGIN")
+    channel_val = fp_grp.get("CHANNEL")
+    type_val = fp_grp.get("TYPE")
+    if corners_val is None or channel_val is None or type_val is None:
+        return []
+
+    corners = np.asarray(corners_val.value, dtype=np.float64) * point_factor
+    if corners.ndim == 2:
+        corners = corners[:, :, np.newaxis]
+    elif corners.ndim == 1:
+        corners = corners.reshape((3, 4, -1), order="F")
+
+    origin = (
+        np.asarray(origin_val.value if origin_val is not None else 0.0, dtype=np.float64)
+        * point_factor
+    )
+    if origin.ndim == 1 and origin.size == 3 * corners.shape[2]:
+        origin = origin.reshape((3, -1), order="F")
+    elif origin.ndim == 1:
+        origin = origin[:, np.newaxis]
+
+    channel = np.asarray(channel_val.value, dtype=np.int64)
+    if channel.ndim == 1:
+        channel = channel.reshape((-1, corners.shape[2]), order="F")
+
+    types = np.atleast_1d(np.asarray(type_val.value, dtype=np.int64))
+
+    analog_units = _group_values(parsed.groups, "ANALOG", "UNITS")
+    analog_vals = parsed.analog.values
+    n_frames = parsed.points.n_frames
+    if analog_vals.ndim == 3 and analog_vals.shape[1] > 0:
+        analog_by_frame = analog_vals.mean(axis=1)
+    else:
+        analog_by_frame = analog_vals.reshape(n_frames, -1)
+
+    platforms: list[ForcePlatform] = []
+    for p in range(min(n_used, corners.shape[2])):
+        c = corners[:, :, p]
+        diag = np.linalg.norm(c[:, 0] - c[:, 2])
+        # Filter out degenerate/dummy plates (e.g. tiny 0.02m placeholders in some lab setups)
+        if (
+            diag < 0.05
+            or np.linalg.norm(c[:, 0] - c[:, 1]) < 1e-6
+            or np.linalg.norm(c[:, 0] - c[:, 3]) < 1e-6
+        ):
+            continue
+
+        ptype = int(types[p]) if p < len(types) else 2
+        ch_raw = channel[:, p] if p < channel.shape[1] else []
+        ch_indices = [int(x) - 1 for x in ch_raw if int(x) > 0]
+        if len(ch_indices) < 6 or max(ch_indices) >= parsed.analog.n_channels:
+            continue
+
+        # Detect moment units: C3D often stores moments in N*mm
+        m_scale = 1.0
+        if analog_units is not None and len(analog_units) > ch_indices[3]:
+            unit_str = str(analog_units[ch_indices[3]]).strip().upper()
+            if "MM" in unit_str:
+                m_scale = 0.001
+            elif "CM" in unit_str:
+                m_scale = 0.01
+
+        f_local = analog_by_frame[:, ch_indices[:3]]
+        m_local = analog_by_frame[:, ch_indices[3:6]] * m_scale
+        orig = origin[:, p] if p < origin.shape[1] else np.zeros(3)
+
+        x0, y0, z0 = orig[0], orig[1], orig[2]
+        fx, fy, fz = f_local[:, 0], f_local[:, 1], f_local[:, 2]
+        mx, my, mz = m_local[:, 0], m_local[:, 1], m_local[:, 2]
+
+        # Origin offset moment correction (README §3.5.2 / BTK)
+        mx_s = mx + fy * z0 - fz * y0
+        my_s = my - fx * z0 + fz * x0
+        mz_s = mz + fx * y0 - fy * x0
+
+        sNF = fx**2 + fy**2 + fz**2
+        contact = np.abs(fz) >= f_threshold
+        denom = sNF * fz
+        safe = contact & (np.abs(denom) > 1e-9) & (sNF > 1e-9)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            px = np.where(
+                safe,
+                (fy * mz_s - fz * my_s) / sNF - (fx**2 * my_s - fx * (fy * mx_s)) / denom,
+                0.0,
+            )
+            py = np.where(
+                safe,
+                (fz * mx_s - fx * mz_s) / sNF - (fx * (fy * my_s) - fy**2 * mx_s) / denom,
+                0.0,
+            )
+            pz = np.zeros_like(px)
+
+        p_local = np.stack([px, py, pz], axis=-1)
+
+        # Plate orientation matrix R and surface center t from corners (m)
+        col0 = c[:, 0] - c[:, 1]
+        col0 = col0 / np.linalg.norm(col0)
+        col2 = np.cross(col0, c[:, 0] - c[:, 3])
+        col2 = col2 / np.linalg.norm(col2)
+        col1 = np.cross(col2, col0)
+        R = np.column_stack([col0, col1, col2])
+        t = (c[:, 0] + c[:, 2]) / 2.0
+
+        cop_global = p_local @ R.T + t
+        cop_global[~contact] = np.nan
+
+        # Ground Reaction Force (reaction upwards against gravity)
+        grf_global = f_local @ R.T
+        grf_global[~contact] = 0.0
+
+        m_free_local = np.stack([mx_s, my_s, mz_s], axis=-1) - np.cross(p_local, f_local)
+        moment_global = m_free_local @ R.T
+        moment_global[~contact] = 0.0
+
+        platforms.append(
+            ForcePlatform(
+                id=p,
+                name=f"FP{len(platforms) + 1}",
+                plate_type=ptype,
+                corners=c.T,
+                origin=orig,
+                channels=tuple(ch_indices),
+                cop=cop_global,
+                force=grf_global,
+                moment=moment_global,
+                contact=contact,
+            )
+        )
+    return platforms
+
+
 def read_c3d(path: str | Path) -> MarkerTrial:
     """Read marker trajectories from a C3D file without the `ezc3d` dependency.
 
@@ -285,9 +438,17 @@ def read_c3d(path: str | Path) -> MarkerTrial:
     if units not in factors:
         raise ValueError(f"unsupported or missing POINT:UNITS: {units!r}; expected m, cm, mm")
     factor = factors[units]
+
+    force_plates = extract_force_platforms(parsed, factor)
+    analog_labels = parsed.analog.labels if parsed.analog else ()
+    analog_rate_hz = float(parsed.analog.rate_hz) if parsed.analog else 0.0
+
     return MarkerTrial(
         labels=parsed.point_labels,
         rate_hz=float(parsed.header.point_rate_hz),
         xyz=parsed.points.as_xyz().astype(np.float64) * factor,
         residuals=np.where(parsed.points.residual < 0, -1.0, parsed.points.residual * factor),
+        force_plates=force_plates,
+        analog_labels=analog_labels,
+        analog_rate_hz=analog_rate_hz,
     )

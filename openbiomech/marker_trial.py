@@ -7,14 +7,43 @@ without caring which reader produced them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
 
 @dataclass
+class ForcePlatform:
+    """Calibrated physical force platform and its ground reaction wrenches.
+
+    Attributes:
+        id: 0-based platform index.
+        name: platform label, e.g. "FP1".
+        plate_type: C3D force platform type (e.g. 2 for Bertec/AMTI 6-component).
+        corners: (4, 3) float64 array of corner coordinates in meters (global frame).
+        origin: (3,) float64 array of origin offset in meters.
+        channels: 0-based analog channel indices assigned to this platform.
+        cop: (n_frames, 3) float64 array of Center of Pressure in meters (global frame).
+        force: (n_frames, 3) float64 array of Ground Reaction Force in Newtons (global frame).
+        moment: (n_frames, 3) float64 array of free moment in N*m (global frame).
+        contact: (n_frames,) boolean array indicating active foot contact (|Fz| >= threshold).
+    """
+
+    id: int
+    name: str
+    plate_type: int
+    corners: np.ndarray
+    origin: np.ndarray
+    channels: tuple[int, ...]
+    cop: np.ndarray
+    force: np.ndarray
+    moment: np.ndarray
+    contact: np.ndarray
+
+
+@dataclass
 class MarkerTrial:
-    """A single motion-capture trial's marker trajectories.
+    """A single motion-capture trial's marker trajectories and force platforms.
 
     Attributes:
         labels: marker names, e.g. ("p1", "p2", ..., "p70").
@@ -24,12 +53,18 @@ class MarkerTrial:
         residuals: (n_frames, n_markers) float64 array of C3D-style
             reconstruction residuals; NaN or 0.0 when the source format
             (e.g. plain CSV) does not carry residual information.
+        force_plates: optional list of calibrated ForcePlatform objects.
+        analog_labels: optional tuple of analog channel names.
+        analog_rate_hz: optional analog sampling frequency in Hz.
     """
 
     labels: tuple[str, ...]
     rate_hz: float
     xyz: np.ndarray
     residuals: np.ndarray
+    force_plates: list[ForcePlatform] = field(default_factory=list)
+    analog_labels: tuple[str, ...] = ()
+    analog_rate_hz: float = 0.0
 
     @property
     def n_frames(self) -> int:

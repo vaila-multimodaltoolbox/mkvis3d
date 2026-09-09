@@ -1,4 +1,13 @@
-from .filtering import butterworth_filter
+from .filtering import (
+    butterworth_filter,
+    gap_fill,
+    gap_fill_1d,
+    hampel_filter,
+    median_filter,
+    moving_average,
+    process_marker_trial,
+)
+from .lcs import LCS_PRESETS, compute_lcs_matrix, transform_trial_lcs
 from .rigid_body import KabschResult, kabsch
 from .rotations import (
     canonicalize_quat,
@@ -19,7 +28,16 @@ from .rotations import (
 from .splines import SmoothingSpline, fit_smoothing_spline, smooth_derivatives
 
 __all__ = [
+    "LCS_PRESETS",
+    "compute_lcs_matrix",
+    "transform_trial_lcs",
     "butterworth_filter",
+    "gap_fill",
+    "gap_fill_1d",
+    "hampel_filter",
+    "median_filter",
+    "moving_average",
+    "process_marker_trial",
     "canonicalize_quat",
     "cardan_singularity_margin",
     "cardan_to_rotmat",

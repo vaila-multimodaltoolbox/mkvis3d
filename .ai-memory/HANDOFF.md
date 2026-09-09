@@ -1,0 +1,19 @@
+# Session Handoff: Cross-Platform Executables and mkvis3d.py Entrypoint
+- **Status:** Completed
+- **Current State:**
+  - `mkvis3d_launcher.sh` path bug fixed (changed `dirname "${BASH_SOURCE[0]}"/..` to `dirname "${BASH_SOURCE[0]}"`).
+  - `mkvis3d.py` implemented as the primary executable entrypoint with auto-bootstrapping into `.venv`, supporting GUI mode (no-args/double-click), direct file loading (`./mkvis3d.py trial.c3d`), and all 10 CLI subcommands (`info`, `segment`, `view`, `gui`, `blender`, `bvh`, `demo`, `dynamics`, `lcs`, `filter`).
+  - `run_app.py` kept as a backward-compatibility wrapper delegating to `mkvis3d.py`.
+  - Multiplatform root launchers provided: `mkvis3d_launcher.sh` (Linux), `mkvis3d.bat` (Windows), `mkvis3d.command` (macOS).
+  - Standalone Linux binary compiled and verified at `dist/mkvis3d` (76MB ELF binary with all hidden imports).
+  - Automated GitHub Actions CI workflow created at `.github/workflows/build_executables.yml` building native executables on `ubuntu-latest`, `windows-latest`, and `macos-latest` on tag push or workflow dispatch.
+- **What Worked:**
+  - `mkvis3d.py` auto-detects virtualenv and re-executes seamlessly with `sys.executable` if run via system Python.
+  - Linux binary `dist/mkvis3d` rebuilt with `scripts/build_app.py` and PyInstaller, including `openbiomech.biomech_math.lcs`, `openbiomech.biomech_math.filtering`, and `scipy.signal`.
+  - All test suites passing: 188 unit tests and 3 cross-browser Playwright tests (Chrome, Chromium, Firefox).
+  - Ruff lint and formatting pass with 0 errors.
+- **Failed Approaches:**
+  - `mkvis3d_launcher.sh` originally used `DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"`, navigating outside the project directory when placed in root. Corrected to current script directory.
+  - PyInstaller does not support cross-compiling Windows `.exe` or macOS `.app` directly on a Linux host (due to platform-specific C libraries and dynamic linkers); solved cleanly by adding a multi-runner GitHub Actions CI workflow.
+- **Open Questions & Next Steps:**
+  - When releasing new versions, push a git tag (e.g. `v0.1.0`) to trigger GitHub Actions CI build and automatically generate downloadable binaries for Windows, macOS, and Linux.
