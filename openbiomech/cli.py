@@ -370,7 +370,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except (OSError, ValueError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if isinstance(exc, FileNotFoundError) and exc.filename:
+            print(f"error: file not found: {exc.filename}", file=sys.stderr)
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return 1
 
 

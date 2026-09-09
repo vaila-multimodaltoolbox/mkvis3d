@@ -230,6 +230,21 @@ uv run python scripts/build_app.py
 # Windows -> dist/mkvis3d.exe
 ```
 
+### Windows portable executable
+
+On a Windows development machine, double-click `scripts\build_windows.bat`
+or run the command above. Give the resulting `dist\mkvis3d.exe` to the user;
+it does not require Python, `uv`, or the source tree on their computer.
+
+The user starts mkvis3d by double-clicking the executable. A terminal window
+remains open while the local viewer runs in the default browser. To finish,
+choose **File → Encerrar mkvis3d** in the viewer or close the terminal window.
+
+An unsigned build may show Microsoft Defender SmartScreen on first launch.
+Only when the file came from a trusted source, the user can choose **More
+info → Run anyway**. Avoiding that warning for public distribution requires
+signing the executable with a trusted Windows code-signing certificate.
+
 `.github/workflows/build_executables.yml` runs the same script on
 `ubuntu-latest`/`macos-latest`/`windows-latest` for every push to `main` and
 every `v*` tag, uploading `mkvis3d-linux-x86_64`,

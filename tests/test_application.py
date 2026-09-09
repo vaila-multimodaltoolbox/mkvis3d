@@ -204,6 +204,42 @@ def test_local_gui_upload_matches_cli_and_rejects_missing_token(tmp_path):
         thread.join(timeout=5)
 
 
+def test_gui_shutdown_requires_session_token_and_stops_server():
+    server, url = create_server()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    try:
+        connection.request("POST", "/api/shutdown")
+        response = connection.getresponse()
+        assert response.status == 403
+        response.read()
+
+        connection.request(
+            "POST",
+            "/api/shutdown",
+            headers={"Authorization": f"Bearer {url.split('#')[1]}"},
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        assert json.loads(response.read()) == {"status": "shutting down"}
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+    finally:
+        connection.close()
+        server.server_close()
+
+
+def test_shutdown_action_is_hidden_in_standalone_viewer():
+    standalone_html = render_viewer()
+    server_html = render_viewer(server=True)
+
+    assert 'id="action-shutdown" hidden' in standalone_html
+    assert '"server": false' in standalone_html
+    assert '"server": true' in server_html
+    assert 'if (boot.server && $("action-shutdown"))' in server_html
+
+
 def test_gui_vaila_project_round_trip_and_analog_c3d_export(tmp_path):
     trial = MarkerTrial(
         labels=("p1",),
