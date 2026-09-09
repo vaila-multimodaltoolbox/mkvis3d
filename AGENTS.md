@@ -14,3 +14,5 @@ Follow `.ai-memory/PROTOCOL.md` throughout the task. In particular, update the
 handoff when work completes or the session ends, obtain user approval before
 recording a newly discovered durable project fact, never use placeholder or
 truncated implementations, and provide reproducible verification.
+
+**Importante sobre Git**: NÃO execute comandos de `git add`, `git commit` ou `git push` ao finalizar tarefas. Deixe as ações de commit e push para o usuário realizar manualmente.
