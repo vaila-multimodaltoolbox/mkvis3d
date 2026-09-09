@@ -878,6 +878,8 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <div class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</div>
       <div class="dropdown-item" id="action-export-bvh">Export Biovision Hierarchy (.bvh)...</div>
       <div class="dropdown-item" id="action-export-html">Save Standalone HTML Viewer...</div>
+      <div class="dropdown-item" id="action-export-kinematics-csv">Export Kinematics CSV (Bases, MR, Euler, Quat)...</div>
+      <div class="dropdown-item" id="action-export-kinematics-py">Export Kinematics Python Pipeline (.py)...</div>
       <div class="dropdown-divider" id="shutdown-divider" hidden=""></div>
       <div class="dropdown-item" id="action-shutdown" hidden="">Encerrar mkvis3d</div>
       <button id="export" hidden="" style="display:none" aria-hidden="true"></button>
@@ -905,9 +907,10 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <div class="dropdown-item" id="action-theme-dark">✓ Dark Mode (Escuro)</div>
       <div class="dropdown-item" id="action-theme-light">  Light Mode (Claro)</div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Reference System &amp; Processing</div>
-      <div class="dropdown-item" id="action-view-lcs">📐 Reference System &amp; Origin...</div>
-      <div class="dropdown-item" id="action-view-filter">🌊 Smooth, Filter &amp; Gap Fill...</div>
+      <div class="dropdown-header">Reference System &amp; Kinematics</div>
+      <div class="dropdown-item" id="action-view-kinematics">📐 Segment Bases &amp; Kinematics... <span class="shortcut-hint">Alt+K</span></div>
+      <div class="dropdown-item" id="action-view-lcs">📐 Reference System &amp; Origin... <span class="shortcut-hint">Alt+L</span></div>
+      <div class="dropdown-item" id="action-view-filter">🌊 Smooth, Filter &amp; Gap Fill... <span class="shortcut-hint">Alt+F</span></div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-item" id="action-view-shortcuts">Keyboard &amp; Mouse Controls <span class="shortcut-hint">F1 / ?</span></div>
     </div>
@@ -922,6 +925,8 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <div class="dropdown-item" id="action-win-plot2">Plot Window 2</div>
       <div class="dropdown-item" id="action-win-table">Marker Inspector Table</div>
       <div class="dropdown-item" id="action-win-video">Reference Video</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item" id="action-win-kinematics" style="font-weight: 600; color: var(--accent);">📐 Segment Bases (s1, s2, sg) &amp; Kinematics... <span class="shortcut-hint">Alt+K</span></div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Subwindow Pop-out &amp; Float — pick what a new window shows</div>
       <div class="dropdown-item" id="action-float-plot1">↗ Float Plot Window 1</div>
@@ -944,6 +949,23 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <div class="dropdown-item" id="preset-full">Full Analysis (3D + Plot + Table)</div>
       <div class="dropdown-item" id="preset-video">3D + Video (Split)</div>
       <div class="dropdown-item" id="preset-3d">3D Maximized (Focus)</div>
+    </div>
+  </div>
+
+  <!-- Kinematics Menu -->
+  <div class="menu-item" id="menu-kinematics">
+    <button class="menu-btn" aria-haspopup="true" style="color: var(--accent); font-weight: 700;">📐 Kinematics ▾</button>
+    <div class="dropdown-menu">
+      <div class="dropdown-header">Segment Reference Systems &amp; Motion</div>
+      <div class="dropdown-item" id="action-kinematics-modal" style="font-weight: 600;">📐 Segment Bases (s1, s2, sg) &amp; Kinematics... <span class="shortcut-hint">Alt+K</span></div>
+      <div class="dropdown-item" id="action-kinematics-virtual-pts">✨ Create Virtual Points (NumPy)...</div>
+      <div class="dropdown-item" id="action-kinematics-bases-tab">⚙️ Configure Cartesian Bases (s1, s2, sg)...</div>
+      <div class="dropdown-item" id="action-kinematics-live-tab">📊 Live Relative Kinematics (MR, Euler, Quat)...</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Timeline Curves &amp; Export</div>
+      <div class="dropdown-item" id="action-kinematics-plot-euler">📈 Plot Kinematics Curves on Timeline</div>
+      <div class="dropdown-item" id="action-kinematics-export-csv">📄 Export Kinematics CSV...</div>
+      <div class="dropdown-item" id="action-kinematics-export-py">🐍 Export Python Pipeline Script (.py)...</div>
     </div>
   </div>
 
@@ -970,8 +992,9 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <div class="dropdown-item" id="action-dec-marker-size">Decrease Marker Size <span class="shortcut-hint">-</span></div>
       <div class="dropdown-item" id="action-reset-marker-style">Reset Marker Style</div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Reference System</div>
-      <div class="dropdown-item" id="action-opt-lcs">📐 Reference System &amp; Origin...</div>
+      <div class="dropdown-header">Kinematics &amp; Reference System</div>
+      <div class="dropdown-item" id="action-opt-kinematics">📐 Segment Bases &amp; Kinematics... <span class="shortcut-hint">Alt+K</span></div>
+      <div class="dropdown-item" id="action-opt-lcs">📐 Reference System &amp; Origin... <span class="shortcut-hint">Alt+L</span></div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Signal Conditioning</div>
       <div class="dropdown-item" id="action-opt-filter">🌊 Smooth, Filter &amp; Gap Fill...</div>
@@ -1053,9 +1076,32 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             <label style="margin: 0 0 2px;">Distance</label>
             <button id="btn-toggle-distance" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Disable</button>
           </div>
-          <div id="distance" class="metric-val" style="opacity: 1;">0.0612 m</div>
+          <div id="distance" class="metric-val" style="opacity: 1;">0.0608 m</div>
         </div>
       </div>
+    </section>
+
+    <!-- Segment Bases & Kinematics (Prominent at top of Sidebar) -->
+    <section class="sidebar-section" style="border-left: 3px solid var(--accent); background: rgba(56, 189, 248, 0.04);">
+      <div class="sidebar-header">
+        <span style="font-weight: 700;">Segment Kinematics</span>
+        <span id="kinematics-status-badge" style="font-size: 10px; color: var(--accent); font-weight: 600;">Not configured</span>
+      </div>
+      <button id="btn-open-kinematics" type="button" class="btn-sidebar-main" style="width: 100%; margin-top: 4px; padding: 8px 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+        <span style="font-size: 14px;">📐</span> <span>Segment Bases &amp; Kinematics</span>
+      </button>
+      <div style="display: flex; gap: 4px; margin-top: 6px;">
+        <button id="btn-sidebar-vp-quick" type="button" style="flex: 1; font-size: 11px; padding: 4px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); color: var(--text-normal); border-radius: 4px; cursor: pointer;" title="Create new virtual point">
+          ✨ New Point
+        </button>
+        <button id="btn-sidebar-plot-euler" type="button" style="flex: 1; font-size: 11px; padding: 4px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); color: var(--text-normal); border-radius: 4px; cursor: pointer;" title="Plot Euler curves on timeline">
+          📈 Plot Curves
+        </button>
+      </div>
+      <input id="file-analysis" type="file" accept=".json,.csv" hidden="">
+      <button id="btn-attach-analysis" type="button" style="width: 100%; margin-top: 6px; font-size: 10px; padding: 3px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 4px; cursor: pointer;">
+        Attach Analysis JSON/CSV
+      </button>
     </section>
 
     <!-- Marker Appearance & Style (like viewc3d.py) -->
@@ -1129,21 +1175,6 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           <button id="btn-create-com" type="button">Create CoM</button>
         </div>
       </div>
-    </section>
-
-    <!-- Segment Bases & Kinematics -->
-    <section class="sidebar-section">
-      <div class="sidebar-header">
-        <span>Segment Kinematics</span>
-        <span id="kinematics-status-badge" style="font-size: 10px; color: var(--text-muted);">Not configured</span>
-      </div>
-      <button id="btn-open-kinematics" type="button" class="btn-sidebar-main" style="width: 100%; margin-top: 4px; padding: 7px 8px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer;">
-        <span>📐</span> <span>Segment Bases &amp; Kinematics</span>
-      </button>
-      <input id="file-analysis" type="file" accept=".json,.csv" hidden="">
-      <button id="btn-attach-analysis" type="button" style="width: 100%; margin-top: 6px; font-size: 11px; padding: 4px 8px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); color: var(--text-normal); border-radius: 4px; cursor: pointer;">
-        Attach Analysis JSON/CSV
-      </button>
     </section>
 
     <!-- Force Platforms & Kinetics (Visual3D & Mokka Parity) -->
@@ -1262,6 +1293,9 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             <span>● 3D Viewport</span>
           </div>
           <div class="pane-tools">
+            <button type="button" class="btn-pane-tool primary" id="btn-win-header-kinematics" title="Segment Bases (s1, s2, sg) &amp; Kinematics (Alt+K)" style="background: var(--accent); color: #fff; font-weight: 700; padding: 2px 10px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2);">
+              <span>📐</span><span>Bases &amp; Kinematics (s1, s2, sg)</span>
+            </button>
             <span style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Orbit: Drag | Pan: Shift+Drag | Zoom: Wheel</span>
             <button type="button" class="btn-pane-tool" id="btn-refresh-3d" title="Fast 3D Viewport Refresh (re-sync canvas, layout reflow, and camera fit)">↻ Refresh 3D</button>
             <button class="btn-pane-tool btn-popout" data-pane="panel-3d" title="Pop Out 3D View to New Window (Multi-Monitor)">⧉</button>
@@ -1303,6 +1337,9 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             </div>
           </div>
           <div class="pane-tools">
+            <button type="button" class="btn-pane-tool" id="btn-plot-kinematics" title="Open Kinematics &amp; Euler Curves (Alt+K)" style="cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+              <span>📐</span><span>Kinematics</span>
+            </button>
             <span id="plot1-gap-badge" class="gap-badge ok" style="display: none;" title="Trajectory gaps in active marker">✓ 100%</span>
             <span id="plot1-readout" class="plot-readout">Distance: 0.061</span>
             <div id="plot1-interp-tools" class="interp-tools-group" style="display: none; align-items: center; gap: 4px;">
@@ -1432,7 +1469,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <button id="btn-offset-reset" class="btn-pane-tool" style="font-size: 10px; padding: 1px 5px; height: 20px;" title="Reset offset to 0">0</button>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
-              <span id="video-frame-info" style="font-family: monospace; font-size: 11px;">109 / 631 · 1.080s</span>
+              <span id="video-frame-info" style="font-family: monospace; font-size: 11px;">110 / 631 · 1.090s</span>
               <span id="video-sync-badge" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(148, 163, 184, 0.15); color: rgb(148, 163, 184); font-weight: 600;">No Video</span>
             </div>
           </div>
@@ -1453,7 +1490,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 
       <div id="timeline-wrap">
         <input id="timeline" type="range" min="0" max="630" value="0" aria-label="Frame timeline">
-        <span id="frame">109 / 631 · 1.080 s / 6.300 s</span>
+        <span id="frame">110 / 631 · 1.090 s / 6.300 s</span>
       </div>
 
       <div style="display: flex; align-items: center; gap: 6px;">
@@ -1496,6 +1533,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div><span class="key-cap">C</span></div><div>Cycle marker color (11 colors from viewc3d)</div>
         <div><span class="key-cap">+</span> / <span class="key-cap">-</span></div><div>Increase / decrease marker size</div>
         <div><span class="key-cap">Alt + T</span></div><div>Toggle Light / Dark theme mode</div>
+        <div><span class="key-cap">Alt + K</span></div><div>Open Segment Bases &amp; Kinematics dialog</div>
         <div><span class="key-cap">Alt + L</span></div><div>Open Reference System &amp; Origin dialog</div>
         <div><span class="key-cap">Alt + F</span></div><div>Open Signal Filtering &amp; Gap Fill dialog</div>
         <div><span class="key-cap">Esc</span></div><div>Close open dialog / modal window</div>
@@ -8680,7 +8718,58 @@ if __name__ == "__main__":
 }
 
 function initKinematicsControls() {
-  if ($("btn-open-kinematics")) $("btn-open-kinematics").onclick = openKinematicsModal;
+  const openKinematicsTab = tabName => {
+    openKinematicsModal();
+    if (tabName) {
+      document.querySelectorAll(".kinematics-tab-btn").forEach(b => b.classList.remove("active"));
+      const tabBtn = document.querySelector(`.kinematics-tab-btn[data-tab="${tabName}"]`);
+      if (tabBtn) tabBtn.classList.add("active");
+      document.querySelectorAll(".kinematics-tab-panel").forEach(p => (p.hidden = true));
+      const activePanel = $(`tab-content-${tabName}`);
+      if (activePanel) activePanel.hidden = false;
+    }
+  };
+
+  if ($("btn-open-kinematics")) $("btn-open-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("btn-win-header-kinematics")) $("btn-win-header-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("btn-plot-kinematics")) $("btn-plot-kinematics").onclick = () => openKinematicsTab("live");
+  if ($("btn-sidebar-vp-quick")) $("btn-sidebar-vp-quick").onclick = () => openKinematicsTab("virtual");
+
+  if ($("action-win-kinematics")) $("action-win-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("action-opt-kinematics")) $("action-opt-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("action-view-kinematics")) $("action-view-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("action-kinematics-modal")) $("action-kinematics-modal").onclick = () => openKinematicsTab("bases");
+  if ($("action-kinematics-virtual-pts")) $("action-kinematics-virtual-pts").onclick = () => openKinematicsTab("virtual");
+  if ($("action-kinematics-bases-tab")) $("action-kinematics-bases-tab").onclick = () => openKinematicsTab("bases");
+  if ($("action-kinematics-live-tab")) $("action-kinematics-live-tab").onclick = () => openKinematicsTab("live");
+
+  const plotEulerOnTimeline = () => {
+    if (!kinematicsConfig.computed) {
+      status("Compute kinematics first or configure bases in the Kinematics window.", true);
+      openKinematicsTab("bases");
+      return;
+    }
+    if ($("plot1-mode")) {
+      let opt = $("plot1-mode").querySelector('option[value="kinematics-euler"]');
+      if (!opt) {
+        opt = document.createElement("option");
+        opt.value = "kinematics-euler";
+        opt.textContent = "Relative Kinematics · Euler Angles (s1 -> s2)";
+        $("plot1-mode").appendChild(opt);
+      }
+      $("plot1-mode").value = "kinematics-euler";
+      drawSinglePlot("graph", $("plot1-mode").value);
+      status("Plot 1 now displaying Relative Kinematics Euler angles.");
+    }
+  };
+
+  if ($("btn-sidebar-plot-euler")) $("btn-sidebar-plot-euler").onclick = plotEulerOnTimeline;
+  if ($("action-kinematics-plot-euler")) $("action-kinematics-plot-euler").onclick = plotEulerOnTimeline;
+  if ($("action-kinematics-export-csv")) $("action-kinematics-export-csv").onclick = exportKinematicsCSV;
+  if ($("action-kinematics-export-py")) $("action-kinematics-export-py").onclick = () => openKinematicsTab("export");
+  if ($("action-export-kinematics-csv")) $("action-export-kinematics-csv").onclick = exportKinematicsCSV;
+  if ($("action-export-kinematics-py")) $("action-export-kinematics-py").onclick = () => openKinematicsTab("export");
+
   if ($("btn-close-kinematics")) $("btn-close-kinematics").onclick = closeKinematicsModal;
 
   document.querySelectorAll(".kinematics-tab-btn").forEach(btn => {

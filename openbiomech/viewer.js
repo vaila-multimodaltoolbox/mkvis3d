@@ -6566,7 +6566,58 @@ if __name__ == "__main__":
 }
 
 function initKinematicsControls() {
-  if ($("btn-open-kinematics")) $("btn-open-kinematics").onclick = openKinematicsModal;
+  const openKinematicsTab = tabName => {
+    openKinematicsModal();
+    if (tabName) {
+      document.querySelectorAll(".kinematics-tab-btn").forEach(b => b.classList.remove("active"));
+      const tabBtn = document.querySelector(`.kinematics-tab-btn[data-tab="${tabName}"]`);
+      if (tabBtn) tabBtn.classList.add("active");
+      document.querySelectorAll(".kinematics-tab-panel").forEach(p => (p.hidden = true));
+      const activePanel = $(`tab-content-${tabName}`);
+      if (activePanel) activePanel.hidden = false;
+    }
+  };
+
+  if ($("btn-open-kinematics")) $("btn-open-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("btn-win-header-kinematics")) $("btn-win-header-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("btn-plot-kinematics")) $("btn-plot-kinematics").onclick = () => openKinematicsTab("live");
+  if ($("btn-sidebar-vp-quick")) $("btn-sidebar-vp-quick").onclick = () => openKinematicsTab("virtual");
+
+  if ($("action-win-kinematics")) $("action-win-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("action-opt-kinematics")) $("action-opt-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("action-view-kinematics")) $("action-view-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("action-kinematics-modal")) $("action-kinematics-modal").onclick = () => openKinematicsTab("bases");
+  if ($("action-kinematics-virtual-pts")) $("action-kinematics-virtual-pts").onclick = () => openKinematicsTab("virtual");
+  if ($("action-kinematics-bases-tab")) $("action-kinematics-bases-tab").onclick = () => openKinematicsTab("bases");
+  if ($("action-kinematics-live-tab")) $("action-kinematics-live-tab").onclick = () => openKinematicsTab("live");
+
+  const plotEulerOnTimeline = () => {
+    if (!kinematicsConfig.computed) {
+      status("Compute kinematics first or configure bases in the Kinematics window.", true);
+      openKinematicsTab("bases");
+      return;
+    }
+    if ($("plot1-mode")) {
+      let opt = $("plot1-mode").querySelector('option[value="kinematics-euler"]');
+      if (!opt) {
+        opt = document.createElement("option");
+        opt.value = "kinematics-euler";
+        opt.textContent = "Relative Kinematics · Euler Angles (s1 -> s2)";
+        $("plot1-mode").appendChild(opt);
+      }
+      $("plot1-mode").value = "kinematics-euler";
+      drawSinglePlot("graph", $("plot1-mode").value);
+      status("Plot 1 now displaying Relative Kinematics Euler angles.");
+    }
+  };
+
+  if ($("btn-sidebar-plot-euler")) $("btn-sidebar-plot-euler").onclick = plotEulerOnTimeline;
+  if ($("action-kinematics-plot-euler")) $("action-kinematics-plot-euler").onclick = plotEulerOnTimeline;
+  if ($("action-kinematics-export-csv")) $("action-kinematics-export-csv").onclick = exportKinematicsCSV;
+  if ($("action-kinematics-export-py")) $("action-kinematics-export-py").onclick = () => openKinematicsTab("export");
+  if ($("action-export-kinematics-csv")) $("action-export-kinematics-csv").onclick = exportKinematicsCSV;
+  if ($("action-export-kinematics-py")) $("action-export-kinematics-py").onclick = () => openKinematicsTab("export");
+
   if ($("btn-close-kinematics")) $("btn-close-kinematics").onclick = closeKinematicsModal;
 
   document.querySelectorAll(".kinematics-tab-btn").forEach(btn => {
