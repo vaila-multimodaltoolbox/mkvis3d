@@ -799,11 +799,11 @@ function draw() {
   drawPlot2();
   updateTable();
 
-  // Synchronize any popped out subwindows
-  syncPopoutContent("panel-plot1");
-  syncPopoutContent("panel-plot2");
-  syncPopoutContent("panel-table");
-  syncPopoutContent("panel-3d");
+  // Synchronize any popped out subwindows, including keyed mosaic tiles
+  // (e.g. "panel-3d#1", "panel-3d#2" — see tileMosaicViews()).
+  for (const paneId of Object.keys(popoutWindows)) {
+    syncPopoutContent(paneId);
+  }
 }
 
 // Plot caching to avoid expensive calculations every animation frame
@@ -1823,6 +1823,31 @@ function dockAllPanes() {
   }
 }
 
+// Opens `count` independent, frame-synced 3D-view pop-out windows tiled
+// side by side across the available screen (2-up: left/right halves;
+// 4-up: 2x2 grid). Each tile is a keyed instance ("panel-3d#1", "panel-3d#2",
+// ...) of the same panel-3d pop-out content used by popoutPane() — they
+// have no backing DOM pane (see paneBaseType()) and stay in sync purely
+// through the existing per-frame syncPopoutContent() broadcast in draw().
+function tileMosaicViews(count = 2) {
+  if (!trial) {
+    status("Nenhum trial carregado para abrir o mosaico de janelas.", true);
+    return;
+  }
+  const cols = count <= 2 ? count : 2;
+  const rows = Math.ceil(count / cols);
+  const availW = screen.availWidth || window.screen.width || 1600;
+  const availH = screen.availHeight || window.screen.height || 900;
+  const tileW = Math.floor(availW / cols);
+  const tileH = Math.floor(availH / rows);
+  for (let i = 0; i < count; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const placement = { left: col * tileW, top: row * tileH, width: tileW, height: tileH };
+    popoutPane(`panel-3d#${i + 1}`, placement);
+  }
+}
+
 function initDraggablePane(pane) {
   const header = pane.querySelector(".pane-header");
   if (!header || header.dataset.dragInit) return;
@@ -1865,24 +1890,41 @@ function initDraggablePane(pane) {
   header.addEventListener("pointercancel", stopDrag);
 }
 
-function popoutPane(paneId) {
-  if (activeFloatingPanes.has(paneId)) {
+// Pane ids can be a plain pane ("panel-3d") backed by a real DOM element, or
+// a keyed extra instance ("panel-3d#1", "panel-3d#2", ...) used by
+// tileMosaicViews() for mosaic tiling — those share the same window content
+// (canvas type, controls) as their base type but have no backing DOM pane
+// to detach/restore.
+function paneBaseType(paneId) {
+  return paneId.split("#")[0];
+}
+
+function popoutPane(paneId, placement = null) {
+  const baseType = paneBaseType(paneId);
+  const isPrimaryInstance = paneId === baseType;
+
+  if (isPrimaryInstance && activeFloatingPanes.has(paneId)) {
     dockPane(paneId);
   }
-  const pane = $(paneId);
-  if (!pane) return;
+  const pane = isPrimaryInstance ? $(paneId) : null;
+  if (isPrimaryInstance && !pane) return;
 
   if (popoutWindows[paneId] && !popoutWindows[paneId].closed) {
     popoutWindows[paneId].focus();
     return;
   }
 
-  const titleText = pane.querySelector(".pane-title") ? pane.querySelector(".pane-title").innerText.replace(/^[●\s]+/, "") : paneId;
+  const titleText = pane && pane.querySelector(".pane-title")
+    ? pane.querySelector(".pane-title").innerText.replace(/^[●\s]+/, "")
+    : (baseType === "panel-3d" ? `Visão 3D · ${paneId}` : paneId);
 
-  const popWin = window.open("", `mkvis3d_popout_${paneId}`, "width=820,height=520,resizable=yes,scrollbars=yes");
+  const features = placement
+    ? `left=${placement.left},top=${placement.top},width=${placement.width},height=${placement.height},resizable=yes,scrollbars=yes`
+    : "width=820,height=520,resizable=yes,scrollbars=yes";
+  const popWin = window.open("", `mkvis3d_popout_${paneId}`, features);
   if (!popWin) {
     status("Pop-up bloqueado pelo navegador. Abrindo em janela flutuante interna.");
-    floatPane(paneId);
+    if (isPrimaryInstance) floatPane(paneId);
     return;
   }
 
@@ -1966,7 +2008,7 @@ function popoutPane(paneId) {
   <div class="pop-header">
     <div class="pop-header-left">
       <span class="pop-title">● ${titleText}</span>
-      ${paneId === "panel-plot1" || paneId === "panel-plot2" ? `
+      ${baseType === "panel-plot1" || baseType === "panel-plot2" ? `
         <select id="pop-plot-mode" class="pop-select" title="Modo do Gráfico">
           <option value="distance">Distance (Marker A to B)</option>
           <option value="active-z">Active Marker · Z Position (Height)</option>
@@ -1993,7 +2035,7 @@ function popoutPane(paneId) {
   doc.close();
 
   const container = doc.getElementById("pop-body-container");
-  if (paneId === "panel-plot1" || paneId === "panel-plot2") {
+  if (baseType === "panel-plot1" || baseType === "panel-plot2") {
     const popCanvas = doc.createElement("canvas");
     popCanvas.id = "pop-canvas";
     popCanvas.className = "plot-canvas";
@@ -2030,7 +2072,7 @@ function popoutPane(paneId) {
 
     // Link mode selector
     const popMode = doc.getElementById("pop-plot-mode");
-    const origMode = paneId === "panel-plot1" ? $("plot1-mode") : $("plot2-mode");
+    const origMode = baseType === "panel-plot1" ? $("plot1-mode") : $("plot2-mode");
     if (popMode && origMode) {
       popMode.value = origMode.value;
       popMode.onchange = () => {
@@ -2039,7 +2081,7 @@ function popoutPane(paneId) {
         saveSessionState();
       };
     }
-  } else if (paneId === "panel-3d") {
+  } else if (baseType === "panel-3d") {
     const pop3d = doc.createElement("canvas");
     pop3d.id = "pop-3d-canvas";
     pop3d.style.display = "block";
@@ -2080,7 +2122,7 @@ function popoutPane(paneId) {
       draw();
       e.preventDefault();
     }, { passive: false });
-  } else if (paneId === "panel-table") {
+  } else if (baseType === "panel-table") {
     const wrap = doc.createElement("div");
     wrap.className = "table-wrap";
     wrap.innerHTML = `
@@ -2147,20 +2189,22 @@ function popoutPane(paneId) {
     syncPopoutContent(paneId);
   });
 
-  pane.classList.add("detached-pane");
-  const origBody = pane.querySelector(".pane-body");
-  let ph = pane.querySelector(".detached-placeholder");
-  if (!ph) {
-    ph = document.createElement("div");
-    ph.className = "detached-placeholder";
-    ph.id = `detached-ph-${paneId}`;
-    ph.innerHTML = `
-      <p><strong>${titleText}</strong> está destacada em uma janela independente.</p>
-      <button type="button" onclick="restorePoppedOutPane('${paneId}')">↙ Reanexar</button>
-    `;
-    pane.appendChild(ph);
+  if (pane) {
+    pane.classList.add("detached-pane");
+    const origBody = pane.querySelector(".pane-body");
+    let ph = pane.querySelector(".detached-placeholder");
+    if (!ph) {
+      ph = document.createElement("div");
+      ph.className = "detached-placeholder";
+      ph.id = `detached-ph-${paneId}`;
+      ph.innerHTML = `
+        <p><strong>${titleText}</strong> está destacada em uma janela independente.</p>
+        <button type="button" onclick="restorePoppedOutPane('${paneId}')">↙ Reanexar</button>
+      `;
+      pane.appendChild(ph);
+    }
+    if (origBody) origBody.style.display = "none";
   }
-  if (origBody) origBody.style.display = "none";
 
   const reDockBtn = doc.getElementById("btn-pop-redock");
   if (reDockBtn) {
@@ -2177,13 +2221,16 @@ function popoutPane(paneId) {
 }
 
 function restorePoppedOutPane(paneId) {
+  // Keyed mosaic instances (e.g. "panel-3d#1") have no backing DOM pane to
+  // restore, but their popup window must still be closed unconditionally.
   const pane = $(paneId);
-  if (!pane) return;
-  pane.classList.remove("detached-pane");
-  const ph = $(`detached-ph-${paneId}`);
-  if (ph) ph.remove();
-  const origBody = pane.querySelector(".pane-body");
-  if (origBody) origBody.style.display = "";
+  if (pane) {
+    pane.classList.remove("detached-pane");
+    const ph = $(`detached-ph-${paneId}`);
+    if (ph) ph.remove();
+    const origBody = pane.querySelector(".pane-body");
+    if (origBody) origBody.style.display = "";
+  }
   if (popoutWindows[paneId] && !popoutWindows[paneId].closed) {
     try { popoutWindows[paneId].close(); } catch (_) {}
   }
@@ -2195,6 +2242,7 @@ function syncPopoutContent(paneId) {
   const popWin = popoutWindows[paneId];
   if (!popWin || popWin.closed || !popWin.document) return;
   const doc = popWin.document;
+  const baseType = paneBaseType(paneId);
 
   // Sync player transport
   if (trial) {
@@ -2215,10 +2263,10 @@ function syncPopoutContent(paneId) {
     }
   }
 
-  if (paneId === "panel-plot1" || paneId === "panel-plot2") {
+  if (baseType === "panel-plot1" || baseType === "panel-plot2") {
     const popCanvas = doc.getElementById("pop-canvas");
     const popReadout = doc.getElementById("pop-readout");
-    const origModeEl = paneId === "panel-plot1" ? $("plot1-mode") : $("plot2-mode");
+    const origModeEl = baseType === "panel-plot1" ? $("plot1-mode") : $("plot2-mode");
     const mode = origModeEl ? origModeEl.value : "distance";
     const popMode = doc.getElementById("pop-plot-mode");
     if (popMode && popMode.value !== mode) {
@@ -2237,7 +2285,7 @@ function syncPopoutContent(paneId) {
         drawSinglePlot(popCanvas, popCtx, mode, popReadout, paneId);
       }
     }
-  } else if (paneId === "panel-3d") {
+  } else if (baseType === "panel-3d") {
     const pop3d = doc.getElementById("pop-3d-canvas");
     if (pop3d && pop3d.parentElement && trial) {
       const rect = pop3d.parentElement.getBoundingClientRect();
@@ -2252,7 +2300,7 @@ function syncPopoutContent(paneId) {
         drawSceneToContext(popCtx, rect.width, rect.height);
       }
     }
-  } else if (paneId === "panel-table") {
+  } else if (baseType === "panel-table") {
     const tbody = doc.getElementById("pop-marker-table-body");
     if (tbody && trial) {
       const pts = trial.xyz[frame] || [];
@@ -2307,6 +2355,8 @@ if ($("action-popout-plot1")) $("action-popout-plot1").onclick = () => popoutPan
 if ($("action-float-table")) $("action-float-table").onclick = () => toggleFloatPane("panel-table");
 if ($("action-popout-table")) $("action-popout-table").onclick = () => popoutPane("panel-table");
 if ($("action-dock-all")) $("action-dock-all").onclick = dockAllPanes;
+if ($("action-mosaic-2")) $("action-mosaic-2").onclick = () => tileMosaicViews(2);
+if ($("action-mosaic-4")) $("action-mosaic-4").onclick = () => tileMosaicViews(4);
 
 // Blender and BVH exports
 function exportBlenderPythonScript() {
