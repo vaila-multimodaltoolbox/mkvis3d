@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mkvis3d — User Manual & Biomechanics Theory Guide</title>
+  <style>
+    :root {
+      --bg-main: #0b1320;
+      --bg-panel: #111e33;
+      --bg-panel-alt: #162640;
+      --bg-card: #182b48;
+      --border-color: #243b61;
+      --text-normal: #d8e3f2;
+      --text-muted: #8ca3c7;
+      --text-bright: #ffffff;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --accent-alpha: rgba(56, 189, 248, 0.12);
+      --code-bg: #070d17;
+      --success: #22c55e;
+      --warning: #f59e0b;
+    }
+    [data-theme="light"] {
+      --bg-main: #f8fafc;
+      --bg-panel: #ffffff;
+      --bg-panel-alt: #f1f5f9;
+      --bg-card: #e2e8f0;
+      --border-color: #cbd5e1;
+      --text-normal: #1e293b;
+      --text-muted: #64748b;
+      --text-bright: #0f172a;
+      --accent: #0284c7;
+      --accent-hover: #0369a1;
+      --accent-alpha: rgba(2, 132, 199, 0.1);
+      --code-bg: #f1f5f9;
+      --success: #16a34a;
+      --warning: #d97706;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg-main);
+      color: var(--text-normal);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    #sidebar {
+      width: 300px;
+      min-width: 260px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-bright);
+    }
+    .brand span.badge {
+      font-size: 10px;
+      background: var(--accent-alpha);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 1px 6px;
+      border-radius: 10px;
+    }
+    .search-box {
+      position: relative;
+    }
+    .search-box input {
+      width: 100%;
+      padding: 8px 10px 8px 30px;
+      background: var(--bg-main);
+      border: 1px solid var(--border-color);
+      color: var(--text-normal);
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+    }
+    .search-box input:focus { border-color: var(--accent); }
+    .search-box .icon {
+      position: absolute;
+      left: 9px;
+      top: 9px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    #toc-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 8px;
+    }
+    .toc-item {
+      display: block;
+      padding: 7px 10px;
+      border-radius: 5px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      margin-bottom: 2px;
+      transition: all 0.15s ease;
+    }
+    .toc-item:hover {
+      background: var(--bg-panel-alt);
+      color: var(--text-normal);
+    }
+    .toc-item.active {
+      background: var(--accent-alpha);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    #content-wrap {
+      flex: 1;
+      height: 100%;
+      overflow-y: auto;
+      padding: 32px 48px;
+      scroll-behavior: smooth;
+    }
+    .content-container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .top-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .btn {
+      padding: 6px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border-color);
+      background: var(--bg-panel);
+      color: var(--text-normal);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+    }
+    .btn:hover { background: var(--bg-panel-alt); border-color: var(--accent); }
+    h1 { font-size: 28px; font-weight: 800; color: var(--text-bright); margin-bottom: 10px; }
+    h2 { font-size: 20px; font-weight: 700; color: var(--text-bright); margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+    h3 { font-size: 16px; font-weight: 600; color: var(--accent); margin: 24px 0 10px; }
+    h4 { font-size: 14px; font-weight: 600; color: var(--text-bright); margin: 16px 0 8px; }
+    p { margin-bottom: 14px; }
+    ul, ol { margin-bottom: 14px; padding-left: 24px; }
+    li { margin-bottom: 6px; }
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--accent);
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 14px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      position: relative;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 12px;
+      color: var(--text-normal);
+    }
+    .math-block {
+      background: var(--bg-card);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      margin: 14px 0;
+      border-radius: 0 6px 6px 0;
+      font-family: "Cambria Math", "Latin Modern Math", serif;
+      font-size: 15px;
+      overflow-x: auto;
+    }
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid var(--border-color);
+      padding: 8px 12px;
+      text-align: left;
+    }
+    th {
+      background: var(--bg-panel-alt);
+      color: var(--text-bright);
+      font-weight: 600;
+    }
+    tr:nth-child(even) { background: var(--bg-panel); }
+    .key-cap {
+      display: inline-block;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-bottom: 2px solid var(--accent);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 11px;
+      font-family: monospace;
+      font-weight: 600;
+      color: var(--text-bright);
+    }
+    .badge-ok {
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--success);
+      border: 1px solid var(--success);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    @media print {
+      body { height: auto; overflow: visible; background: #fff; color: #000; }
+      #sidebar { display: none; }
+      #content-wrap { padding: 0; overflow: visible; }
+    }
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      #sidebar { width: 100%; height: 200px; }
+      #content-wrap { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Left Sidebar Navigation -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="brand">
+        <span>mkvis3d</span>
+        <span class="badge">MANUAL</span>
+      </div>
+      <div class="search-box">
+        <span class="icon">🔍</span>
+        <input type="text" id="manual-search-input" placeholder="Search theory, formulas, shortcuts...">
+      </div>
+    </div>
+    <nav id="toc-list">
+      <a href="#ch1" class="toc-item active">1. Overview & Architecture</a>
+      <a href="#ch2" class="toc-item">2. Coordinate Systems & Bases</a>
+      <a href="#ch3" class="toc-item">3. Relative Kinematics (MR, Euler)</a>
+      <a href="#ch4" class="toc-item">4. Virtual Points (NumPy)</a>
+      <a href="#ch5" class="toc-item">5. Filtering & Interpolation</a>
+      <a href="#ch6" class="toc-item">6. Center of Mass (de Leva)</a>
+      <a href="#ch7" class="toc-item">7. Force Plates & Kinetics</a>
+      <a href="#ch8" class="toc-item">8. Visualization & Multi-Window</a>
+      <a href="#ch9" class="toc-item">9. Exports & CLI Automation</a>
+      <a href="#ch10" class="toc-item">10. Tutorials & Kwon3D Parity</a>
+      <a href="#shortcuts" class="toc-item">11. Keyboard Shortcuts</a>
+    </nav>
+  </aside>
+
+  <!-- Main Content Container -->
+  <main id="content-wrap">
+    <div class="content-container">
+      
+      <div class="top-actions">
+        <div style="font-size: 12px; color: var(--text-muted);">
+          OpenBiomech Project · Verified against Kwon3D & Visual3D Standards
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-theme-toggle" class="btn" title="Toggle Light/Dark Theme">🌙 Theme</button>
+          <button onclick="window.print()" class="btn" title="Print Manual or Save as PDF">🖨️ Print / PDF</button>
+        </div>
+      </div>
+
+      <!-- Chapter 1 -->
+      <section id="ch1" class="manual-section">
+        <h1>mkvis3d — User Manual & Biomechanics Theory Guide</h1>
+        <p>
+          Welcome to <strong>mkvis3d</strong> (package <code>openbiomech</code>), a reproducible, open-source biomechanical analysis suite and 3D motion viewer designed as a high-performance, modern alternative to <strong>C-Motion Visual3D</strong>, <strong>BTK Mokka</strong>, and <strong>Kwon3D</strong>.
+        </p>
+        <div class="card">
+          <h3 style="margin-top: 0;">Key Capabilities</h3>
+          <ul>
+            <li><strong>Complete C3D I/O:</strong> Reads and writes binary C3D files (Intel, DEC VAX, MIPS; float and integer) preserving 3D markers, analog force channels, EMG, and parameter groups.</li>
+            <li><strong>Cartesian Bases (s1, s2, sg):</strong> 3-point segment coordinate system construction with strict Gram-Schmidt orthonormalization.</li>
+            <li><strong>Live Relative Kinematics:</strong> Real-time rotation matrix <code>MR = sg · s1^T · s2 · sg^T</code>, Cardan/Euler angles across all 6 Tait-Bryan sequences, and scalar-first quaternions.</li>
+            <li><strong>Virtual Point Creator:</strong> Create anatomical joint centers using standard NumPy vector syntax with reusable pipeline scripts.</li>
+            <li><strong>Signal Conditioning:</strong> Zero-phase 4th-order Butterworth low-pass filtering and 1-click PCHIP monotonic gap filling.</li>
+            <li><strong>Kinetics:</strong> Types 1–5 force platform calibration, Center of Pressure (COP), and bottom-up recursive Newton-Euler inverse dynamics.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Chapter 2 -->
+      <section id="ch2" class="manual-section">
+        <h2>2. Biomechanical Coordinate Systems & Orthonormal Bases</h2>
+        <p>
+          In classical motion analysis (Kwon3D, Visual3D, ISB), defining segment movement requires constructing <strong>Local Segment Coordinate Systems (LCS / SCS)</strong> and relating them to the <strong>Global Reference System (GRF)</strong>.
+        </p>
+        
+        <h3>2.1 Global System (sg) vs Local Systems (s1, s2)</h3>
+        <ul>
+          <li><strong>Global Reference System (sg):</strong> The laboratory world frame. By default, it is the canonical 3x3 identity matrix <code>[I 3x3]</code> (where Z is Vertical Up, X is Anterior, Y is Lateral).</li>
+          <li><strong>Proximal System (s1):</strong> The local coordinate system of the parent segment (e.g. Pelvis or Thigh).</li>
+          <li><strong>Distal System (s2):</strong> The local coordinate system of the child segment (e.g. Thigh or Shank).</li>
+        </ul>
+
+        <h3>2.2 3-Point Basis Construction & Gram-Schmidt Orthonormalization</h3>
+        <p>A Cartesian basis is built from three non-collinear markers: <strong>Origin</strong> (r_orig), <strong>Primary Axis</strong> (r_prim), and <strong>Plane Point</strong> (r_plane):</p>
+        
+        <div class="math-block">
+          v_prim = r_prim - r_orig<br>
+          v_plane = r_plane - r_orig<br>
+          e_prim = v_prim / ||v_prim||<br>
+          v_ortho = v_plane - (v_plane · e_prim) e_prim<br>
+          e_sec = v_ortho / ||v_ortho||<br>
+          e_tert = e_prim × e_sec
+        </div>
+        
+        <p>
+          Each axis versor is explicitly divided by its Euclidean norm. mkvis3d strictly verifies that:
+          <br><span class="badge-ok">✓ ||ex|| = 1.000, ||ey|| = 1.000, ||ez|| = 1.000</span>
+          <br><span class="badge-ok">✓ Mutual 90.0° orthogonality: ei · ej = 0</span>
+          <br><span class="badge-ok">✓ Right-handed parity: det([ex, ey, ez]) = +1.000</span>
+        </p>
+      </section>
+
+      <!-- Chapter 3 -->
+      <section id="ch3" class="manual-section">
+        <h2>3. Relative Joint Kinematics (MR, Cardan/Euler & Quaternions)</h2>
+        <p>
+          The relative joint rotation matrix expressing the distal segment (s2) in the proximal segment frame (s1), transformed through the laboratory reference frame (sg), is computed live at every frame:
+        </p>
+        
+        <div class="math-block">
+          MR2 = sg · s1^T<br>
+          MR = (MR2 · s2) · sg^T = sg · s1^T · s2 · sg^T
+        </div>
+
+        <h3>3.1 Tait-Bryan / Cardan Angle Extraction</h3>
+        <p>mkvis3d decomposes <code>MR</code> into clinical anatomical angles across all 6 Tait-Bryan sequences (<code>zxy</code>, <code>xyz</code>, <code>zyx</code>, <code>yxz</code>, <code>xzy</code>, <code>yzx</code>):</p>
+        <ul>
+          <li><strong>Angle 1 (α):</strong> Flexion (+) / Extension (−) [Sagittal plane]</li>
+          <li><strong>Angle 2 (β):</strong> Abduction (+) / Adduction (−) [Coronal plane]</li>
+          <li><strong>Angle 3 (γ):</strong> Internal (+) / External (−) Rotation [Axial plane]</li>
+        </ul>
+
+        <h3>3.2 Scalar-First Unit Quaternions</h3>
+        <p>To avoid gimbal lock singularities, orientation is continuously tracked using scalar-first unit quaternions:</p>
+        <div class="math-block">
+          q = (w, x, y, z), where ||q|| = √(w² + x² + y² + z²) = 1.0
+        </div>
+      </section>
+
+      <!-- Chapter 4 -->
+      <section id="ch4" class="manual-section">
+        <h2>4. Virtual Points & Secondary Landmark Creator</h2>
+        <p>
+          Anatomical joint centers cannot be measured directly on skin surfaces. mkvis3d allows creating secondary virtual points using NumPy vector syntax in the dedicated modal:
+        </p>
+        <div class="card">
+          <h4>Common Formula Examples:</h4>
+          <p><strong>1. Midpoint of two markers (e.g. Pelvis center):</strong></p>
+          <pre><code>(p['RASI'] + p['LASI']) / 2</code></pre>
+          <p><strong>2. Normal perpendicular vector (via cross product):</strong></p>
+          <pre><code>np.cross(p['p2'] - p['p1'], p['p3'] - p['p1'])</code></pre>
+          <p><strong>3. Anatomical offset from bony landmark:</strong></p>
+          <pre><code>p['KNEE_LAT'] + 0.05 * (p['KNEE_MED'] - p['KNEE_LAT'])</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 5 -->
+      <section id="ch5" class="manual-section">
+        <h2>5. Signal Conditioning: Filtering & Gap Interpolation</h2>
+        <h3>5.1 Butterworth Dual-Pass Filter</h3>
+        <p>
+          A 4th-order zero-phase Butterworth low-pass filter (forward-backward dual-pass) eliminates high-frequency marker noise without phase distortion. Cutoff frequencies are automatically corrected for dual-pass attenuation per Winter (1990).
+        </p>
+        <h3>5.2 1-Click Gap Interpolation</h3>
+        <p>
+          Missing or occluded marker frames (NaN) are highlighted on the timeline with Visual3D-style shaded bands. Users can fill gaps with a single click using:
+        </p>
+        <ul>
+          <li><strong>Cubic Spline (PCHIP):</strong> Shape-preserving piecewise cubic Hermite spline that avoids overshoots.</li>
+          <li><strong>Linear:</strong> Direct linear segment interpolation.</li>
+          <li><strong>↩ Revert:</strong> Non-destructive backup allows restoring raw missing frames at any time.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 6 -->
+      <section id="ch6" class="manual-section">
+        <h2>6. Anthropometry & Whole-Body Center of Mass (de Leva 1996)</h2>
+        <p>
+          mkvis3d implements the validated 16-segment <strong>de Leva (1996)</strong> model. Mass fractions and longitudinal CoM positions are adjusted for biological sex:
+        </p>
+        <div class="math-block">
+          r_CoM(t) = (1 / M_total) · ∑ [ m_i · r_i,CoM(t) ]
+        </div>
+        <p>Clicking <strong>Create CoM</strong> adds a live 3D visual marker tracking whole-body CoM throughout the motion.</p>
+      </section>
+
+      <!-- Chapter 7 -->
+      <section id="ch7" class="manual-section">
+        <h2>7. Force Platforms, Ground Reaction Forces & Kinetics</h2>
+        <ul>
+          <li><strong>Calibration & COP:</strong> Supports Types 1–5 platforms using 6x6 calibration matrices and geometric sensor origin corrections.</li>
+          <li><strong>Vertical Threshold:</strong> Automatically hides COP and GRF vectors below <code>15 N</code> to avoid non-contact singularities.</li>
+          <li><strong>3D Vectors:</strong> Renders real-time ground reaction force arrows with dynamic color scaling and magnitude readouts.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 8 -->
+      <section id="ch8" class="manual-section">
+        <h2>8. Workspace Visualization & Multi-Window Navigation</h2>
+        <p>
+          mkvis3d provides a flexible multi-window desktop interface:
+        </p>
+        <ul>
+          <li><strong>Multi-Monitor Popout (⧉):</strong> Detach 3D Viewport, Plots, Table, or Video into independent windows.</li>
+          <li><strong>Fast 3D Viewport Refresh (↻):</strong> Drops GPU compositor surfaces, recalculates bounds, and resets camera.</li>
+          <li><strong>Reference Video Sync:</strong> Syncs high-speed video frames directly with 3D marker cloud trajectories.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 9 -->
+      <section id="ch9" class="manual-section">
+        <h2>9. Data Export, Pipelines & CLI Automation</h2>
+        <ul>
+          <li><strong>Standalone HTML:</strong> Self-contained offline viewer viewable on any computer without software installation.</li>
+          <li><strong>C3D Export:</strong> Exports edited trajectories while preserving synchronized analog force plate and EMG signals.</li>
+          <li><strong>Blender Script:</strong> Generates Python script for photorealistic rendering in Blender Cycles/Eevee.</li>
+          <li><strong>Python Pipeline (.py):</strong> Generates standalone script replicating all virtual points and Cartesian bases.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 10 -->
+      <section id="ch10" class="manual-section">
+        <h2>10. Tutorials & Kwon3D Parity Cross-Reference</h2>
+        <table>
+          <thead>
+            <tr><th>Concept</th><th>Kwon3D</th><th>Visual3D</th><th>mkvis3d</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Global Frame</td><td>Global Reference Frame (GRF)</td><td>Lab Coordinate System (LCS)</td><td>Global System (sg)</td></tr>
+            <tr><td>Segment Frame</td><td>Local Reference Frame (LRF)</td><td>Segment System (SCS)</td><td>Cartesian Basis (s1, s2)</td></tr>
+            <tr><td>Relative Rotation</td><td>Transformation Matrix [R]</td><td>Relative Orientation</td><td>MR = sg · s1^T · s2 · sg^T</td></tr>
+            <tr><td>Angles</td><td>Cardan Angles</td><td>Cardan / Euler Angles</td><td>Tait-Bryan (ZXY, XYZ...)</td></tr>
+            <tr><td>Orientation</td><td>Euler Parameters</td><td>Quaternions</td><td>Scalar-First Quaternions</td></tr>
+            <tr><td>Virtual Points</td><td>Control Points</td><td>Landmark Creator</td><td>Virtual Points (NumPy)</td></tr>
+            <tr><td>Anthropometry</td><td>Zatsiorsky-Seluyanov</td><td>Dempster</td><td>de Leva (1996) 16-Segment</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Chapter 11 -->
+      <section id="shortcuts" class="manual-section">
+        <h2>11. Keyboard & Mouse Shortcuts</h2>
+        <table>
+          <thead>
+            <tr><th>Shortcut</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="key-cap">Space</span></td><td>Play / Pause motion playback</td></tr>
+            <tr><td><span class="key-cap">←</span> / <span class="key-cap">→</span></td><td>Step 1 frame backward / forward</td></tr>
+            <tr><td><span class="key-cap">Left Drag</span></td><td>Orbit 3D camera view (yaw and pitch)</td></tr>
+            <tr><td><span class="key-cap">Shift + Drag</span></td><td>Pan 3D camera across scene</td></tr>
+            <tr><td><span class="key-cap">Mouse Wheel</span></td><td>Zoom 3D camera in / out</td></tr>
+            <tr><td><span class="key-cap">R</span> / <span class="key-cap">Home</span></td><td>Reset 3D camera and frame subject</td></tr>
+            <tr><td><span class="key-cap">Alt + K</span></td><td><strong>Open Segment Bases & Kinematics Modal</strong></td></tr>
+            <tr><td><span class="key-cap">Alt + L</span></td><td>Open Reference System & Origin (LCS) Modal</td></tr>
+            <tr><td><span class="key-cap">Alt + F</span></td><td>Open Signal Filtering & Gap Fill Modal</td></tr>
+            <tr><td><span class="key-cap">Alt + T</span></td><td>Toggle Light / Dark theme mode</td></tr>
+            <tr><td><span class="key-cap">F1</span> / <span class="key-cap">?</span></td><td><strong>Open User Manual & Biomechanics Guide</strong></td></tr>
+            <tr><td><span class="key-cap">Esc</span></td><td>Close any open modal dialog</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+    </div>
+  </main>
+
+  <script>
+    // Live Search Filter
+    const searchInput = document.getElementById("manual-search-input");
+    const sections = document.querySelectorAll(".manual-section");
+    const tocItems = document.querySelectorAll(".toc-item");
+
+    searchInput.addEventListener("input", e => {
+      const q = e.target.value.toLowerCase().trim();
+      if (!q) {
+        sections.forEach(s => (s.style.display = "block"));
+        tocItems.forEach(t => (t.style.display = "block"));
+        return;
+      }
+      sections.forEach(s => {
+        const text = s.textContent.toLowerCase();
+        const match = text.includes(q);
+        s.style.display = match ? "block" : "none";
+      });
+      tocItems.forEach(t => {
+        const href = t.getAttribute("href");
+        if (!href || href === "#") return;
+        const target = document.querySelector(href);
+        t.style.display = target && target.style.display !== "none" ? "block" : "none";
+      });
+    });
+
+    // Theme Toggle
+    const btnTheme = document.getElementById("btn-theme-toggle");
+    btnTheme.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme") || "dark";
+      const next = current === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      btnTheme.textContent = next === "dark" ? "🌙 Theme" : "☀️ Theme";
+    });
+
+    // Active TOC Tracking on Scroll
+    const contentWrap = document.getElementById("content-wrap");
+    contentWrap.addEventListener("scroll", () => {
+      let current = "";
+      sections.forEach(s => {
+        const top = s.offsetTop - contentWrap.offsetTop;
+        if (contentWrap.scrollTop >= top - 60) {
+          current = "#" + s.getAttribute("id");
+        }
+      });
+      if (current) {
+        tocItems.forEach(t => {
+          t.classList.toggle("active", t.getAttribute("href") === current);
+        });
+      }
+    });
+  </script>
+</body>
+</html>

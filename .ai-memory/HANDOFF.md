@@ -1,22 +1,27 @@
-# Session Handoff: Prominent Kinematics Buttons in Menubar, 3D Viewport Header, Plot 1, & Sidebar
+# Session Handoff: User Manual & Biomechanics Theory Guide (Kwon3D & Visual3D Parity)
 
 - **Status:** Completed
 - **Current State:**
-  - Placed prominent, unmissable Kinematics access points across the GUI:
-    1. **Top Menubar:** Added top-level menu **`📐 Kinematics ▾`** directly between `Windows ▾` and `Options ▾`. Also added entries in `Windows ▾`, `Options ▾`, `View ▾`, and `File ▾` (export).
-    2. **3D Viewport Window Header:** Added prominent button **`[📐 Bases & Kinematics (s1, s2, sg)]`** directly in `#panel-3d .pane-tools` next to `↻ Refresh 3D` and `⧉`.
-    3. **Plot 1 Window Header:** Added button **`[📐 Kinematics]`** directly beside the plot series mode dropdown.
-    4. **Left Sidebar:** Moved the `Segment Kinematics` section up to the TOP of the sidebar right below `Point Selection` (above Marker Appearance, Skeleton, etc.), making it immediately visible on any screen resolution without scrolling.
-    5. **Keyboard Shortcut:** Added **`Alt + K`** to toggle the Kinematics modal open/closed from anywhere.
-  - Standalone Linux binary recompiled via `scripts/build_app.py` -> `dist/mkvis3d` (76 MB standalone onefile executable).
-  - All 227 pytest tests passed (`uv run pytest -m "not browser"`), `uv run ruff check .` passed with 0 errors, `uv run ruff format --check .` passed, automated headless Chrome CDP test suite (`tests/browser_smoke.mjs` and `scratch/test_gui_buttons.mjs`) verified all interactions and captured visual screenshots (`screenshot_gui_all_buttons_visible.png`, `screenshot_gui_kinematics_buttons.png`).
-  - Changes committed and pushed to `main` (`c5c683d` and `1fcfcb1`).
+  - Implemented comprehensive User Manual and Biomechanics Theory Guide with Kwon3D parity (`http://www.kwon3d.com/theory/prac.html`) and Visual3D documentation depth.
+  - **Deliverables:**
+    1. **`docs/MANUAL.md`:** 12 comprehensive chapters (30+ KB) covering architecture, coordinate systems ($s_g, s_1, s_2$), Gram-Schmidt orthonormalization proofs, relative rotation matrix $MR = s_g s_1^T s_2 s_g^T$, Tait-Bryan Cardan/Euler decomposition (6 sequences), scalar-first quaternions, NumPy virtual points, Butterworth filtering, PCHIP gap interpolation, de Leva (1996) CoM, force plate kinetics (Types 1–5), multi-window navigation, Kwon3D parity cross-reference, practical tutorials, and keyboard shortcuts.
+    2. **`docs/manual.html`:** Standalone, responsive, offline-ready HTML manual with dark/light theme, live search filter, sidebar TOC, math block styling, and print/PDF CSS.
+    3. **In-App Modal (`#modal-manual`):** Integrated directly into `openbiomech/viewer.html` and `openbiomech/viewer.js`. Features live chapter filtering (`#manual-modal-search-input`), sidebar navigation TOC, popout/print button (`#btn-manual-popout`), and full keyboard navigation (`F1` / `Esc`).
+    4. **GUI Access Points:**
+       - Top Navbar: `[📖 Manual & Theory]` (`#btn-open-manual`)
+       - Help Menu: `📖 User Manual & Biomechanics Guide... (F1)` (`#action-help-manual`)
+       - Help Menu: `📐 Kwon3D Theory & Biomechanics...` (`#action-help-theory`)
+       - Quick Shortcuts table updated with `F1 / ?`.
+    5. **Documentation Hub & Readme:** Updated `README.md` and `docs/index.md` with links to the manual and theory guide.
+  - **Standalone Linux Binary Rebuilt:** Executed `scripts/build_app.py` -> `dist/mkvis3d` packaging all updated HTML and JS assets.
+  - **Verification:**
+    - Full pytest suite: 227 passed (`uv run pytest -m "not browser"`).
+    - Ruff check & formatting: 0 errors across 86 files (`uv run ruff check .` and `uv run ruff format --check .`).
+    - Headless Chrome CDP E2E tests: verified modal opening via button, F1 shortcut toggle, Esc closing, TOC navigation, and live search filtering.
+    - Screenshot captured and saved to `outputs/screenshot_manual_modal_live.png`.
 
 - **What Worked:**
-  - Multi-location exposure (Top Menubar + 3D Viewport header + Plot 1 header + Sidebar top + Alt+K shortcut) ensures the user can find and access the Segment Bases ($s_1, s_2, s_g$) & Relative Kinematics window from whatever area of the application they are looking at.
-
-- **Failed Approaches:**
-  - Placing the kinematics button only at the bottom of the long sidebar meant it was pushed off-screen / below the scroll fold on standard monitor heights, and wasn't discoverable in the menus or viewport windows.
+  - Embedding the manual modal directly into the HTML viewer while also offering a standalone `docs/manual.html` and Markdown `docs/MANUAL.md` provides 100% offline capability, github web browsing, and instant in-app assistance without network dependencies.
 
 - **Open Questions & Next Steps:**
-  - None; all user requirements fulfilled and verified.
+  - Ready for user feedback and further feature extensions.

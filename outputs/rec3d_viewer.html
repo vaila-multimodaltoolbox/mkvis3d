@@ -411,7 +411,140 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   height: 680px;
   max-height: 92vh;
 }
-#modal-lcs .pane-body, #modal-filter .pane-body, #modal-kinematics .pane-body { overflow-y: auto; }
+#modal-manual.floating-pane {
+  width: 820px;
+  height: 720px;
+  max-height: 92vh;
+}
+#modal-lcs .pane-body, #modal-filter .pane-body, #modal-kinematics .pane-body, #modal-manual .pane-body { overflow-y: auto; }
+
+.manual-layout {
+  display: flex;
+  height: calc(100% - 2px);
+  min-height: 520px;
+}
+.manual-sidebar {
+  width: 220px;
+  min-width: 190px;
+  max-width: 240px;
+  background: var(--bg-panel-alt);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+.manual-toc {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+.manual-toc-item {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.manual-toc-item:hover {
+  background: var(--bg-card);
+  color: var(--text-normal);
+}
+.manual-toc-item.active {
+  background: var(--accent-alpha);
+  color: var(--accent);
+  font-weight: 600;
+}
+.manual-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 22px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.manual-content h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-bright);
+  margin: 22px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+.manual-content h2:first-of-type {
+  margin-top: 6px;
+}
+.manual-content h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 14px 0 6px;
+}
+.manual-content h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin: 10px 0 4px;
+}
+.manual-content p {
+  margin-bottom: 10px;
+}
+.manual-content ul, .manual-content ol {
+  margin-bottom: 10px;
+  padding-left: 20px;
+}
+.manual-content li {
+  margin-bottom: 4px;
+}
+.manual-content .math-block {
+  background: var(--bg-card);
+  border-left: 3px solid var(--accent);
+  padding: 10px 14px;
+  margin: 10px 0;
+  border-radius: 0 5px 5px 0;
+  font-family: "Cambria Math", "Latin Modern Math", serif;
+  font-size: 13px;
+  overflow-x: auto;
+}
+.manual-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 11px;
+}
+.manual-content th, .manual-content td {
+  border: 1px solid var(--border-color);
+  padding: 6px 8px;
+  text-align: left;
+}
+.manual-content th {
+  background: var(--bg-panel-alt);
+  color: var(--text-bright);
+  font-weight: 600;
+}
+.manual-content pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 11px;
+  color: var(--accent);
+}
+.manual-content code {
+  font-family: monospace;
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+  color: var(--accent);
+}
 
 .kinematics-tab-bar {
   display: flex;
@@ -1008,12 +1141,18 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   <div class="menu-item" id="menu-help">
     <button class="menu-btn" aria-haspopup="true">Help ▾</button>
     <div class="dropdown-menu">
-      <div class="dropdown-item" id="action-help-shortcuts">Keyboard & Mouse Controls</div>
+      <div class="dropdown-item" id="action-help-manual" style="font-weight: 600; color: var(--accent);">📖 User Manual & Biomechanics Guide... <span class="shortcut-hint">F1</span></div>
+      <div class="dropdown-item" id="action-help-theory">📐 Kwon3D Theory & Biomechanics...</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item" id="action-help-shortcuts">Keyboard & Mouse Controls <span class="shortcut-hint">?</span></div>
       <div class="dropdown-item" id="action-help-about">About mkvis3d</div>
     </div>
   </div>
 
   <div class="theme-toggle-wrap" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+    <button id="btn-open-manual" class="menu-btn" title="Open User Manual & Biomechanics Guide (F1)" style="display: flex; align-items: center; gap: 5px; font-weight: 600; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 8px; color: var(--text-normal); cursor: pointer;">
+      <span>📖</span> <span>Manual & Theory</span>
+    </button>
     <button id="btn-toggle-theme" class="theme-toggle-btn" title="Toggle Light / Dark Mode (Alt+T)" aria-label="Toggle Light / Dark Mode">
       <span id="theme-icon">🌙</span> <span id="theme-label">Dark</span>
     </button>
@@ -1541,6 +1680,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div><span class="key-cap">Alt + K</span></div><div>Open Segment Bases & Kinematics dialog</div>
         <div><span class="key-cap">Alt + L</span></div><div>Open Reference System & Origin dialog</div>
         <div><span class="key-cap">Alt + F</span></div><div>Open Signal Filtering & Gap Fill dialog</div>
+        <div><span class="key-cap">F1</span> / <span class="key-cap">?</span></div><div>Open User Manual & Biomechanics Guide</div>
         <div><span class="key-cap">Esc</span></div><div>Close open dialog / modal window</div>
       </div>
     </div>
@@ -2149,6 +2289,234 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- In-App User Manual & Biomechanics Guide Modal -->
+<section id="modal-manual" class="window-pane" hidden role="dialog" aria-modal="true" aria-labelledby="modal-manual-title">
+  <div class="pane-header">
+    <div class="pane-title"><h3 id="modal-manual-title">📖 User Manual & Biomechanics Guide</h3></div>
+    <div class="pane-tools">
+      <button class="btn-tool" id="btn-manual-popout" title="Pop out into new window / Print manual" style="font-size: 11px; padding: 2px 6px;">⧉ Popout / Print</button>
+      <button class="modal-close" id="btn-close-manual" aria-label="Close">✕</button>
+    </div>
+  </div>
+  <div class="pane-body" style="padding: 0; height: calc(100% - 38px);">
+    <div class="manual-layout">
+      <!-- Sidebar TOC & Filter -->
+      <aside class="manual-sidebar">
+        <div style="margin-bottom: 8px;">
+          <input type="text" id="manual-modal-search-input" placeholder="🔍 Search guide..." style="width: 100%; padding: 5px 8px; font-size: 11px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-canvas); color: var(--text-normal); outline: none;">
+        </div>
+        <nav class="manual-toc" id="manual-modal-toc">
+          <a class="manual-toc-item active" data-target="m-ch-1">1. Overview & Architecture</a>
+          <a class="manual-toc-item" data-target="m-ch-2">2. Coordinate Systems & Bases</a>
+          <a class="manual-toc-item" data-target="m-ch-3">3. Relative Kinematics (MR, Euler)</a>
+          <a class="manual-toc-item" data-target="m-ch-4">4. Virtual Points (NumPy)</a>
+          <a class="manual-toc-item" data-target="m-ch-5">5. Filtering & Gap Fill</a>
+          <a class="manual-toc-item" data-target="m-ch-6">6. Center of Mass (de Leva)</a>
+          <a class="manual-toc-item" data-target="m-ch-7">7. Force Plates & Kinetics</a>
+          <a class="manual-toc-item" data-target="m-ch-8">8. Visualization & Multi-Window</a>
+          <a class="manual-toc-item" data-target="m-ch-9">9. Exports & CLI Automation</a>
+          <a class="manual-toc-item" data-target="m-ch-10">10. Tutorials & Kwon3D Parity</a>
+          <a class="manual-toc-item" data-target="m-ch-11">11. Keyboard Shortcuts</a>
+        </nav>
+      </aside>
+
+      <!-- Main Manual Content -->
+      <main class="manual-content" id="manual-modal-content">
+        <!-- Chapter 1 -->
+        <section id="m-ch-1" class="manual-modal-chapter">
+          <h2 style="margin-top: 0;">1. Overview & Architecture</h2>
+          <p>
+            Welcome to <strong>mkvis3d</strong> (package <code>openbiomech</code>), a reproducible, open-source biomechanical analysis suite and 3D motion viewer designed as a high-performance, modern alternative to <strong>C-Motion Visual3D</strong>, <strong>BTK Mokka</strong>, and <strong>Kwon3D</strong>.
+          </p>
+          <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;">
+            <h4 style="margin-top:0;">Key Capabilities:</h4>
+            <ul>
+              <li><strong>Complete C3D I/O:</strong> Reads/writes binary C3D files (Intel, DEC VAX, MIPS) with 3D markers, analog force plates, EMG, and parameter groups.</li>
+              <li><strong>Cartesian Bases (s1, s2, sg):</strong> 3-point segment coordinate system construction with Gram-Schmidt orthonormalization.</li>
+              <li><strong>Live Relative Kinematics:</strong> Live rotation matrix <code>MR = sg · s1^T · s2 · sg^T</code>, Cardan/Euler angles across all 6 Tait-Bryan sequences, and scalar-first quaternions.</li>
+              <li><strong>Virtual Points Creator:</strong> NumPy vector formulas for secondary landmarks with exportable Python pipeline scripts.</li>
+              <li><strong>Signal Conditioning:</strong> 4th-order zero-phase Butterworth filter and 1-click PCHIP monotonic gap interpolation.</li>
+              <li><strong>Kinetics:</strong> Types 1–5 calibration, COP, and bottom-up Newton-Euler inverse dynamics.</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- Chapter 2 -->
+        <section id="m-ch-2" class="manual-modal-chapter">
+          <h2>2. Biomechanical Coordinate Systems & Orthonormal Bases</h2>
+          <p>
+            In biomechanics and human movement analysis (Kwon3D, Visual3D, ISB standards), analyzing 3D joint motion requires setting up <strong>Local Segment Coordinate Systems (LCS / SCS)</strong> and referencing them to the <strong>Global Reference System (GRF)</strong>.
+          </p>
+          <h3>2.1 Global System (sg) vs Local Systems (s1, s2)</h3>
+          <ul>
+            <li><strong>Global Reference System (sg):</strong> Laboratory world frame. Canonical 3×3 identity matrix <code>[I 3x3]</code> (Z Vertical Up, X Anterior, Y Lateral).</li>
+            <li><strong>Proximal Segment (s1):</strong> Coordinate system of parent segment (e.g. Pelvis or Thigh).</li>
+            <li><strong>Distal Segment (s2):</strong> Coordinate system of child segment (e.g. Thigh or Shank).</li>
+          </ul>
+          <h3>2.2 3-Point Basis Construction & Gram-Schmidt Orthonormalization</h3>
+          <p>Built from 3 non-collinear markers: <strong>Origin</strong> (r_orig), <strong>Primary Point</strong> (r_prim), and <strong>Plane Point</strong> (r_plane):</p>
+          <div class="math-block">
+            v_prim = r_prim - r_orig<br>
+            v_plane = r_plane - r_orig<br>
+            e_prim = v_prim / ||v_prim||<br>
+            v_ortho = v_plane - (v_plane · e_prim) e_prim<br>
+            e_sec = v_ortho / ||v_ortho||<br>
+            e_tert = e_prim × e_sec
+          </div>
+          <p>
+            Each axis is divided by its Euclidean norm (<code>||e|| = 1.0</code>). mkvis3d verifies:
+            <br><span style="color: #22c55e; font-weight: 600;">✓ Unit norm: ||ex|| = 1.000, ||ey|| = 1.000, ||ez|| = 1.000</span>
+            <br><span style="color: #22c55e; font-weight: 600;">✓ Orthogonality: 90.0° between all axis pairs (ei · ej = 0)</span>
+            <br><span style="color: #22c55e; font-weight: 600;">✓ Right-handed chirality: det([ex, ey, ez]) = +1.000</span>
+          </p>
+        </section>
+
+        <!-- Chapter 3 -->
+        <section id="m-ch-3" class="manual-modal-chapter">
+          <h2>3. Relative Joint Kinematics (MR, Cardan/Euler & Quaternions)</h2>
+          <p>
+            The relative joint rotation matrix expressing distal segment s2 in proximal segment s1, transformed through the laboratory reference frame sg, is calculated live:
+          </p>
+          <div class="math-block">
+            MR2 = sg · s1^T<br>
+            MR = (MR2 · s2) · sg^T = sg · s1^T · s2 · sg^T
+          </div>
+          <h3>3.1 Tait-Bryan / Cardan Sequences</h3>
+          <p>mkvis3d decomposes <code>MR</code> into clinical anatomical angles across 6 sequences (<code>zxy</code>, <code>xyz</code>, <code>zyx</code>, <code>yxz</code>, <code>xzy</code>, <code>yzx</code>):</p>
+          <ul>
+            <li><strong>Angle 1 (α):</strong> Flexion (+) / Extension (−) [Sagittal plane]</li>
+            <li><strong>Angle 2 (β):</strong> Abduction (+) / Adduction (−) [Coronal plane]</li>
+            <li><strong>Angle 3 (γ):</strong> Internal (+) / External (−) Rotation [Transverse plane]</li>
+          </ul>
+          <h3>3.2 Scalar-First Quaternions</h3>
+          <p>Singularity-free orientation representation:</p>
+          <div class="math-block">
+            q = (w, x, y, z), where ||q|| = √(w² + x² + y² + z²) = 1.0
+          </div>
+        </section>
+
+        <!-- Chapter 4 -->
+        <section id="m-ch-4" class="manual-modal-chapter">
+          <h2>4. Virtual Points & Secondary Landmark Creator</h2>
+          <p>
+            Create unlimited secondary anatomical joint centers directly using standard NumPy vector expressions:
+          </p>
+          <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 10px;">
+            <p><strong>1. Midpoint of two markers (Pelvis center):</strong></p>
+            <pre><code>(p['RASI'] + p['LASI']) / 2</code></pre>
+            <p><strong>2. Offset along anatomical axis:</strong></p>
+            <pre><code>p['KNEE_LAT'] + 0.05 * (p['KNEE_MED'] - p['KNEE_LAT'])</code></pre>
+            <p><strong>3. Vector cross product:</strong></p>
+            <pre><code>np.cross(p['p2'] - p['p1'], p['p3'] - p['p1'])</code></pre>
+          </div>
+          <p>Click <strong>💾 Save Points Pipeline (.py)</strong> to export points as reproducible Python scripts.</p>
+        </section>
+
+        <!-- Chapter 5 -->
+        <section id="m-ch-5" class="manual-modal-chapter">
+          <h2>5. Signal Conditioning: Filtering & Gap Interpolation</h2>
+          <h3>5.1 Butterworth Dual-Pass Filter</h3>
+          <p>
+            4th-order zero-phase lowpass Butterworth filter (forward-backward dual pass). Eliminates phase shift with cutoff frequency correction factor <code>C = (2^(1/4) - 1)^(1/4) ≈ 0.802</code>.
+          </p>
+          <h3>5.2 1-Click Gap Interpolation</h3>
+          <p>
+            Missing frames (NaN) appear as shaded warning zones on coordinate timelines. Select a marker and click <strong>✨ Fill Missing Gaps</strong> to apply shape-preserving PCHIP cubic interpolation or linear filling. Non-destructive backup allows clicking <strong>↩ Revert to Raw</strong> at any time.
+          </p>
+        </section>
+
+        <!-- Chapter 6 -->
+        <section id="m-ch-6" class="manual-modal-chapter">
+          <h2>6. Anthropometry & Whole-Body Center of Mass (de Leva 1996)</h2>
+          <p>
+            Validated 16-segment <strong>de Leva (1996)</strong> model adjustments for males and females:
+          </p>
+          <div class="math-block">
+            r_CoM(t) = (1 / M_total) · ∑ [ m_i · r_i,CoM(t) ]
+          </div>
+          <p>Renders a live 3D CoM marker and provides trajectory coordinates for equilibrium and postural stability analysis.</p>
+        </section>
+
+        <!-- Chapter 7 -->
+        <section id="m-ch-7" class="manual-modal-chapter">
+          <h2>7. Force Platforms, Ground Reaction Forces & Kinetics</h2>
+          <ul>
+            <li><strong>Types 1–5 Calibration:</strong> Automatic detection and application of 6×6 calibration matrices and origin offsets.</li>
+            <li><strong>Center of Pressure (COP):</strong> Calculates dynamic instantaneous COP during ground contact.</li>
+            <li><strong>Thresholding:</strong> Forces below 15 N are automatically hidden to prevent baseline noise artifacts.</li>
+            <li><strong>3D Vectors:</strong> Real-time rendering of force vectors in the 3D scene with dynamic length and color scaling.</li>
+          </ul>
+        </section>
+
+        <!-- Chapter 8 -->
+        <section id="m-ch-8" class="manual-modal-chapter">
+          <h2>8. Workspace Visualization & Multi-Window Navigation</h2>
+          <ul>
+            <li><strong>Multi-Monitor Popout (⧉):</strong> Detach 3D Viewport, Plots, Table, or Video into independent windows.</li>
+            <li><strong>Fast 3D Viewport Refresh (↻):</strong> Drops GPU compositor surfaces, recalculates bounds, and resets camera.</li>
+            <li><strong>Reference Video Sync:</strong> Syncs high-speed video frames directly with 3D marker cloud trajectories.</li>
+          </ul>
+        </section>
+
+        <!-- Chapter 9 -->
+        <section id="m-ch-9" class="manual-modal-chapter">
+          <h2>9. Data Export, Pipelines & CLI Automation</h2>
+          <ul>
+            <li><strong>Standalone HTML:</strong> Self-contained offline viewer viewable on any computer without software installation.</li>
+            <li><strong>C3D Export:</strong> Exports edited trajectories while preserving synchronized analog force plate and EMG signals.</li>
+            <li><strong>Blender Script:</strong> Generates Python script for photorealistic rendering in Blender Cycles/Eevee.</li>
+            <li><strong>Python Pipeline (.py):</strong> Generates standalone script replicating all virtual points and Cartesian bases.</li>
+          </ul>
+        </section>
+
+        <!-- Chapter 10 -->
+        <section id="m-ch-10" class="manual-modal-chapter">
+          <h2>10. Tutorials & Kwon3D Parity Cross-Reference</h2>
+          <table>
+            <thead>
+              <tr><th>Concept</th><th>Kwon3D</th><th>Visual3D</th><th>mkvis3d</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Global Frame</td><td>Global Reference Frame (GRF)</td><td>Lab Coordinate System (LCS)</td><td>Global System (sg)</td></tr>
+              <tr><td>Segment Frame</td><td>Local Reference Frame (LRF)</td><td>Segment System (SCS)</td><td>Cartesian Basis (s1, s2)</td></tr>
+              <tr><td>Relative Rotation</td><td>Transformation Matrix [R]</td><td>Relative Orientation</td><td>MR = sg · s1^T · s2 · sg^T</td></tr>
+              <tr><td>Angles</td><td>Cardan Angles</td><td>Cardan / Euler Angles</td><td>Tait-Bryan (ZXY, XYZ...)</td></tr>
+              <tr><td>Orientation</td><td>Euler Parameters</td><td>Quaternions</td><td>Scalar-First Quaternions</td></tr>
+              <tr><td>Virtual Points</td><td>Control Points</td><td>Landmark Creator</td><td>Virtual Points (NumPy)</td></tr>
+              <tr><td>Anthropometry</td><td>Zatsiorsky-Seluyanov</td><td>Dempster</td><td>de Leva (1996) 16-Segment</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- Chapter 11 -->
+        <section id="m-ch-11" class="manual-modal-chapter">
+          <h2>11. Keyboard & Mouse Shortcuts</h2>
+          <table>
+            <thead>
+              <tr><th>Shortcut</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><span class="key-cap">Space</span></td><td>Play / Pause motion playback</td></tr>
+              <tr><td><span class="key-cap">←</span> / <span class="key-cap">→</span></td><td>Step 1 frame backward / forward</td></tr>
+              <tr><td><span class="key-cap">Left Drag</span></td><td>Orbit 3D camera view</td></tr>
+              <tr><td><span class="key-cap">Shift + Drag</span></td><td>Pan 3D camera across scene</td></tr>
+              <tr><td><span class="key-cap">Mouse Wheel</span></td><td>Zoom 3D camera in / out</td></tr>
+              <tr><td><span class="key-cap">R</span> / <span class="key-cap">Home</span></td><td>Reset 3D camera and fit to subject</td></tr>
+              <tr><td><span class="key-cap">Alt + K</span></td><td><strong>Open Segment Bases & Kinematics Modal</strong></td></tr>
+              <tr><td><span class="key-cap">Alt + L</span></td><td>Open Reference System & Origin (LCS) Modal</td></tr>
+              <tr><td><span class="key-cap">Alt + F</span></td><td>Open Signal Filtering & Gap Fill Modal</td></tr>
+              <tr><td><span class="key-cap">Alt + T</span></td><td>Toggle Light / Dark theme mode</td></tr>
+              <tr><td><span class="key-cap">F1</span></td><td><strong>Open User Manual & Biomechanics Guide</strong></td></tr>
+              <tr><td><span class="key-cap">?</span></td><td>Open Quick Shortcuts Dialog</td></tr>
+              <tr><td><span class="key-cap">Esc</span></td><td>Close any open modal dialog</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </main>
     </div>
   </div>
 </section>
@@ -5548,6 +5916,112 @@ function closeShortcutsModal() {
   if (m) m.classList.remove("open");
 }
 
+function openManualModal(targetChapter) {
+  const modal = $("modal-manual");
+  if (!modal) return;
+  modal.hidden = false;
+  floatPane("modal-manual");
+  if (targetChapter) {
+    const el = $(targetChapter) || document.getElementById(targetChapter);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+      document.querySelectorAll(".manual-toc-item").forEach(item => {
+        item.classList.toggle("active", item.getAttribute("data-target") === targetChapter);
+      });
+    }
+  }
+}
+
+function closeManualModal() {
+  const modal = $("modal-manual");
+  if (!modal) return;
+  dockPane("modal-manual");
+  modal.hidden = true;
+}
+
+if ($("btn-open-manual")) $("btn-open-manual").onclick = () => openManualModal();
+if ($("action-help-manual")) $("action-help-manual").onclick = () => openManualModal();
+if ($("action-help-theory")) $("action-help-theory").onclick = () => openManualModal("m-ch-2");
+if ($("btn-close-manual")) $("btn-close-manual").onclick = closeManualModal;
+
+const manualPopoutBtn = $("btn-manual-popout");
+if (manualPopoutBtn) {
+  manualPopoutBtn.onclick = () => {
+    const win = window.open("", "_blank");
+    if (win) {
+      const content = $("manual-modal-content") ? $("manual-modal-content").innerHTML : "";
+      win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>mkvis3d — User Manual & Biomechanics Theory Guide</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; max-width: 900px; margin: 0 auto; line-height: 1.6; color: #1e293b; background: #fff; }
+  h1 { font-size: 26px; border-bottom: 2px solid #0284c7; padding-bottom: 8px; }
+  h2 { font-size: 20px; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; margin-top: 30px; color: #0f172a; }
+  h3 { color: #0284c7; }
+  code { font-family: monospace; background: #f1f5f9; padding: 2px 5px; border-radius: 4px; color: #0284c7; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  .math-block { background: #f8fafc; border-left: 3px solid #0284c7; padding: 10px 14px; margin: 12px 0; font-family: "Cambria Math", serif; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  th, td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }
+  th { background: #f1f5f9; }
+  .key-cap { background: #e2e8f0; border: 1px solid #94a3b8; border-radius: 4px; padding: 1px 6px; font-family: monospace; font-size: 11px; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:10px;">
+    <div><strong>mkvis3d · OpenBiomech</strong> — User Manual & Biomechanics Guide</div>
+    <button onclick="window.print()" style="padding:6px 12px; cursor:pointer; font-weight:600; border-radius:4px; border:1px solid #cbd5e1; background:#f8fafc;">🖨️ Print / Save PDF</button>
+  </div>
+  ${content}
+</body>
+</html>`);
+      win.document.close();
+    }
+  };
+}
+
+// Manual TOC click listener
+document.querySelectorAll(".manual-toc-item").forEach(item => {
+  item.onclick = e => {
+    e.preventDefault();
+    const targetId = item.getAttribute("data-target");
+    if (!targetId) return;
+    const targetEl = $(targetId);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth" });
+      document.querySelectorAll(".manual-toc-item").forEach(t => t.classList.remove("active"));
+      item.classList.add("active");
+    }
+  };
+});
+
+// Manual Search Filter
+const manualSearchInput = $("manual-modal-search-input");
+if (manualSearchInput) {
+  manualSearchInput.addEventListener("input", e => {
+    const q = e.target.value.toLowerCase().trim();
+    const chapters = document.querySelectorAll(".manual-modal-chapter");
+    const tocItems = document.querySelectorAll(".manual-toc-item");
+    if (!q) {
+      chapters.forEach(ch => (ch.style.display = ""));
+      tocItems.forEach(t => (t.style.display = ""));
+      return;
+    }
+    chapters.forEach(ch => {
+      const match = ch.textContent.toLowerCase().includes(q);
+      ch.style.display = match ? "" : "none";
+    });
+    tocItems.forEach(t => {
+      const targetId = t.getAttribute("data-target");
+      const targetEl = targetId ? $(targetId) : null;
+      t.style.display = targetEl && targetEl.style.display !== "none" ? "" : "none";
+    });
+  });
+}
+
 if ($("action-view-shortcuts")) $("action-view-shortcuts").onclick = openShortcutsModal;
 if ($("action-help-shortcuts")) $("action-help-shortcuts").onclick = openShortcutsModal;
 if ($("btn-close-shortcuts")) $("btn-close-shortcuts").onclick = closeShortcutsModal;
@@ -5572,6 +6046,7 @@ document.addEventListener("keydown", e => {
     if (!$("modal-filter").hidden) closeFilterModal();
     if (!$("modal-lcs").hidden) closeLCSModal();
     if ($("modal-kinematics") && !$("modal-kinematics").hidden) closeKinematicsModal();
+    if ($("modal-manual") && !$("modal-manual").hidden) closeManualModal();
     return;
   }
   if (e.altKey && (e.key === "k" || e.key === "K")) {
@@ -5579,7 +6054,18 @@ document.addEventListener("keydown", e => {
     openKinematicsModal();
     return;
   }
-  if (e.key === "?" || e.key === "F1") {
+  if (e.key === "F1") {
+    if (!["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+      e.preventDefault();
+      if ($("modal-manual") && !$("modal-manual").hidden) {
+        closeManualModal();
+      } else {
+        openManualModal();
+      }
+      return;
+    }
+  }
+  if (e.key === "?") {
     if (!["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
       e.preventDefault();
       openShortcutsModal();

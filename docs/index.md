@@ -4,6 +4,7 @@ Documentation hub for the project. Start here.
 
 | Doc | Markdown | HTML |
 |---|---|---|
+| **User Manual & Biomechanics Theory Guide (Kwon3D & Visual3D Parity)** | **[MANUAL.md](MANUAL.md)** | **[manual.html](manual.html)** |
 | CLI command reference (`info`, `view`, `gui`, `blender`, `bvh`, `filter`, `lcs`, `demo`, `dynamics`, `segment`) | [cli.md](cli.md) | [cli.html](cli.html) |
 | Open `.vaila` project format (trial, processing state, analog data, analyses and provenance) | [vaila-format.md](vaila-format.md) | — |
 | Target architecture (long-term Rust workspace + biomechanics math reference) | [architecture.md](architecture.md) | [architecture.html](architecture.html) |

@@ -3391,6 +3391,112 @@ function closeShortcutsModal() {
   if (m) m.classList.remove("open");
 }
 
+function openManualModal(targetChapter) {
+  const modal = $("modal-manual");
+  if (!modal) return;
+  modal.hidden = false;
+  floatPane("modal-manual");
+  if (targetChapter) {
+    const el = $(targetChapter) || document.getElementById(targetChapter);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+      document.querySelectorAll(".manual-toc-item").forEach(item => {
+        item.classList.toggle("active", item.getAttribute("data-target") === targetChapter);
+      });
+    }
+  }
+}
+
+function closeManualModal() {
+  const modal = $("modal-manual");
+  if (!modal) return;
+  dockPane("modal-manual");
+  modal.hidden = true;
+}
+
+if ($("btn-open-manual")) $("btn-open-manual").onclick = () => openManualModal();
+if ($("action-help-manual")) $("action-help-manual").onclick = () => openManualModal();
+if ($("action-help-theory")) $("action-help-theory").onclick = () => openManualModal("m-ch-2");
+if ($("btn-close-manual")) $("btn-close-manual").onclick = closeManualModal;
+
+const manualPopoutBtn = $("btn-manual-popout");
+if (manualPopoutBtn) {
+  manualPopoutBtn.onclick = () => {
+    const win = window.open("", "_blank");
+    if (win) {
+      const content = $("manual-modal-content") ? $("manual-modal-content").innerHTML : "";
+      win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>mkvis3d — User Manual & Biomechanics Theory Guide</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; max-width: 900px; margin: 0 auto; line-height: 1.6; color: #1e293b; background: #fff; }
+  h1 { font-size: 26px; border-bottom: 2px solid #0284c7; padding-bottom: 8px; }
+  h2 { font-size: 20px; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; margin-top: 30px; color: #0f172a; }
+  h3 { color: #0284c7; }
+  code { font-family: monospace; background: #f1f5f9; padding: 2px 5px; border-radius: 4px; color: #0284c7; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  .math-block { background: #f8fafc; border-left: 3px solid #0284c7; padding: 10px 14px; margin: 12px 0; font-family: "Cambria Math", serif; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  th, td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }
+  th { background: #f1f5f9; }
+  .key-cap { background: #e2e8f0; border: 1px solid #94a3b8; border-radius: 4px; padding: 1px 6px; font-family: monospace; font-size: 11px; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:10px;">
+    <div><strong>mkvis3d · OpenBiomech</strong> — User Manual & Biomechanics Guide</div>
+    <button onclick="window.print()" style="padding:6px 12px; cursor:pointer; font-weight:600; border-radius:4px; border:1px solid #cbd5e1; background:#f8fafc;">🖨️ Print / Save PDF</button>
+  </div>
+  ${content}
+</body>
+</html>`);
+      win.document.close();
+    }
+  };
+}
+
+// Manual TOC click listener
+document.querySelectorAll(".manual-toc-item").forEach(item => {
+  item.onclick = e => {
+    e.preventDefault();
+    const targetId = item.getAttribute("data-target");
+    if (!targetId) return;
+    const targetEl = $(targetId);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth" });
+      document.querySelectorAll(".manual-toc-item").forEach(t => t.classList.remove("active"));
+      item.classList.add("active");
+    }
+  };
+});
+
+// Manual Search Filter
+const manualSearchInput = $("manual-modal-search-input");
+if (manualSearchInput) {
+  manualSearchInput.addEventListener("input", e => {
+    const q = e.target.value.toLowerCase().trim();
+    const chapters = document.querySelectorAll(".manual-modal-chapter");
+    const tocItems = document.querySelectorAll(".manual-toc-item");
+    if (!q) {
+      chapters.forEach(ch => (ch.style.display = ""));
+      tocItems.forEach(t => (t.style.display = ""));
+      return;
+    }
+    chapters.forEach(ch => {
+      const match = ch.textContent.toLowerCase().includes(q);
+      ch.style.display = match ? "" : "none";
+    });
+    tocItems.forEach(t => {
+      const targetId = t.getAttribute("data-target");
+      const targetEl = targetId ? $(targetId) : null;
+      t.style.display = targetEl && targetEl.style.display !== "none" ? "" : "none";
+    });
+  });
+}
+
 if ($("action-view-shortcuts")) $("action-view-shortcuts").onclick = openShortcutsModal;
 if ($("action-help-shortcuts")) $("action-help-shortcuts").onclick = openShortcutsModal;
 if ($("btn-close-shortcuts")) $("btn-close-shortcuts").onclick = closeShortcutsModal;
@@ -3415,6 +3521,7 @@ document.addEventListener("keydown", e => {
     if (!$("modal-filter").hidden) closeFilterModal();
     if (!$("modal-lcs").hidden) closeLCSModal();
     if ($("modal-kinematics") && !$("modal-kinematics").hidden) closeKinematicsModal();
+    if ($("modal-manual") && !$("modal-manual").hidden) closeManualModal();
     return;
   }
   if (e.altKey && (e.key === "k" || e.key === "K")) {
@@ -3422,7 +3529,18 @@ document.addEventListener("keydown", e => {
     openKinematicsModal();
     return;
   }
-  if (e.key === "?" || e.key === "F1") {
+  if (e.key === "F1") {
+    if (!["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+      e.preventDefault();
+      if ($("modal-manual") && !$("modal-manual").hidden) {
+        closeManualModal();
+      } else {
+        openManualModal();
+      }
+      return;
+    }
+  }
+  if (e.key === "?") {
     if (!["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
       e.preventDefault();
       openShortcutsModal();
