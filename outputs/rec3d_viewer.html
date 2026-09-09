@@ -886,6 +886,49 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       </div>
     </section>
 
+    <!-- Force Platforms & Kinetics (Visual3D & Mokka Parity) -->
+    <section id="force-platforms-section" class="sidebar-section" hidden>
+      <div class="sidebar-header">
+        <span>Force Platforms & GRF</span>
+        <span id="force-plate-count-badge" style="font-size: 10px; color: var(--accent);">0 plates</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+        <label style="display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer;">
+          <input type="checkbox" id="show-force-plates" checked>
+          <span>Show Force Plates</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer;">
+          <input type="checkbox" id="show-force-vectors" checked>
+          <span>Show Force Vectors (GRF)</span>
+        </label>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+        <label for="force-scale-slider" style="margin: 0;">Vector Scale</label>
+        <span id="force-scale-val" style="font-size: 11px; font-weight: 600; color: var(--accent);">1.0 mm/N</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <input type="range" id="force-scale-slider" min="0.2" max="5.0" step="0.1" value="1.0" style="flex: 1;">
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+        <label for="force-threshold-slider" style="margin: 0;">Contact Threshold</label>
+        <span id="force-threshold-val" style="font-size: 11px; font-weight: 600; color: var(--accent);">15 N</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <input type="range" id="force-threshold-slider" min="5" max="100" step="5" value="15" style="flex: 1;">
+      </div>
+
+      <div id="force-readouts-card" style="margin-top: 10px; padding: 8px; border-radius: 6px; background: var(--metric-card-bg); border: 1px solid var(--border-color); font-size: 11px; display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; justify-content: space-between; font-weight: 600;">
+          <span>Active Vertical GRF</span>
+          <span id="total-fz-val" style="color: var(--accent);">0 N</span>
+        </div>
+        <div id="plate-mini-readouts" style="color: var(--text-muted); font-size: 10px; margin-top: 2px;"></div>
+      </div>
+    </section>
+
     <!-- View & Camera Controls -->
     <section class="sidebar-section">
       <div class="sidebar-header">Camera & Orientation</div>
@@ -1349,6 +1392,13 @@ let activeFilterConfig = null;
 let filterPreviewActive = false;
 let filterPreviewSeries = null;
 
+// Force Platforms & Kinetics (Visual3D & Mokka Parity)
+let showForcePlates = true;
+let showForceVectors = true;
+let forceVectorScale = 0.001; // 1.0 mm per N (0.001 m/N)
+let forceThreshold = 15.0; // 15 N
+let rawForcePlates = null;
+
 // Marker Appearance Palette (matching /home/preto/data/vaila/vaila/viewc3d.py)
 const MARKER_PALETTE = [
   { name: "Orange", hex: "#f97316" }, // [1.0, 0.65, 0.0] - Default in viewc3d.py
@@ -1532,6 +1582,19 @@ function fit() {
       }
     }
   }
+  // Include force plate corners in scene bounds
+  if (trial.force_plates && trial.force_plates.length && showForcePlates) {
+    for (const fp of trial.force_plates) {
+      if (!fp.corners) continue;
+      for (const corner of fp.corners) {
+        const p = orient(corner);
+        for (let j = 0; j < 3; j++) {
+          lo[j] = Math.min(lo[j], p[j]);
+          hi[j] = Math.max(hi[j], p[j]);
+        }
+      }
+    }
+  }
   center = lo.map((v, j) => (v + hi[j]) / 2);
   span = Math.max(...hi.map((v, j) => v - lo[j]), 0.01);
   zoom = 1;
@@ -1545,6 +1608,21 @@ function getFloorHeight() {
   const option = document.querySelector("[data-floor].active");
   const mode = option ? option.dataset.floor : "auto";
   if (mode === "origin") return 0;
+
+  // If force plates are present, ground surface is at plate level
+  if (trial.force_plates && trial.force_plates.length && showForcePlates) {
+    let minFpZ = Infinity;
+    for (const fp of trial.force_plates) {
+      if (fp.corners) {
+        for (const corner of fp.corners) {
+          const p = orient(corner);
+          minFpZ = Math.min(minFpZ, p[2]);
+        }
+      }
+    }
+    if (Number.isFinite(minFpZ)) return minFpZ;
+  }
+
   let minH = Infinity;
   for (const raw of trial.xyz[frame] || []) {
     if (valid(raw)) {
@@ -1686,12 +1764,177 @@ function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.c
   }
 }
 
+// Draw 3D Physical Force Platforms on Floor
+function drawForcePlates(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
+  if (!trial || !trial.force_plates || !trial.force_plates.length || !showForcePlates) return;
+  const isLight = currentTheme === "light";
+  const fillColor = isLight ? "rgba(203, 213, 225, 0.45)" : "rgba(30, 41, 59, 0.55)";
+  const strokeColor = isLight ? "rgba(100, 116, 139, 0.85)" : "rgba(71, 85, 105, 0.9)";
+  const gridColor = isLight ? "rgba(148, 163, 184, 0.35)" : "rgba(51, 65, 85, 0.45)";
+  const labelColor = isLight ? "#334155" : "#94a3b8";
+
+  for (const fp of trial.force_plates) {
+    if (!fp.corners || fp.corners.length < 4) continue;
+    const c = fp.corners;
+    const p0 = project(c[0], w, h), p1 = project(c[1], w, h);
+    const p2 = project(c[2], w, h), p3 = project(c[3], w, h);
+
+    if (!Number.isFinite(p0[0]) || !Number.isFinite(p1[0]) || !Number.isFinite(p2[0]) || !Number.isFinite(p3[0])) continue;
+
+    // Draw plate surface quad
+    targetCtx.beginPath();
+    targetCtx.moveTo(p0[0], p0[1]);
+    targetCtx.lineTo(p1[0], p1[1]);
+    targetCtx.lineTo(p2[0], p2[1]);
+    targetCtx.lineTo(p3[0], p3[1]);
+    targetCtx.closePath();
+
+    targetCtx.fillStyle = fillColor;
+    targetCtx.fill();
+    targetCtx.strokeStyle = strokeColor;
+    targetCtx.lineWidth = 1.5;
+    targetCtx.stroke();
+
+    // Internal cross markings
+    const midTop = [(c[0][0] + c[1][0]) / 2, (c[0][1] + c[1][1]) / 2, (c[0][2] + c[1][2]) / 2];
+    const midBot = [(c[3][0] + c[2][0]) / 2, (c[3][1] + c[2][1]) / 2, (c[3][2] + c[2][2]) / 2];
+    const midLeft = [(c[0][0] + c[3][0]) / 2, (c[0][1] + c[3][1]) / 2, (c[0][2] + c[3][2]) / 2];
+    const midRight = [(c[1][0] + c[2][0]) / 2, (c[1][1] + c[2][1]) / 2, (c[1][2] + c[2][2]) / 2];
+
+    const pmTop = project(midTop, w, h), pmBot = project(midBot, w, h);
+    const pmLeft = project(midLeft, w, h), pmRight = project(midRight, w, h);
+
+    targetCtx.strokeStyle = gridColor;
+    targetCtx.lineWidth = 1;
+    targetCtx.beginPath();
+    targetCtx.moveTo(pmTop[0], pmTop[1]);
+    targetCtx.lineTo(pmBot[0], pmBot[1]);
+    targetCtx.moveTo(pmLeft[0], pmLeft[1]);
+    targetCtx.lineTo(pmRight[0], pmRight[1]);
+    targetCtx.stroke();
+
+    // Plate Label at center
+    const center3D = [
+      (c[0][0] + c[2][0]) / 2,
+      (c[0][1] + c[2][1]) / 2,
+      (c[0][2] + c[2][2]) / 2,
+    ];
+    const pc = project(center3D, w, h);
+    targetCtx.fillStyle = labelColor;
+    targetCtx.font = "bold 11px system-ui, sans-serif";
+    targetCtx.textAlign = "center";
+    targetCtx.textBaseline = "middle";
+    targetCtx.fillText(fp.name || `FP${fp.id + 1}`, pc[0], pc[1]);
+    targetCtx.textAlign = "left";
+    targetCtx.textBaseline = "alphabetic";
+  }
+}
+
+// Draw Dynamic Ground Reaction Force (GRF) Vectors & COP
+function drawForceVectors(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
+  if (!trial || !trial.force_plates || !trial.force_plates.length || !showForceVectors) return;
+  const isLight = currentTheme === "light";
+  const vectorColor = isLight ? "#ea580c" : "#f97316";
+  const copColor = isLight ? "#eab308" : "#facc15";
+
+  let totalFz = 0;
+  const plateReadouts = [];
+
+  for (const fp of trial.force_plates) {
+    if (!fp.cop || !fp.force) continue;
+    const cop = fp.cop[frame];
+    const force = fp.force[frame];
+    const contact = fp.contact ? fp.contact[frame] : true;
+
+    if (!cop || !valid(cop) || !force || !valid(force) || !contact) continue;
+
+    const fz = force[2];
+    const fMag = Math.hypot(force[0], force[1], force[2]);
+    if (Math.abs(fz) < forceThreshold || fMag < 1.0) continue;
+
+    totalFz += fz;
+    plateReadouts.push(`${fp.name}: ${Math.round(fz)} N`);
+
+    // Project Center of Pressure
+    const pCop = project(cop, w, h);
+
+    // Tip of vector in 3D (meters)
+    const tip3D = [
+      cop[0] + force[0] * forceVectorScale,
+      cop[1] + force[1] * forceVectorScale,
+      cop[2] + force[2] * forceVectorScale,
+    ];
+    const pTip = project(tip3D, w, h);
+
+    if (!Number.isFinite(pCop[0]) || !Number.isFinite(pTip[0])) continue;
+
+    // Draw COP marker on plate surface
+    targetCtx.beginPath();
+    targetCtx.arc(pCop[0], pCop[1], 4.5, 0, Math.PI * 2);
+    targetCtx.fillStyle = copColor;
+    targetCtx.fill();
+    targetCtx.strokeStyle = isLight ? "#0f172a" : "#ffffff";
+    targetCtx.lineWidth = 1.5;
+    targetCtx.stroke();
+
+    // Draw 3D Force Vector Shaft
+    targetCtx.beginPath();
+    targetCtx.moveTo(pCop[0], pCop[1]);
+    targetCtx.lineTo(pTip[0], pTip[1]);
+    targetCtx.strokeStyle = vectorColor;
+    targetCtx.lineWidth = 3.5;
+    targetCtx.stroke();
+
+    // Draw Arrowhead at tip
+    const dx = pTip[0] - pCop[0], dy = pTip[1] - pCop[1];
+    const len = Math.hypot(dx, dy);
+    if (len > 4) {
+      const angle = Math.atan2(dy, dx);
+      const headLen = Math.min(14, len * 0.4);
+      const headAngle = Math.PI / 6;
+
+      targetCtx.beginPath();
+      targetCtx.moveTo(pTip[0], pTip[1]);
+      targetCtx.lineTo(
+        pTip[0] - headLen * Math.cos(angle - headAngle),
+        pTip[1] - headLen * Math.sin(angle - headAngle)
+      );
+      targetCtx.lineTo(
+        pTip[0] - headLen * Math.cos(angle + headAngle),
+        pTip[1] - headLen * Math.sin(angle + headAngle)
+      );
+      targetCtx.closePath();
+      targetCtx.fillStyle = vectorColor;
+      targetCtx.fill();
+    }
+
+    // Force magnitude readout next to arrow tip
+    targetCtx.font = "bold 11px system-ui, sans-serif";
+    targetCtx.fillStyle = isLight ? "#0f172a" : "#f0f6fc";
+    targetCtx.fillText(`${Math.round(fMag)} N`, pTip[0] + 8, pTip[1] - 4);
+  }
+
+  // Update sidebar readouts
+  if ($("total-fz-val")) {
+    $("total-fz-val").textContent = `${Math.round(totalFz)} N`;
+  }
+  if ($("plate-mini-readouts")) {
+    $("plate-mini-readouts").textContent = plateReadouts.length > 0 ? plateReadouts.join(" · ") : "No active contact";
+  }
+}
+
 // Render 3D scene to any canvas context (main scene or detached popout window)
 function drawSceneToContext(targetCtx, w, h) {
   targetCtx.clearRect(0, 0, w, h);
   if (!trial) return;
 
   drawGroundGrid(targetCtx, w, h);
+
+  // Draw Force Platforms on the floor
+  drawForcePlates(targetCtx, w, h);
+
+  // Draw Ground Reaction Force Vectors & Center of Pressure
+  drawForceVectors(targetCtx, w, h);
 
   const pts = trial.xyz[frame] || [];
   const activeIdx = activeMarkerIndex;
@@ -1862,6 +2105,46 @@ function getSeriesForMode(mode) {
       }
     }
     series.push({ name: "Speed (m/s)", color: colSpeed, values: speedVals });
+  } else if (mode === "fp-all-fz" && trial.force_plates && trial.force_plates.length) {
+    const fpPalette = isLight
+      ? ["#ea580c", "#2563eb", "#059669", "#7c3aed"]
+      : ["#f97316", "#60a5fa", "#34d399", "#a78bfa"];
+    const totalFzVals = new Array(totalFrames).fill(0);
+    trial.force_plates.forEach((fp, idx) => {
+      const col = fpPalette[idx % fpPalette.length];
+      const vals = fp.force.map(f => f ? f[2] : 0);
+      series.push({ name: `${fp.name} Fz (N)`, color: col, values: vals });
+      for (let i = 0; i < totalFrames; i++) {
+        if (Number.isFinite(vals[i])) totalFzVals[i] += vals[i];
+      }
+    });
+    series.unshift({
+      name: "Total Vertical GRF (N)",
+      color: isLight ? "#dc2626" : "#ef4444",
+      values: totalFzVals,
+    });
+  } else if (mode.startsWith("fp-plate-") && trial.force_plates) {
+    const pIdx = Number(mode.replace("fp-plate-", ""));
+    const fp = trial.force_plates[pIdx];
+    if (fp && fp.force) {
+      const colX = isLight ? "#dc2626" : "#ef8686";
+      const colY = isLight ? "#16a34a" : "#82d99d";
+      const colZ = isLight ? "#2563eb" : "#60a5fa";
+      series.push({ name: `${fp.name} Fx (N)`, color: colX, values: fp.force.map(f => f ? f[0] : 0) });
+      series.push({ name: `${fp.name} Fy (N)`, color: colY, values: fp.force.map(f => f ? f[1] : 0) });
+      series.push({ name: `${fp.name} Fz (N)`, color: colZ, values: fp.force.map(f => f ? f[2] : 0) });
+    }
+  } else if (mode === "fp-cop" && trial.force_plates) {
+    const copPalette = isLight
+      ? [["#b45309", "#d97706"], ["#1d4ed8", "#3b82f6"]]
+      : [["#f59e0b", "#fbbf24"], ["#60a5fa", "#93c5fd"]];
+    trial.force_plates.forEach((fp, idx) => {
+      const cols = copPalette[idx % copPalette.length];
+      const copX = fp.cop.map(p => p && Number.isFinite(p[0]) ? p[0] : NaN);
+      const copY = fp.cop.map(p => p && Number.isFinite(p[1]) ? p[1] : NaN);
+      series.push({ name: `${fp.name} COP X (m)`, color: cols[0], values: copX });
+      series.push({ name: `${fp.name} COP Y (m)`, color: cols[1], values: copY });
+    });
   }
   return series;
 }
@@ -2071,6 +2354,10 @@ function saveSessionState() {
       bones: $("bones") ? $("bones").checked : true,
       loop: $("loop") ? $("loop").checked : true,
       showDistance,
+      showForcePlates,
+      showForceVectors,
+      forceVectorScale,
+      forceThreshold,
       speed: $("speed") ? $("speed").value : "1",
       theme: currentTheme,
       markerSize,
@@ -2119,6 +2406,24 @@ function restoreSessionState(data) {
     if (typeof state.bones === "boolean" && $("bones")) $("bones").checked = state.bones;
     if (typeof state.loop === "boolean" && $("loop")) $("loop").checked = state.loop;
     if (typeof state.showDistance === "boolean") setDistanceVisible(state.showDistance);
+    if (typeof state.showForcePlates === "boolean") {
+      showForcePlates = state.showForcePlates;
+      if ($("show-force-plates")) $("show-force-plates").checked = showForcePlates;
+    }
+    if (typeof state.showForceVectors === "boolean") {
+      showForceVectors = state.showForceVectors;
+      if ($("show-force-vectors")) $("show-force-vectors").checked = showForceVectors;
+    }
+    if (Number.isFinite(state.forceVectorScale)) {
+      forceVectorScale = state.forceVectorScale;
+      if ($("force-scale-slider")) $("force-scale-slider").value = String((forceVectorScale * 1000).toFixed(1));
+      if ($("force-scale-val")) $("force-scale-val").textContent = `${(forceVectorScale * 1000).toFixed(1)} mm/N`;
+    }
+    if (Number.isFinite(state.forceThreshold)) {
+      forceThreshold = state.forceThreshold;
+      if ($("force-threshold-slider")) $("force-threshold-slider").value = String(forceThreshold);
+      if ($("force-threshold-val")) $("force-threshold-val").textContent = `${forceThreshold} N`;
+    }
     if (state.speed && $("speed")) $("speed").value = state.speed;
     if (state.theme && (state.theme === "light" || state.theme === "dark")) {
       setTheme(state.theme);
@@ -2183,6 +2488,51 @@ function load(data) {
 
   initSkeleton(data.labels);
   buildTable();
+
+  // Handle Force Plates
+  rawForcePlates = data.force_plates ? JSON.parse(JSON.stringify(data.force_plates)) : null;
+  const hasForcePlates = Array.isArray(data.force_plates) && data.force_plates.length > 0;
+  if ($("force-platforms-section")) {
+    $("force-platforms-section").hidden = !hasForcePlates;
+    if (hasForcePlates && $("force-plate-count-badge")) {
+      $("force-plate-count-badge").textContent = `${data.force_plates.length} plates`;
+    }
+  }
+
+  // Update plot modes dropdowns with force plate options if present
+  for (const plotSelectId of ["plot1-mode", "plot2-mode"]) {
+    const sel = $(plotSelectId);
+    if (!sel) continue;
+    Array.from(sel.querySelectorAll(".fp-opt-group, option[value^='fp-']")).forEach(opt => opt.remove());
+    if (hasForcePlates) {
+      const optGroup = document.createElement("optgroup");
+      optGroup.label = "── Force Plates & GRF ──";
+      optGroup.className = "fp-opt-group";
+
+      const optFz = document.createElement("option");
+      optFz.value = "fp-all-fz";
+      optFz.textContent = "Ground Reaction Force · Vertical (Fz - Total & Plates)";
+      optGroup.appendChild(optFz);
+
+      data.force_plates.forEach((fp, idx) => {
+        const optP = document.createElement("option");
+        optP.value = `fp-plate-${idx}`;
+        optP.textContent = `${fp.name} · 3D Forces (Fx, Fy, Fz)`;
+        optGroup.appendChild(optP);
+      });
+
+      const optCop = document.createElement("option");
+      optCop.value = "fp-cop";
+      optCop.textContent = "Center of Pressure · (COP X & Y)";
+      optGroup.appendChild(optCop);
+
+      sel.appendChild(optGroup);
+    }
+  }
+  if (hasForcePlates && $("plot1-mode")) {
+    $("plot1-mode").value = "fp-all-fz";
+  }
+
   fit();
   measure();
   restoreSessionState(data);
@@ -2333,6 +2683,39 @@ if ($("marker-select")) {
 }
 if ($("plot1-mode")) $("plot1-mode").onchange = draw;
 if ($("plot2-mode")) $("plot2-mode").onchange = draw;
+
+if ($("show-force-plates")) {
+  $("show-force-plates").onchange = e => {
+    showForcePlates = e.target.checked;
+    draw();
+    saveSessionState();
+  };
+}
+if ($("show-force-vectors")) {
+  $("show-force-vectors").onchange = e => {
+    showForceVectors = e.target.checked;
+    draw();
+    saveSessionState();
+  };
+}
+if ($("force-scale-slider")) {
+  $("force-scale-slider").oninput = e => {
+    const val = Number(e.target.value);
+    forceVectorScale = val * 0.001;
+    if ($("force-scale-val")) $("force-scale-val").textContent = `${val.toFixed(1)} mm/N`;
+    draw();
+  };
+  $("force-scale-slider").onchange = saveSessionState;
+}
+if ($("force-threshold-slider")) {
+  $("force-threshold-slider").oninput = e => {
+    const val = Number(e.target.value);
+    forceThreshold = val;
+    if ($("force-threshold-val")) $("force-threshold-val").textContent = `${val} N`;
+    draw();
+  };
+  $("force-threshold-slider").onchange = saveSessionState;
+}
 
 // Layout Presets
 function setLayout(name) {
@@ -3958,7 +4341,30 @@ function recomputeTrialXYZ() {
     const lcsRes = computeLCSMatrix(currentLCS.ap, currentLCS.axial);
     if (lcsRes.valid) {
       workingXYZ = applyLCSToXYZ(workingXYZ, lcsRes.R);
+      if (rawForcePlates) {
+        const R = lcsRes.R;
+        trial.force_plates = rawForcePlates.map(fp => ({
+          ...fp,
+          corners: fp.corners.map(c => [
+            R[0][0] * c[0] + R[0][1] * c[1] + R[0][2] * c[2],
+            R[1][0] * c[0] + R[1][1] * c[1] + R[1][2] * c[2],
+            R[2][0] * c[0] + R[2][1] * c[1] + R[2][2] * c[2],
+          ]),
+          cop: fp.cop.map(p => p ? [
+            R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2],
+            R[1][0] * p[0] + R[1][1] * p[1] + R[1][2] * p[2],
+            R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2],
+          ] : null),
+          force: fp.force.map(f => f ? [
+            R[0][0] * f[0] + R[0][1] * f[1] + R[0][2] * f[2],
+            R[1][0] * f[0] + R[1][1] * f[1] + R[1][2] * f[2],
+            R[2][0] * f[0] + R[2][1] * f[1] + R[2][2] * f[2],
+          ] : [0, 0, 0]),
+        }));
+      }
     }
+  } else if (rawForcePlates) {
+    trial.force_plates = JSON.parse(JSON.stringify(rawForcePlates));
   }
 
   // Apply Filter

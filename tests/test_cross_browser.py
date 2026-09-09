@@ -454,13 +454,49 @@ def run_suite_for_browser(browser_name):
         assert file_clicked is True, "Clicking #btn-welcome-select should trigger #file click"
         print(f"[{browser_name}] PASS: Welcome screen and Select File button click handler")
 
-        # 11. Test Squat file (squat_viewer.html) as well to verify secondary dataset
+        # 11. Test Squat file (squat_viewer.html) & Force Platforms / GRF Visualization
         squat_url = Path("outputs/squat_viewer.html").resolve().as_uri()
         driver.get(squat_url)
-        time.sleep(1.0)
+        time.sleep(1.2)
         squat_frame_text = driver.find_element(By.ID, "frame").text
         assert "/" in squat_frame_text, f"Squat trial frames: {squat_frame_text}"
-        print(f"[{browser_name}] PASS: Squat trial loaded ({squat_frame_text})")
+
+        # Check Force Plate section visibility and badge
+        fp_section = driver.find_element(By.ID, "force-platforms-section")
+        assert not fp_section.get_attribute("hidden"), "Force platform section should not be hidden"
+        fp_badge = driver.find_element(By.ID, "force-plate-count-badge").text
+        assert "2 plates" in fp_badge.lower(), f"Expected 2 plates badge, got: {fp_badge}"
+
+        # Check Force Plate checkboxes
+        chk_plates = driver.find_element(By.ID, "show-force-plates")
+        chk_vectors = driver.find_element(By.ID, "show-force-vectors")
+        assert chk_plates.is_selected(), "Show Force Plates should be checked by default"
+        assert chk_vectors.is_selected(), "Show Force Vectors should be checked by default"
+
+        # Check Plot 1 mode defaults to Vertical GRF
+        plot1_val = driver.find_element(By.ID, "plot1-mode").get_attribute("value")
+        assert plot1_val == "fp-all-fz", f"Expected default plot1 mode fp-all-fz, got: {plot1_val}"
+
+        # Check Vertical GRF readout
+        fz_readout = driver.find_element(By.ID, "total-fz-val").text
+        assert "N" in fz_readout.upper(), f"Expected N in vertical force readout, got: {fz_readout}"
+
+        # Test adjusting force scale slider
+        driver.execute_script("""
+            const sl = document.getElementById('force-scale-slider');
+            sl.value = '2.5';
+            sl.dispatchEvent(new Event('input', { bubbles: true }));
+        """)
+        time.sleep(0.1)
+        scale_val = driver.find_element(By.ID, "force-scale-val").text
+        assert "2.5" in scale_val, f"Expected 2.5 in scale value, got: {scale_val}"
+
+        # Capture squat force plate screenshot
+        out_squat = f"outputs/screenshot_{browser_name}_squat_force_plates.png"
+        driver.save_screenshot(out_squat)
+        print(
+            f"[{browser_name}] PASS: Force plates & GRF visualization verified on squat trial ({fp_badge})"
+        )
 
         print(f"\n>>> [{browser_name}] ALL 11 TEST CATEGORIES PASSED WITH 100% SUCCESS! <<<\n")
         return True

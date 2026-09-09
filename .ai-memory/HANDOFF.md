@@ -1,19 +1,24 @@
-# Session Handoff: Cross-Platform Executables and mkvis3d.py Entrypoint
+# Session Handoff: Force Platform & Ground Reaction Force (GRF) Visualization (Visual3D & Mokka Parity)
 - **Status:** Completed
 - **Current State:**
-  - `mkvis3d_launcher.sh` path bug fixed (changed `dirname "${BASH_SOURCE[0]}"/..` to `dirname "${BASH_SOURCE[0]}"`).
-  - `mkvis3d.py` implemented as the primary executable entrypoint with auto-bootstrapping into `.venv`, supporting GUI mode (no-args/double-click), direct file loading (`./mkvis3d.py trial.c3d`), and all 10 CLI subcommands (`info`, `segment`, `view`, `gui`, `blender`, `bvh`, `demo`, `dynamics`, `lcs`, `filter`).
-  - `run_app.py` kept as a backward-compatibility wrapper delegating to `mkvis3d.py`.
-  - Multiplatform root launchers provided: `mkvis3d_launcher.sh` (Linux), `mkvis3d.bat` (Windows), `mkvis3d.command` (macOS).
-  - Standalone Linux binary compiled and verified at `dist/mkvis3d` (76MB ELF binary with all hidden imports).
-  - Automated GitHub Actions CI workflow created at `.github/workflows/build_executables.yml` building native executables on `ubuntu-latest`, `windows-latest`, and `macos-latest` on tag push or workflow dispatch.
+  - `openbiomech/c3d_io/parameters.py`: Numeric parameter arrays reshaped in Fortran column-major order (`order="F"`), resolving dimensional transposition for `CORNERS`, `ORIGIN`, and `CHANNEL`.
+  - `openbiomech/c3d_io/legacy_binary.py`: Added `extract_force_platforms(parsed, point_factor, f_threshold=15.0)` calculating Bertec/AMTI Type 2 force plates, physical corners, moment origin compensation (`Nmm` to `N*m`), Shimba/BTK Center of Pressure (COP), local-to-global coordinate rotation, and vertical reaction forces ($+Z$).
+  - `openbiomech/marker_trial.py`: `ForcePlatform` dataclass added; `MarkerTrial` extended with `force_plates`, `analog_labels`, and `analog_rate_hz`.
+  - `openbiomech/viewer.py`: `trial_payload` updated with NaN-safe JSON serialization for force platforms.
+  - `openbiomech/cli.py`: Subcommand `info` reports physical dimensions, plate type, and active contact frames.
+  - `openbiomech/viewer.html` & `openbiomech/viewer.js`: Interactive "Force Platforms & GRF" section with checkboxes, vector scale, contact threshold sliders, and real-time vertical GRF readout. Viewport renders physical floor plates, labels, and dynamic 3D GRF vectors at COP. Plot selector includes vertical GRF and 3D force components.
+  - `tests/test_c3d_force_plates.py`: 4 deterministic tests verifying plate geometry, channels, COP bounds, and barbell squat loading (~966 N total vertical force).
+  - `tests/test_cross_browser.py`: Extended to verify force plates UI, controls, and default kinetics charts across Google Chrome, Chromium, and Firefox.
+  - Rebuilt Linux standalone binary `dist/mkvis3d` with PyInstaller.
 - **What Worked:**
-  - `mkvis3d.py` auto-detects virtualenv and re-executes seamlessly with `sys.executable` if run via system Python.
-  - Linux binary `dist/mkvis3d` rebuilt with `scripts/build_app.py` and PyInstaller, including `openbiomech.biomech_math.lcs`, `openbiomech.biomech_math.filtering`, and `scipy.signal`.
-  - All test suites passing: 188 unit tests and 3 cross-browser Playwright tests (Chrome, Chromium, Firefox).
-  - Ruff lint and formatting pass with 0 errors.
+  - Multi-dimensional parameters in C3D files must be unpacked with Fortran ordering (`order="F"`) to correctly match ezc3d and C3D specification dimensions `(3, 4, num_plates)`.
+  - Moment-unit scaling (`Nmm` to `N*m` via $0.001$ factor) places the COP exactly within the physical foot boundaries during the squat trial.
+  - All 192 non-browser unit tests pass (`uv run pytest -m "not browser"`).
+  - All 11 categories in `tests/test_cross_browser.py` pass across Google Chrome, Chromium Snap, and Firefox with 100% success.
+  - Ruff linter (`uv run ruff check .`) and formatter (`uv run ruff format --check .`) pass with zero errors.
 - **Failed Approaches:**
-  - `mkvis3d_launcher.sh` originally used `DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"`, navigating outside the project directory when placed in root. Corrected to current script directory.
-  - PyInstaller does not support cross-compiling Windows `.exe` or macOS `.app` directly on a Linux host (due to platform-specific C libraries and dynamic linkers); solved cleanly by adding a multi-runner GitHub Actions CI workflow.
+  - Initial C3D parameter reshaping used default C-order (`order="C"`), which transposed the channel and corner axes across plates. Fixed by applying `order="F"`.
+  - Bertec transducers in C3D files provide raw moment channels in `Nmm`; calculating COP without converting moments to `N*m` placed the COP several meters outside the force plate. Fixed by applying moment scaling factor of $0.001$.
+  - CSS `text-transform: uppercase` on `.badge` caused `driver.find_element().text` to return uppercase strings (`"2 PLATES"`). Adjusted cross-browser assertions to be case-insensitive.
 - **Open Questions & Next Steps:**
-  - When releasing new versions, push a git tag (e.g. `v0.1.0`) to trigger GitHub Actions CI build and automatically generate downloadable binaries for Windows, macOS, and Linux.
+  - Ready for inverse dynamics pipeline linking segment kinematic chains directly with ground reaction forces from the extracted force platforms.
