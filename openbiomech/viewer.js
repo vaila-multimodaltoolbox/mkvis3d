@@ -1654,6 +1654,29 @@ document.addEventListener("click", () => {
 if ($("action-open-file")) $("action-open-file").onclick = () => $("file").click();
 if ($("action-export-plot")) $("action-export-plot").onclick = () => $("export").click();
 if ($("action-export-html")) $("action-export-html").onclick = () => $("snapshot").click();
+if (boot.server && $("action-shutdown")) {
+  $("shutdown-divider").hidden = false;
+  $("action-shutdown").hidden = false;
+  $("action-shutdown").onclick = async () => {
+    if (!window.confirm("Encerrar o mkvis3d?")) return;
+    try {
+      const response = await fetch("/api/shutdown", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error("O aplicativo recusou o encerramento.");
+      document.title = "mkvis3d encerrado";
+      document.body.innerHTML = [
+        '<main style="font:16px system-ui;max-width:560px;margin:15vh auto;padding:24px;">',
+        "<h1>mkvis3d encerrado</h1>",
+        "<p>Você já pode fechar esta aba do navegador.</p>",
+        "</main>"
+      ].join("");
+    } catch (error) {
+      status(`Não foi possível encerrar: ${error.message}`, true);
+    }
+  };
+}
 
 if ($("action-export-all-csv")) {
   $("action-export-all-csv").onclick = () => {

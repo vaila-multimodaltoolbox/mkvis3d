@@ -328,11 +328,16 @@ def create_server(
                 "/api/export/vaila",
                 "/api/analyze/orientation",
                 "/api/analyze/dynamics",
+                "/api/shutdown",
             ):
                 self.send_bytes(404, b"Not found", "text/plain")
                 return
             if self.headers.get("Authorization") != f"Bearer {token}":
                 self.send_bytes(403, b'{"error":"Session token required"}', "application/json")
+                return
+            if req_path == "/api/shutdown":
+                self.send_bytes(200, b'{"status":"shutting down"}', "application/json")
+                self.server.shutdown()
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -480,7 +485,7 @@ def serve_viewer(
         initial_project=initial_project_payload,
     )
     print(f"mkvis3d: {url}", flush=True)
-    print("Press Ctrl+C to stop the local viewer.", flush=True)
+    print("Use File > Encerrar mkvis3d in the viewer or press Ctrl+C to stop.", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:
