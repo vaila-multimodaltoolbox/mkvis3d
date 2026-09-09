@@ -1,33 +1,22 @@
-# Session Handoff: Reference System Fixes & Windows Portable Executable Integration
+# Session Handoff: Fast 3D Refresh, Visual3D Gap Timeline, Curve Toggles & 1-Click Interpolation
 
 - **Status:** Completed
 - **Current State:**
-  - Integrated `wininstall` branch with Windows portable executable support (`dist/mkvis3d.exe`), `/api/shutdown` endpoint, **File > Encerrar mkvis3d** action in viewer, and graceful CLI `FileNotFoundError` path handling.
-  - Implemented full arbitrary 3-axis reference system and origin translation engine in backend (`openbiomech/biomech_math/lcs.py`) and frontend (`openbiomech/viewer.js`, `openbiomech/viewer.html`).
-  - Simplified UI removing all academic citations and standards jargon, providing intuitive presets (Default Z-Up, Y-Up, X-Up, Walkway along X, Inverted Z, Reverse Walk -Y), target axis selectors (`+X`, `-X`, `+Y`, `-Y`, `+Z`, `-Z`), quick swap buttons ($X \leftrightarrow Y$, $X \leftrightarrow Z$, $Y \leftrightarrow Z$), sign inverts ($\pm X, \pm Y, \pm Z$), and Origin Translation offsets ($\Delta X, \Delta Y, \Delta Z$ in meters) with instant helper actions (`Center X=0, Y=0`, `Floor to Z=0`, `Reset Translation`).
-  - Fixed disappearing 3D model/animation on coordinate frame change: eliminated double-rotation (`orient(p)` now identity in viewer loop), guarded viewport bounding math against non-finite spans, reset camera view (`yaw = -0.45, pitch = 0.22`) on coordinate change and in sidebar `#up` change, and auto-adjusted floor elevation.
-  - Full synchronization across markers, skeleton, force plate corners, COP, and ground reaction force vectors.
-  - All test suites passing (220/220 tests), `ruff check .` passing with 0 errors, live CDP browser tests verified.
+  - Implemented automated Fast 3D Viewport Refresh (`refresh3DViewport()`) cycling DOM display/reflow, clearing stale canvas transforms, syncing with `window.devicePixelRatio`, resetting camera angles to isometric view, and recalculating scene bounds. Automatically triggered on Reference System (LCS) changes (`applyReferenceSystem`, `resetLCS`, `$("up").onchange`), filter operations (`applyFilter`, `revertFilter`, quick filter), and marker interpolation/revert. Also exposed via manual `↻ Refresh 3D` button in the 3D pane header.
+  - Missing or NaN marker frames are strictly dropped from the 3D scene (no phantom points at origin, no connected bones to NaNs; guarded `line(a, b)` and `project(raw)`).
+  - Trajectory gaps are highlighted on the plot timeline with Visual3D-style vertical semi-transparent shaded bands, diagonal cross-hatching, solid bottom indicator bars, and duration badges (`Xf gap`). Plot header displays dynamic gap summary badge (`⚠ X gaps (Y.Y%)` in red vs `✓ 100% OK` in green).
+  - Added interactive coordinate curve visibility chips (`[X]`, `[Y]`, `[Z]`) in Plot 1 & Plot 2 headers, and dedicated single-coordinate modes (`active-x`, `active-y`, `active-z`, `active-xyz`). Toggling curves automatically rescales the vertical axis to exclusively fit visible series.
+  - Added 1-click **`⚡ Interpolate`** tool in the plot header for the active marker with selectable algorithms (`Cubic Spline (PCHIP)`, `Linear`, `Nearest`). Gaps are filled in `rawLoadedXYZ` using pure vanilla JS `gapFill1D()`, immediately updating the 3D animation, reconnecting timeline curves, and enabling 1-click **`↩ Revert`** to restore raw missing frames at any time.
+  - All 220 pytest tests passed (`uv run pytest -m "not browser"`), `ruff check .` passed with 0 errors, and automated Chrome CDP tests verified all workflows.
 
 - **What Worked:**
-  1. **Direct World-Space Coordinate Engine:**
-     - Transforming trial trajectories, force plate corners, and COP into world space directly inside `recomputeTrialXYZ()` while keeping `orient(p)` clean prevented the double-transformation bug.
-     - Rotating ground reaction force vectors $\mathbf{F}$ by $R$ while translating positions ($\mathbf{r}' = R\mathbf{r} + \mathbf{T}$) keeps forces physically consistent.
-  2. **Simplified, Jargon-Free Reference System UI:**
-     - Modal provides clear default templates and direct axis mapping.
-     - Quick buttons for axis swap and sign inversion allow 1-click orientation adjustments.
-     - Origin translation controls allow users to bring far-off trial origins to $(0, 0, 0)$ instantly.
-  3. **Windows Portable Executable Integration:**
-     - Session-token-protected `/api/shutdown` endpoint with `action-shutdown` in the viewer File menu.
-     - Clean `FileNotFoundError` formatting in CLI.
-     - Fully verified with automated shutdown test suite (`tests/test_application.py`).
-  4. **Verification:**
-     - Pytest suite: 220 passed (`uv run pytest -m "not browser"`).
-     - Code style & linting: `uv run ruff check .` passed with 0 errors.
-     - CDP browser tests (`scratch/test_ref_system_debug.mjs`) verified rendering, marker coordinates, force plate alignment, and camera reset across presets, swaps, inverts, and translations.
+  1. **Fast 3D Viewport Refresh:** Programmatically cycling `.pane-body` display between `"none"` and `""` with forced reflow (`void el.offsetHeight`) drops stale GPU compositor surfaces and triggers proper canvas scaling without requiring manual window popout/redock.
+  2. **Visual3D Gap Shading & Missing Frame Handling:** Drawing shaded vertical bands with diagonal hatching pattern directly in `drawSinglePlot()` provides high-contrast Visual3D-grade timeline visualization while ensuring NaN frames never render in 3D.
+  3. **Multi-Curve Toggles & Dynamic Scaling:** Independent toggle chips (`plot1CurveVisibility`, `plot2CurveVisibility`) filter curves from `getSeriesForMode()`, allowing users to inspect isolated X, Y, or Z components at maximum vertical resolution.
+  4. **1-Click Interpolation & Revert Layer:** Backing up `rawLoadedXYZ` per marker in `interpolatedMarkers[markerIdx]` enables non-destructive gap filling that seamlessly combines with subsequent Reference System (LCS) matrix transformations and smoothing filters.
 
 - **Failed Approaches:**
-  - Branching from older commit `437af48` on the Windows machine caused the Windows build to lack the double-rotation fix and reference system overhaul. Merging and unifying into `main` resolves this.
+  - Relying solely on `resize()` without cycling DOM display was insufficient when the browser engine retained stale canvas backing buffers after reference system coordinate changes.
 
 - **Open Questions & Next Steps:**
-  - Push unified `main` to `origin/main`. Rebuild `dist/mkvis3d.exe` on Windows dev machine via `scripts/build_windows.bat` or GitHub Actions workflow.
+  - Commit changes to `main` and push to `origin/main`.

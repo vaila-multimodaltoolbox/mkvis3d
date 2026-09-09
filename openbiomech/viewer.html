@@ -675,6 +675,126 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   font-weight: 700;
 }
 
+/* Curve Toggle Chips (X, Y, Z) */
+.curve-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-surface);
+  padding: 1px 3px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  margin-left: 4px;
+}
+.btn-curve-chip {
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  user-select: none;
+  background: transparent;
+  color: var(--text-muted);
+}
+.btn-curve-chip.chip-x.active {
+  background: rgba(220, 38, 38, 0.2);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.4);
+}
+.btn-curve-chip.chip-y.active {
+  background: rgba(22, 163, 74, 0.2);
+  color: #16a34a;
+  border-color: rgba(22, 163, 74, 0.4);
+}
+.btn-curve-chip.chip-z.active {
+  background: rgba(37, 99, 235, 0.2);
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.4);
+}
+[data-theme="dark"] .btn-curve-chip.chip-x.active {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ef8686;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+[data-theme="dark"] .btn-curve-chip.chip-y.active {
+  background: rgba(34, 197, 94, 0.25);
+  color: #82d99d;
+  border-color: rgba(34, 197, 94, 0.5);
+}
+[data-theme="dark"] .btn-curve-chip.chip-z.active {
+  background: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.btn-curve-chip:not(.active) {
+  opacity: 0.4;
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: line-through;
+  border-color: transparent;
+}
+
+/* Gap summary badge */
+.gap-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.gap-badge.error {
+  background: rgba(239, 68, 68, 0.18);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+[data-theme="dark"] .gap-badge.error {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.gap-badge.ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+[data-theme="dark"] .gap-badge.ok {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+/* Interpolate tool buttons */
+.btn-interpolate {
+  background: var(--accent) !important;
+  color: var(--accent-text) !important;
+  font-weight: 600 !important;
+  border: none !important;
+}
+.btn-interpolate:hover {
+  filter: brightness(1.1);
+}
+.btn-revert {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #dc2626 !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+}
+[data-theme="dark"] .btn-revert {
+  color: #fca5a5 !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+.pane-select-tool {
+  background: var(--input-bg);
+  color: var(--accent);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
 /* Utility */
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
@@ -1121,6 +1241,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           </div>
           <div class="pane-tools">
             <span style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Orbit: Drag | Pan: Shift+Drag | Zoom: Wheel</span>
+            <button type="button" class="btn-pane-tool" id="btn-refresh-3d" title="Fast 3D Viewport Refresh (re-sync canvas, layout reflow, and camera fit)">↻ Refresh 3D</button>
             <button class="btn-pane-tool btn-popout" data-pane="panel-3d" title="Pop Out 3D View to New Window (Multi-Monitor)">⧉</button>
           </div>
         </div>
@@ -1145,15 +1266,32 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div class="pane-header">
           <div class="pane-title">
             <span>Plot 1:</span>
-            <select id="plot1-mode" style="background: var(--input-bg); color: var(--accent); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px;">
+            <select id="plot1-mode" class="pane-select-tool">
               <option value="distance">Distance (Marker A to B)</option>
+              <option value="active-xyz">Active Marker · Coordinates (X, Y, Z)</option>
+              <option value="active-x">Active Marker · X Position</option>
+              <option value="active-y">Active Marker · Y Position</option>
               <option value="active-z">Active Marker · Z Position (Height)</option>
-              <option value="active-xyz">Active Marker · X, Y, Z Coordinates</option>
               <option value="active-speed">Active Marker · 3D Velocity / Speed</option>
             </select>
+            <div id="plot1-curve-toggles" class="curve-toggle-group" style="display: none;">
+              <button type="button" class="btn-curve-chip active chip-x" id="btn-plot1-chip-x" title="Toggle X axis curve">X</button>
+              <button type="button" class="btn-curve-chip active chip-y" id="btn-plot1-chip-y" title="Toggle Y axis curve">Y</button>
+              <button type="button" class="btn-curve-chip active chip-z" id="btn-plot1-chip-z" title="Toggle Z axis curve">Z</button>
+            </div>
           </div>
           <div class="pane-tools">
+            <span id="plot1-gap-badge" class="gap-badge ok" style="display: none;" title="Trajectory gaps in active marker">✓ 100%</span>
             <span id="plot1-readout" class="plot-readout">—</span>
+            <div id="plot1-interp-tools" class="interp-tools-group" style="display: none; align-items: center; gap: 4px;">
+              <select id="plot1-interp-method" class="pane-select-tool" title="Interpolation Algorithm (Visual3D / Cubic Spline)">
+                <option value="cubic">Cubic Spline (PCHIP)</option>
+                <option value="linear">Linear</option>
+                <option value="nearest">Nearest</option>
+              </select>
+              <button type="button" class="btn-pane-tool btn-interpolate" id="btn-interp-plot1" title="Interpolate missing/NaN frames for active marker">⚡ Interpolate</button>
+              <button type="button" class="btn-pane-tool btn-revert" id="btn-revert-plot1" style="display: none;" title="Revert active marker to raw data">↩ Revert</button>
+            </div>
             <button class="btn-pane-tool btn-float" data-pane="panel-plot1" title="Floating Window (Draggable / Resizable)">↗</button>
             <button class="btn-pane-tool btn-popout" data-pane="panel-plot1" title="Pop Out Plot 1 to New Window (Multi-Monitor)">⧉</button>
           </div>
@@ -1168,15 +1306,32 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div class="pane-header">
           <div class="pane-title">
             <span>Plot 2:</span>
-            <select id="plot2-mode" style="background: var(--input-bg); color: var(--accent); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px;">
+            <select id="plot2-mode" class="pane-select-tool">
               <option value="active-z" selected>Active Marker · Z Position (Height)</option>
+              <option value="active-x">Active Marker · X Position</option>
+              <option value="active-y">Active Marker · Y Position</option>
+              <option value="active-xyz">Active Marker · Coordinates (X, Y, Z)</option>
               <option value="active-speed">Active Marker · 3D Velocity / Speed</option>
-              <option value="active-xyz">Active Marker · X, Y, Z Coordinates</option>
               <option value="distance">Distance (Marker A to B)</option>
             </select>
+            <div id="plot2-curve-toggles" class="curve-toggle-group" style="display: none;">
+              <button type="button" class="btn-curve-chip active chip-x" id="btn-plot2-chip-x" title="Toggle X axis curve">X</button>
+              <button type="button" class="btn-curve-chip active chip-y" id="btn-plot2-chip-y" title="Toggle Y axis curve">Y</button>
+              <button type="button" class="btn-curve-chip active chip-z" id="btn-plot2-chip-z" title="Toggle Z axis curve">Z</button>
+            </div>
           </div>
           <div class="pane-tools">
+            <span id="plot2-gap-badge" class="gap-badge ok" style="display: none;" title="Trajectory gaps in active marker">✓ 100%</span>
             <span id="plot2-readout" class="plot-readout">—</span>
+            <div id="plot2-interp-tools" class="interp-tools-group" style="display: none; align-items: center; gap: 4px;">
+              <select id="plot2-interp-method" class="pane-select-tool" title="Interpolation Algorithm (Visual3D / Cubic Spline)">
+                <option value="cubic">Cubic Spline (PCHIP)</option>
+                <option value="linear">Linear</option>
+                <option value="nearest">Nearest</option>
+              </select>
+              <button type="button" class="btn-pane-tool btn-interpolate" id="btn-interp-plot2" title="Interpolate missing/NaN frames for active marker">⚡ Interpolate</button>
+              <button type="button" class="btn-pane-tool btn-revert" id="btn-revert-plot2" style="display: none;" title="Revert active marker to raw data">↩ Revert</button>
+            </div>
             <button class="btn-pane-tool btn-float" data-pane="panel-plot2" title="Floating Window (Draggable / Resizable)">↗</button>
             <button class="btn-pane-tool btn-popout" data-pane="panel-plot2" title="Pop Out Plot 2 to New Window (Multi-Monitor)">⧉</button>
             <button id="btn-close-plot2" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Close Window">✕</button>

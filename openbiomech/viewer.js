@@ -203,11 +203,14 @@ function projectOriented(p, w = canvas.clientWidth, h = canvas.clientHeight) {
 }
 
 function project(raw, w = canvas.clientWidth, h = canvas.clientHeight) {
+  if (!valid(raw)) return [NaN, NaN, NaN];
   return projectOriented(orient(raw), w, h);
 }
 
 function line(a, b, color, width = 1, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
+  if (!valid(a) || !valid(b)) return;
   const p = project(a, w, h), q = project(b, w, h);
+  if (!Number.isFinite(p[0]) || !Number.isFinite(p[1]) || !Number.isFinite(q[0]) || !Number.isFinite(q[1])) return;
   targetCtx.strokeStyle = color;
   targetCtx.lineWidth = width;
   targetCtx.beginPath();
@@ -822,15 +825,99 @@ function draw() {
   syncRefVideo();
 }
 
-// Plot caching to avoid expensive calculations every animation frame
-let cachedPlot1Data = null;
-let cachedPlot1Mode = "";
-let cachedPlot1Marker = -1;
+// Curve visibility states for Plot 1 and Plot 2
+let plot1CurveVisibility = { x: true, y: true, z: true };
+let plot2CurveVisibility = { x: true, y: true, z: true };
+let interpolatedMarkers = {}; // markerIndex -> original raw trajectory backup
+
+function findSeriesGaps(values) {
+  const gaps = [];
+  if (!values || !values.length) return gaps;
+  const n = values.length;
+  let i = 0;
+  while (i < n) {
+    if (values[i] !== null && Number.isFinite(values[i])) {
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < n && (values[i] === null || !Number.isFinite(values[i]))) {
+      i++;
+    }
+    const end = i - 1;
+    gaps.push({ start, end, length: end - start + 1 });
+  }
+  return gaps;
+}
+
+function getActiveMarkerGaps() {
+  if (!trial || !trial.xyz || activeMarkerIndex < 0 || activeMarkerIndex >= trial.labels.length) return [];
+  const xVals = trial.xyz.map(p => (valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][0] : NaN));
+  return findSeriesGaps(xVals);
+}
+
+function updatePlotHeaderUI(plotNum, mode) {
+  const prefix = `plot${plotNum}`;
+  const toggleGroup = $(`${prefix}-curve-toggles`);
+  const interpTools = $(`${prefix}-interp-tools`);
+  const gapBadge = $(`${prefix}-gap-badge`);
+  const revertBtn = $(`btn-revert-plot${plotNum}`);
+
+  const isActiveMarkerMode = mode && mode.startsWith("active-");
+  const isXyzMode = mode === "active-xyz";
+
+  // Curve chips (X, Y, Z)
+  if (toggleGroup) {
+    toggleGroup.style.display = isXyzMode ? "inline-flex" : "none";
+    const vis = plotNum === 1 ? plot1CurveVisibility : plot2CurveVisibility;
+    const btnX = $(`btn-${prefix}-chip-x`);
+    const btnY = $(`btn-${prefix}-chip-y`);
+    const btnZ = $(`btn-${prefix}-chip-z`);
+    if (btnX) btnX.classList.toggle("active", Boolean(vis.x));
+    if (btnY) btnY.classList.toggle("active", Boolean(vis.y));
+    if (btnZ) btnZ.classList.toggle("active", Boolean(vis.z));
+  }
+
+  // Active marker gaps & interpolation tools
+  if (isActiveMarkerMode && trial && trial.xyz && activeMarkerIndex >= 0 && activeMarkerIndex < trial.labels.length) {
+    const gaps = getActiveMarkerGaps();
+    const totalMissing = gaps.reduce((acc, g) => acc + g.length, 0);
+    const totalFrames = trial.xyz.length;
+    const markerName = trial.labels[activeMarkerIndex] || `Marker ${activeMarkerIndex + 1}`;
+
+    if (gapBadge) {
+      gapBadge.style.display = "inline-flex";
+      if (totalMissing > 0) {
+        const pct = ((totalMissing / totalFrames) * 100).toFixed(1);
+        gapBadge.className = "gap-badge error";
+        gapBadge.textContent = `⚠ ${totalMissing} gaps (${pct}%)`;
+        gapBadge.title = `${totalMissing} missing frames in "${markerName}". Click ⚡ Interpolate to gap-fill.`;
+      } else {
+        gapBadge.className = "gap-badge ok";
+        gapBadge.textContent = "✓ 100% OK";
+        gapBadge.title = `No missing frames in "${markerName}". Trajectory is complete.`;
+      }
+    }
+
+    if (interpTools) {
+      interpTools.style.display = "inline-flex";
+    }
+
+    if (revertBtn) {
+      revertBtn.style.display = interpolatedMarkers[activeMarkerIndex] ? "inline-block" : "none";
+    }
+  } else {
+    if (gapBadge) gapBadge.style.display = "none";
+    if (interpTools) interpTools.style.display = "none";
+    if (revertBtn) revertBtn.style.display = "none";
+  }
+}
 
 function drawPlot1() {
   const canvasG = graph1;
   const gx = gx1;
   const mode = $("plot1-mode") ? $("plot1-mode").value : "distance";
+  updatePlotHeaderUI(1, mode);
   drawSinglePlot(canvasG, gx, mode, $("plot1-readout"), 1);
 }
 
@@ -839,6 +926,7 @@ function drawPlot2() {
   const canvasG = $("graph2");
   const gx = graph2;
   const mode = $("plot2-mode") ? $("plot2-mode").value : "active-z";
+  updatePlotHeaderUI(2, mode);
   drawSinglePlot(canvasG, gx, mode, $("plot2-readout"), 2);
 }
 
@@ -847,7 +935,7 @@ function drawPlots() {
   drawPlot2();
 }
 
-function getSeriesForMode(mode) {
+function getSeriesForMode(mode, plotId = 1) {
   const isLight = currentTheme === "light";
   const colDistance = isLight ? "#b45309" : "#f2c875";
   const colZ = isLight ? "#0f766e" : "#59dec3";
@@ -856,19 +944,39 @@ function getSeriesForMode(mode) {
   const colSpeed = isLight ? "#7c3aed" : "#a38bf5";
 
   const series = [];
-  const totalFrames = trial.xyz.length;
+  const totalFrames = trial ? trial.xyz.length : 0;
+  if (!trial) return series;
+
   if (mode === "distance") {
     series.push({ name: "Distance", color: colDistance, values: distances });
   } else if (mode === "active-z") {
     const vals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
     series.push({ name: "Z (Height)", color: colZ, values: vals });
+  } else if (mode === "active-x") {
+    const vals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][0] : NaN);
+    series.push({ name: "X", color: colX, values: vals });
+  } else if (mode === "active-y") {
+    const vals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][1] : NaN);
+    series.push({ name: "Y", color: colY, values: vals });
   } else if (mode === "active-xyz") {
-    const xVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][0] : NaN);
-    const yVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][1] : NaN);
-    const zVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
-    series.push({ name: "X", color: colX, values: xVals });
-    series.push({ name: "Y", color: colY, values: yVals });
-    series.push({ name: "Z", color: colZ, values: zVals });
+    const isPlot2 = plotId === 2 || plotId === "panel-plot2" || (typeof plotId === "string" && plotId.includes("plot2"));
+    const vis = isPlot2 ? plot2CurveVisibility : plot1CurveVisibility;
+    if (vis.x) {
+      const xVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][0] : NaN);
+      series.push({ name: "X", color: colX, values: xVals });
+    }
+    if (vis.y) {
+      const yVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][1] : NaN);
+      series.push({ name: "Y", color: colY, values: yVals });
+    }
+    if (vis.z) {
+      const zVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
+      series.push({ name: "Z", color: colZ, values: zVals });
+    }
+    if (series.length === 0) {
+      const zVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
+      series.push({ name: "Z", color: colZ, values: zVals });
+    }
   } else if (mode === "active-speed") {
     const speedVals = [0];
     for (let i = 1; i < totalFrames; i++) {
@@ -930,7 +1038,7 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
   if (!trial) return;
 
   const isLight = currentTheme === "light";
-  const series = getSeriesForMode(mode);
+  const series = getSeriesForMode(mode, plotId);
   let lo = Infinity, hi = -Infinity;
   for (const s of series) {
     for (const v of s.values) {
@@ -952,9 +1060,12 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
     }
   }
 
-  if (!Number.isFinite(lo)) return;
-  const extent = Math.max(hi - lo, 0.001);
   const totalFrames = trial.xyz.length;
+  if (!Number.isFinite(lo)) {
+    lo = -1;
+    hi = 1;
+  }
+  const extent = Math.max(hi - lo, 0.001);
 
   if (readoutEl) {
     let curVals = series.map(s => {
@@ -968,6 +1079,7 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
     readoutEl.textContent = curVals;
   }
 
+  // Grid lines
   gx.strokeStyle = isLight ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.08)";
   gx.lineWidth = 1;
   for (let k = 0; k <= 3; k++) {
@@ -978,6 +1090,58 @@ function drawSinglePlot(canvasG, gx, mode, readoutEl, plotId) {
     gx.stroke();
   }
 
+  // Visual3D-style gap detection & shading
+  let plotGaps = [];
+  if (mode && mode.startsWith("active-")) {
+    plotGaps = getActiveMarkerGaps();
+  } else if (mode === "distance") {
+    plotGaps = findSeriesGaps(distances);
+  }
+
+  if (plotGaps.length > 0) {
+    gx.save();
+    const plotWidth = w - 65;
+    const xStart = 50;
+    for (const gap of plotGaps) {
+      const x1 = xStart + gap.start * plotWidth / Math.max(1, totalFrames - 1);
+      const x2 = xStart + (gap.end + 1) * plotWidth / Math.max(1, totalFrames - 1);
+      const gapW = Math.max(2, x2 - x1);
+
+      // Shaded vertical gap band
+      gx.fillStyle = isLight ? "rgba(239, 68, 68, 0.12)" : "rgba(239, 68, 68, 0.18)";
+      gx.fillRect(x1, 10, gapW, h - 24);
+
+      // Diagonal hatching pattern
+      gx.strokeStyle = isLight ? "rgba(239, 68, 68, 0.22)" : "rgba(239, 68, 68, 0.32)";
+      gx.lineWidth = 1;
+      gx.beginPath();
+      for (let hx = x1 - (h - 24); hx < x2; hx += 8) {
+        const sx = Math.max(x1, hx);
+        const sy = 10 + (sx - hx);
+        const ex = Math.min(x2, hx + (h - 24));
+        const ey = 10 + (ex - hx);
+        if (sx < ex) {
+          gx.moveTo(sx, sy);
+          gx.lineTo(ex, ey);
+        }
+      }
+      gx.stroke();
+
+      // Bottom warning bar
+      gx.fillStyle = isLight ? "#dc2626" : "#ef4444";
+      gx.fillRect(x1, h - 15, gapW, 3);
+
+      // Gap badge text if band is wide enough
+      if (gapW >= 32) {
+        gx.fillStyle = isLight ? "#b91c1c" : "#fca5a5";
+        gx.font = "bold 9px system-ui, sans-serif";
+        gx.fillText(`${gap.length}f gap`, x1 + 2, 22);
+      }
+    }
+    gx.restore();
+  }
+
+  // Draw plot curves
   for (const s of series) {
     gx.strokeStyle = s.color;
     gx.lineWidth = 1.5;
@@ -1138,6 +1302,10 @@ function collectViewerState() {
       markerColor,
       currentLCS,
       activeFilterConfig,
+      plot1Mode: $("plot1-mode") ? $("plot1-mode").value : "distance",
+      plot2Mode: $("plot2-mode") ? $("plot2-mode").value : "active-z",
+      plot1CurveVisibility,
+      plot2CurveVisibility,
       plotHeight: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--plot-height").trim() : "170px",
       videoColWidth: $("windows-container") ? getComputedStyle($("windows-container")).getPropertyValue("--video-col-width").trim() : "420px",
       videoFrameOffset
@@ -1251,6 +1419,14 @@ function restoreSessionState(data) {
     if (Number.isFinite(state.videoFrameOffset)) {
       setVideoOffset(state.videoFrameOffset);
     }
+    if (state.plot1Mode && $("plot1-mode")) $("plot1-mode").value = state.plot1Mode;
+    if (state.plot2Mode && $("plot2-mode")) $("plot2-mode").value = state.plot2Mode;
+    if (state.plot1CurveVisibility && typeof state.plot1CurveVisibility === "object") {
+      plot1CurveVisibility = { ...plot1CurveVisibility, ...state.plot1CurveVisibility };
+    }
+    if (state.plot2CurveVisibility && typeof state.plot2CurveVisibility === "object") {
+      plot2CurveVisibility = { ...plot2CurveVisibility, ...state.plot2CurveVisibility };
+    }
 
     if (state.activeSkeletonTemplate && state.activeSkeletonTemplate !== "none") {
       if ($("skeleton-template-select")) $("skeleton-template-select").value = state.activeSkeletonTemplate;
@@ -1294,6 +1470,9 @@ function load(data) {
   pause();
   activeMarkerIndex = 0;
   skeletonPairs = [];
+  interpolatedMarkers = {};
+  plot1CurveVisibility = { x: true, y: true, z: true };
+  plot2CurveVisibility = { x: true, y: true, z: true };
 
   // Deep copy raw coordinates for lossless LCS and filter transformations
   rawLoadedXYZ = data.xyz.map(f => f.map(p => p ? [p[0], p[1], p[2]] : null));
@@ -1400,6 +1579,44 @@ function resize() {
 }
 new ResizeObserver(resize).observe($("workspace"));
 
+function refresh3DViewport() {
+  // 1. Force layout reflow and drop stale textures on 3D pane
+  const pane3d = $("panel-3d");
+  if (pane3d) {
+    const origBody = pane3d.querySelector(".pane-body");
+    if (origBody) {
+      const prevDisp = origBody.style.display;
+      origBody.style.display = "none";
+      void origBody.offsetHeight; // Force browser layout reflow
+      origBody.style.display = prevDisp === "none" ? "" : prevDisp;
+    }
+  }
+
+  // 2. Clear stale transforms and sync canvas pixel ratios
+  for (const c of [canvas, graph1, $("graph2")]) {
+    if (!c) continue;
+    const ratio = window.devicePixelRatio || 1;
+    const clientW = Math.max(10, c.clientWidth || (pane3d ? pane3d.clientWidth : 600));
+    const clientH = Math.max(10, c.clientHeight || (pane3d ? pane3d.clientHeight : 400));
+    c.width = Math.round(clientW * ratio);
+    c.height = Math.round(clientH * ratio);
+    const ctx2d = c.getContext("2d");
+    if (ctx2d) {
+      ctx2d.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+  }
+
+  // 3. Reset camera angles to standard isometric view and auto-fit bounding box
+  yaw = -0.45;
+  pitch = 0.22;
+  pan = [0, 0];
+  zoom = 1;
+
+  fit();
+  draw();
+  status("3D viewport refreshed and auto-centered.");
+}
+
 // Transport & Playback
 $("play").onclick = () => {
   if (!trial) return;
@@ -1503,10 +1720,12 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
-// Interactive 3D Orbit & Pan
+// Interactive 3D Orbit, Pan & Click-to-Select Marker
 let drag = null;
+let pointerDownPos = null;
 canvas.onpointerdown = e => {
   drag = [e.clientX, e.clientY];
+  pointerDownPos = [e.clientX, e.clientY];
   canvas.setPointerCapture(e.pointerId);
 };
 canvas.onpointermove = e => {
@@ -1523,8 +1742,34 @@ canvas.onpointermove = e => {
   draw();
   saveSessionState();
 };
-canvas.onpointerup = () => drag = null;
-canvas.onpointercancel = () => drag = null;
+canvas.onpointerup = e => {
+  if (pointerDownPos && trial && trial.xyz && trial.xyz[frame]) {
+    const clickDist = Math.hypot(e.clientX - pointerDownPos[0], e.clientY - pointerDownPos[1]);
+    if (clickDist < 5) {
+      // Direct click on 3D canvas - test if a marker was clicked
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const pts = trial.xyz[frame];
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      let closestIdx = -1, closestD = 16;
+      for (let i = 0; i < pts.length; i++) {
+        if (!valid(pts[i])) continue;
+        const q = project(pts[i], w, h);
+        const d = Math.hypot(q[0] - mx, q[1] - my);
+        if (d < closestD) {
+          closestD = d;
+          closestIdx = i;
+        }
+      }
+      if (closestIdx >= 0) {
+        selectActiveMarker(closestIdx);
+      }
+    }
+  }
+  drag = null;
+  pointerDownPos = null;
+};
+canvas.onpointercancel = () => { drag = null; pointerDownPos = null; };
 canvas.onwheel = e => {
   e.preventDefault();
   zoom = Math.max(0.1, Math.min(20, zoom * Math.exp(-e.deltaY * 0.001)));
@@ -1532,10 +1777,12 @@ canvas.onwheel = e => {
   saveSessionState();
 };
 
-// Interactive Chart Click-to-Seek
+// Interactive Chart Click-to-Seek & Drag-to-Scrub
 function setupChartSeek(canvasEl) {
   if (!canvasEl) return;
-  canvasEl.onclick = e => {
+  let isPlotDragging = false;
+
+  const seekFromChart = e => {
     if (!trial) return;
     const rect = canvasEl.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -1546,6 +1793,23 @@ function setupChartSeek(canvasEl) {
     draw();
     saveSessionState();
   };
+
+  canvasEl.addEventListener("pointerdown", e => {
+    isPlotDragging = true;
+    seekFromChart(e);
+    try { canvasEl.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  canvasEl.addEventListener("pointermove", e => {
+    if (isPlotDragging) seekFromChart(e);
+  });
+  const stopPlotDrag = e => {
+    if (isPlotDragging) {
+      isPlotDragging = false;
+      try { canvasEl.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+  };
+  canvasEl.addEventListener("pointerup", stopPlotDrag);
+  canvasEl.addEventListener("pointercancel", stopPlotDrag);
 }
 setupChartSeek(graph1);
 if ($("graph2")) setupChartSeek($("graph2"));
@@ -1554,7 +1818,7 @@ if ($("graph2")) setupChartSeek($("graph2"));
 $("front").onclick = () => { yaw = 0; pitch = 0; draw(); saveSessionState(); };
 $("side").onclick = () => { yaw = Math.PI / 2; pitch = 0; draw(); saveSessionState(); };
 $("top").onclick = () => { yaw = 0; pitch = Math.PI / 2; draw(); saveSessionState(); };
-$("reset").onclick = () => { yaw = -0.45; pitch = 0.22; fit(); saveSessionState(); };
+$("reset").onclick = () => { refresh3DViewport(); saveSessionState(); };
 
 if ($("up")) $("up").onchange = () => {
   const v = $("up").value;
@@ -1565,10 +1829,9 @@ if ($("up")) $("up").onchange = () => {
   } else {
     currentLCS = { ...currentLCS, x: "+X", y: "+Y", z: "+Z" };
   }
-  yaw = -0.45;
-  pitch = 0.22;
   recomputeTrialXYZ();
   updateLCSUI();
+  refresh3DViewport();
   saveSessionState();
 };
 for (const id of ["labels", "trail", "grid", "bones", "loop"]) {
@@ -4622,6 +4885,7 @@ function applyReferenceSystem(xKey, yKey, zKey, tx = 0, ty = 0, tz = 0) {
   recomputeTrialXYZ();
   updateLCSUI();
   closeLCSModal();
+  refresh3DViewport();
   status(`Reference System applied: X→${xKey}, Y→${yKey}, Z→${zKey}, Offset=[${(currentLCS.tx).toFixed(2)}, ${(currentLCS.ty).toFixed(2)}, ${(currentLCS.tz).toFixed(2)}] m.`);
 }
 
@@ -4649,6 +4913,7 @@ function resetLCS() {
   recomputeTrialXYZ();
   updateLCSUI();
   closeLCSModal();
+  refresh3DViewport();
   status("Reference system reset to default (Z-Up, zero translation).");
 }
 
@@ -4759,6 +5024,7 @@ function applyFilter() {
   closeFilterModal();
   recomputeTrialXYZ();
   updateFilterUI();
+  refresh3DViewport();
   status(`Applied signal conditioning: ${activeFilterConfig.smooth} filter, gap-fill: ${activeFilterConfig.interp}.`);
 }
 
@@ -4767,6 +5033,7 @@ function revertFilter() {
   recomputeTrialXYZ();
   updateFilterUI();
   closeFilterModal();
+  refresh3DViewport();
   status("Reverted trial trajectories to raw unfiltered data.");
 }
 
@@ -4786,6 +5053,7 @@ function initLCSAndFilterControls() {
     };
     recomputeTrialXYZ();
     updateFilterUI();
+    refresh3DViewport();
     status("Applied Quick Smooth: Zero-phase 6 Hz Butterworth filter & linear gap-fill.");
   };
   if ($("btn-revert-filter")) $("btn-revert-filter").onclick = revertFilter;
@@ -4957,6 +5225,131 @@ function initLCSAndFilterControls() {
   });
 }
 
+function interpolateActiveMarker(method = "cubic") {
+  if (!trial || !rawLoadedXYZ || activeMarkerIndex < 0 || activeMarkerIndex >= trial.labels.length) {
+    status("No active marker selected for interpolation.", true);
+    return;
+  }
+
+  const markerIdx = activeMarkerIndex;
+  const markerName = trial.labels[markerIdx] || `Marker ${markerIdx + 1}`;
+
+  // Check if marker has missing frames in rawLoadedXYZ
+  const xSeries = rawLoadedXYZ.map(f => (valid(f[markerIdx]) ? f[markerIdx][0] : NaN));
+  const gaps = findSeriesGaps(xSeries);
+  if (gaps.length === 0) {
+    status(`Marker "${markerName}" has no missing frames to interpolate.`);
+    return;
+  }
+
+  // Backup original raw frames before first interpolation
+  if (!interpolatedMarkers[markerIdx]) {
+    interpolatedMarkers[markerIdx] = rawLoadedXYZ.map(f => (f[markerIdx] ? [...f[markerIdx]] : null));
+  }
+
+  const ySeries = rawLoadedXYZ.map(f => (valid(f[markerIdx]) ? f[markerIdx][1] : NaN));
+  const zSeries = rawLoadedXYZ.map(f => (valid(f[markerIdx]) ? f[markerIdx][2] : NaN));
+
+  const filledX = gapFill1D(xSeries, method, 0);
+  const filledY = gapFill1D(ySeries, method, 0);
+  const filledZ = gapFill1D(zSeries, method, 0);
+
+  let filledFrames = 0;
+  for (let f = 0; f < rawLoadedXYZ.length; f++) {
+    const wasMissing = !valid(rawLoadedXYZ[f][markerIdx]);
+    const nx = filledX[f], ny = filledY[f], nz = filledZ[f];
+    if (Number.isFinite(nx) && Number.isFinite(ny) && Number.isFinite(nz)) {
+      rawLoadedXYZ[f][markerIdx] = [nx, ny, nz];
+      if (wasMissing) filledFrames++;
+    }
+  }
+
+  recomputeTrialXYZ();
+  refresh3DViewport();
+  status(`Interpolated ${filledFrames} missing frames for "${markerName}" using ${method.toUpperCase()} spline.`);
+}
+
+function revertActiveMarker() {
+  if (!trial || !rawLoadedXYZ || activeMarkerIndex < 0) return;
+  const markerIdx = activeMarkerIndex;
+  const markerName = trial.labels[markerIdx] || `Marker ${markerIdx + 1}`;
+
+  if (!interpolatedMarkers[markerIdx]) {
+    status(`Marker "${markerName}" has not been modified by interpolation.`);
+    return;
+  }
+
+  const backup = interpolatedMarkers[markerIdx];
+  for (let f = 0; f < rawLoadedXYZ.length; f++) {
+    rawLoadedXYZ[f][markerIdx] = backup[f] ? [...backup[f]] : null;
+  }
+  delete interpolatedMarkers[markerIdx];
+
+  recomputeTrialXYZ();
+  refresh3DViewport();
+  status(`Reverted marker "${markerName}" to original raw coordinates with missing frames restored.`);
+}
+
+function initInterpolationAndPlotControls() {
+  if ($("btn-refresh-3d")) {
+    $("btn-refresh-3d").onclick = refresh3DViewport;
+  }
+
+  const initChip = (btnId, plotNum, axis) => {
+    const btn = $(btnId);
+    if (!btn) return;
+    btn.onclick = () => {
+      const vis = plotNum === 1 ? plot1CurveVisibility : plot2CurveVisibility;
+      const nextVal = !vis[axis];
+      const otherActive = Object.keys(vis).some(k => k !== axis && vis[k]);
+      if (!nextVal && !otherActive) return; // Keep at least one curve active
+      vis[axis] = nextVal;
+      drawPlots();
+    };
+  };
+
+  initChip("btn-plot1-chip-x", 1, "x");
+  initChip("btn-plot1-chip-y", 1, "y");
+  initChip("btn-plot1-chip-z", 1, "z");
+
+  initChip("btn-plot2-chip-x", 2, "x");
+  initChip("btn-plot2-chip-y", 2, "y");
+  initChip("btn-plot2-chip-z", 2, "z");
+
+  if ($("plot1-mode")) {
+    $("plot1-mode").addEventListener("change", () => {
+      drawPlot1();
+      saveSessionState();
+    });
+  }
+  if ($("plot2-mode")) {
+    $("plot2-mode").addEventListener("change", () => {
+      drawPlot2();
+      saveSessionState();
+    });
+  }
+
+  if ($("btn-interp-plot1")) {
+    $("btn-interp-plot1").onclick = () => {
+      const method = $("plot1-interp-method") ? $("plot1-interp-method").value : "cubic";
+      interpolateActiveMarker(method);
+    };
+  }
+  if ($("btn-revert-plot1")) {
+    $("btn-revert-plot1").onclick = revertActiveMarker;
+  }
+
+  if ($("btn-interp-plot2")) {
+    $("btn-interp-plot2").onclick = () => {
+      const method = $("plot2-interp-method") ? $("plot2-interp-method").value : "cubic";
+      interpolateActiveMarker(method);
+    };
+  }
+  if ($("btn-revert-plot2")) {
+    $("btn-revert-plot2").onclick = revertActiveMarker;
+  }
+}
+
 $("open-panel").hidden = !boot.server;
 
 // Initial loading: restore complete project first, then a plain inlined trial.
@@ -4975,6 +5368,7 @@ if (boot.project) {
 
 initMarkerControls();
 initLCSAndFilterControls();
+initInterpolationAndPlotControls();
 initVerticalSplitter();
 initHorizontalSplitter();
 resize();
