@@ -19,7 +19,14 @@ import numpy as np
 
 from .analysis_io import run_dynamics
 from .c3d_io import c3d_bytes
-from .kinematic_analysis import TAIT_BRYAN_SEQUENCES, marker_frame_orientations
+from .kinematic_analysis import (
+    TAIT_BRYAN_SEQUENCES,
+    add_virtual_points_to_trial,
+    build_orthonormal_basis,
+    evaluate_virtual_point_expression,
+    marker_frame_orientations,
+    relative_segment_kinematics,
+)
 from .marker_trial import MarkerTrial
 from .project_io import VailaProject, read_vaila_project, vaila_project_bytes
 from .trial_io import load_trial
@@ -428,6 +435,8 @@ def create_server(
                 "/api/export/c3d",
                 "/api/export/vaila",
                 "/api/analyze/orientation",
+                "/api/analyze/kinematics_bases",
+                "/api/analyze/evaluate_point",
                 "/api/analyze/dynamics",
                 "/api/shutdown",
             ):
@@ -482,6 +491,97 @@ def create_server(
                     self.send_bytes(
                         200,
                         json.dumps(json_compatible(result), allow_nan=False).encode(),
+                        "application/json",
+                    )
+                    return
+                if req_path == "/api/analyze/evaluate_point":
+                    request = json.loads(self.rfile.read(length))
+                    trial = trial_from_payload(request["trial"])
+                    expr = str(request["expression"])
+                    coords = evaluate_virtual_point_expression(trial, expr)
+                    self.send_bytes(
+                        200,
+                        json.dumps(
+                            {
+                                "name": request.get("name", "VIRTUAL"),
+                                "coords": json_compatible(coords),
+                            },
+                            allow_nan=False,
+                        ).encode(),
+                        "application/json",
+                    )
+                    return
+                if req_path == "/api/analyze/kinematics_bases":
+                    request = json.loads(self.rfile.read(length))
+                    trial = trial_from_payload(request["trial"])
+                    virtual_points = request.get("virtual_points", [])
+                    if virtual_points:
+                        trial = add_virtual_points_to_trial(trial, virtual_points)
+
+                    s1_cfg = request["s1"]
+                    s2_cfg = request["s2"]
+                    sg_cfg = request.get("sg")
+                    seq = str(request.get("sequence", "zxy"))
+
+                    s1_orig = trial.marker(s1_cfg["origin"])
+                    s1_prim = trial.marker(s1_cfg["primary_pt"])
+                    s1_plane = trial.marker(s1_cfg["plane_pt"])
+                    s1_bases, s1_valid = build_orthonormal_basis(
+                        s1_orig,
+                        s1_prim,
+                        s1_plane,
+                        primary_axis=s1_cfg.get("primary_axis", "+z"),
+                        plane_axis=s1_cfg.get("plane_axis", "+y"),
+                    )
+
+                    s2_orig = trial.marker(s2_cfg["origin"])
+                    s2_prim = trial.marker(s2_cfg["primary_pt"])
+                    s2_plane = trial.marker(s2_cfg["plane_pt"])
+                    s2_bases, s2_valid = build_orthonormal_basis(
+                        s2_orig,
+                        s2_prim,
+                        s2_plane,
+                        primary_axis=s2_cfg.get("primary_axis", "+z"),
+                        plane_axis=s2_cfg.get("plane_axis", "+y"),
+                    )
+
+                    if sg_cfg and isinstance(sg_cfg, dict) and "origin" in sg_cfg:
+                        sg_orig = trial.marker(sg_cfg["origin"])
+                        sg_prim = trial.marker(sg_cfg["primary_pt"])
+                        sg_plane = trial.marker(sg_cfg["plane_pt"])
+                        sg_bases, _ = build_orthonormal_basis(
+                            sg_orig,
+                            sg_prim,
+                            sg_plane,
+                            primary_axis=sg_cfg.get("primary_axis", "+z"),
+                            plane_axis=sg_cfg.get("plane_axis", "+y"),
+                        )
+                    elif sg_cfg and isinstance(sg_cfg, list):
+                        sg_bases = np.asarray(sg_cfg, dtype=np.float64)
+                    else:
+                        sg_bases = None
+
+                    kinematics = relative_segment_kinematics(
+                        s1_bases, s2_bases, sg=sg_bases, sequence=seq
+                    )
+                    out = {
+                        "s1_origin": s1_orig,
+                        "s1_bases": s1_bases,
+                        "s1_valid": s1_valid,
+                        "s2_origin": s2_orig,
+                        "s2_bases": s2_bases,
+                        "s2_valid": s2_valid,
+                        "sg_bases": sg_bases if sg_bases is not None else np.eye(3),
+                        "MR2": kinematics["MR2"],
+                        "MR": kinematics["MR"],
+                        "euler": kinematics["euler"],
+                        "quaternions": kinematics["quaternions"],
+                        "valid": kinematics["valid"],
+                        "sequence": kinematics["sequence"],
+                    }
+                    self.send_bytes(
+                        200,
+                        json.dumps(json_compatible(out), allow_nan=False).encode(),
                         "application/json",
                     )
                     return

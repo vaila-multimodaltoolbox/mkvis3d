@@ -406,12 +406,59 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   min-width: 280px;
   min-height: 180px;
 }
-#modal-lcs.floating-pane, #modal-filter.floating-pane {
-  width: 580px;
-  height: 620px;
-  max-height: 90vh;
+#modal-lcs.floating-pane, #modal-filter.floating-pane, #modal-kinematics.floating-pane {
+  width: 640px;
+  height: 680px;
+  max-height: 92vh;
 }
-#modal-lcs .pane-body, #modal-filter .pane-body { overflow-y: auto; }
+#modal-lcs .pane-body, #modal-filter .pane-body, #modal-kinematics .pane-body { overflow-y: auto; }
+
+.kinematics-tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+.kinematics-tab-btn {
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex: 1;
+  text-align: center;
+}
+.kinematics-tab-btn:hover {
+  color: var(--text-bright);
+  border-color: var(--accent);
+}
+.kinematics-tab-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.matrix-grid-3x3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background: var(--bg-canvas);
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  text-align: center;
+}
+.matrix-cell {
+  padding: 4px 2px;
+  background: var(--bg-panel-alt);
+  border-radius: 2px;
+}
 .window-pane.floating-pane .pane-header {
   cursor: grab;
   background: var(--floating-header-bg);
@@ -1087,37 +1134,17 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       </div>
     </section>
 
-    <!-- Marker-defined orientation analysis -->
+    <!-- Segment Bases & Kinematics -->
     <section class="sidebar-section">
       <div class="sidebar-header">
-        <span>Orientation Analysis</span>
-        <span id="orientation-status-badge" style="font-size: 10px; color: var(--text-muted);">Not computed</span>
+        <span>Segment Kinematics</span>
+        <span id="kinematics-status-badge" style="font-size: 10px; color: var(--text-muted);">Not configured</span>
       </div>
-      <label for="orientation-origin">Origin marker</label>
-      <select id="orientation-origin"></select>
-      <label for="orientation-x-point">Positive X-axis marker</label>
-      <select id="orientation-x-point"></select>
-      <label for="orientation-plane-point">Positive XY-plane marker</label>
-      <select id="orientation-plane-point"></select>
-      <div style="font-size: 10px; color: var(--text-muted); margin-top: 7px;">
-        Euler/Cardan sequences:
-      </div>
-      <div id="orientation-sequences" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 4px;">
-        <label><input type="checkbox" value="xyz" checked>xyz</label>
-        <label><input type="checkbox" value="xzy" checked>xzy</label>
-        <label><input type="checkbox" value="yxz" checked>yxz</label>
-        <label><input type="checkbox" value="yzx" checked>yzx</label>
-        <label><input type="checkbox" value="zxy" checked>zxy</label>
-        <label><input type="checkbox" value="zyx" checked>zyx</label>
-      </div>
-      <button id="btn-analyze-orientation" type="button" style="width: 100%; margin-top: 7px;" disabled>
-        Compute Euler + Quaternions
-      </button>
-      <button id="btn-export-analyses" type="button" style="width: 100%; margin-top: 5px;" disabled>
-        Export Analyses (JSON)
+      <button id="btn-open-kinematics" type="button" class="btn-sidebar-main" style="width: 100%; margin-top: 4px; padding: 7px 8px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer;">
+        <span>📐</span> <span>Segment Bases & Kinematics</span>
       </button>
       <input id="file-analysis" type="file" accept=".json,.csv" hidden>
-      <button id="btn-attach-analysis" type="button" style="width: 100%; margin-top: 5px;">
+      <button id="btn-attach-analysis" type="button" style="width: 100%; margin-top: 6px; font-size: 11px; padding: 4px 8px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); color: var(--text-normal); border-radius: 4px; cursor: pointer;">
         Attach Analysis JSON/CSV
       </button>
     </section>
@@ -1735,6 +1762,353 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div style="display: flex; gap: 8px;">
           <button type="button" id="btn-cancel-filter">Cancel</button>
           <button type="button" id="btn-apply-filter" class="primary" style="font-weight: 700;">Apply Processing</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Cartesian Bases (s1, s2, sg) & Relative Kinematics Modal -->
+<section id="modal-kinematics" class="window-pane" hidden role="dialog" aria-modal="true" aria-labelledby="modal-kinematics-title">
+  <div class="pane-header">
+    <div class="pane-title"><h3 id="modal-kinematics-title">📐 Segment Bases (s1, s2, sg) & Kinematics</h3></div>
+    <div class="pane-tools">
+      <button class="modal-close" id="btn-close-kinematics" aria-label="Close">✕</button>
+    </div>
+  </div>
+  <div class="pane-body">
+    <div class="modal-body" style="padding: 12px 14px;">
+      <!-- Tab Navigation Bar -->
+      <div class="kinematics-tab-bar">
+        <button type="button" class="kinematics-tab-btn active" data-tab="points">① Virtual Points</button>
+        <button type="button" class="kinematics-tab-btn" data-tab="bases">② Bases (s1, s2, sg)</button>
+        <button type="button" class="kinematics-tab-btn" data-tab="kinematics">③ Live Kinematics (MR)</button>
+        <button type="button" class="kinematics-tab-btn" data-tab="export">④ Export & Pipeline</button>
+      </div>
+
+      <!-- Tab 1: Virtual Points Creator -->
+      <div id="tab-content-points" class="kinematics-tab-panel">
+        <p style="margin-top:0; font-size: 12px; color: var(--text-muted);">
+          Create unlimited secondary / virtual points using NumPy formulas (e.g. <code>(p['RASI'] + p['LASI']) / 2</code>). These points can be selected as origins or axes to define segment bases.
+        </p>
+
+        <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; background: var(--bg-panel-alt);">
+          <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">Create New Point</legend>
+          <div style="display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: center; margin-bottom: 8px;">
+            <label for="vp-name" style="font-size: 11px; font-weight: 600; margin: 0;">Point Name:</label>
+            <input type="text" id="vp-name" placeholder="e.g. KNEE_JC" style="padding: 4px 6px; font-size: 12px; font-family: monospace;">
+          </div>
+          <div style="display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: center; margin-bottom: 8px;">
+            <label for="vp-expr" style="font-size: 11px; font-weight: 600; margin: 0;">NumPy Formula:</label>
+            <input type="text" id="vp-expr" placeholder="(p['RASI'] + p['LASI']) / 2" style="padding: 4px 6px; font-size: 12px; font-family: monospace;">
+          </div>
+
+          <!-- Quick formula templates -->
+          <div style="margin-bottom: 10px;">
+            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">Quick Formula Templates:</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              <button type="button" class="btn-vp-quick" data-template="(p['{A}'] + p['{B}']) / 2" style="font-size: 10px; padding: 3px 7px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer;">Midpoint: (A + B) / 2</button>
+              <button type="button" class="btn-vp-quick" data-template="p['{A}'] + 0.05 * (p['{B}'] - p['{A}'])" style="font-size: 10px; padding: 3px 7px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer;">Offset along (B - A)</button>
+              <button type="button" class="btn-vp-quick" data-template="p['{A}'] + (p['{B}'] - p['{C}'])" style="font-size: 10px; padding: 3px 7px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer;">Vector translation: A + (B - C)</button>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end;">
+            <button type="button" id="btn-add-virtual-point" class="primary" style="font-size: 11px; font-weight: 600;">+ Create Point</button>
+          </div>
+          <div id="vp-error" style="color: #ef4444; font-size: 11px; margin-top: 6px; display: none;"></div>
+        </fieldset>
+
+        <!-- Virtual Points List -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-size: 11px; font-weight: 700; color: var(--text-bright); margin: 0;">Defined Virtual Points:</label>
+            <span id="vp-count-badge" style="font-size: 10px; color: var(--text-muted);">0 points defined</span>
+          </div>
+          <div id="vp-list-container" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px; background: var(--bg-canvas);">
+            <div id="vp-empty-msg" style="font-size: 11px; color: var(--text-muted); text-align: center; padding: 12px;">No virtual points defined yet.</div>
+            <table id="vp-table" style="width: 100%; border-collapse: collapse; font-size: 11px; display: none;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--text-muted);">
+                  <th style="padding: 4px;">Name</th>
+                  <th style="padding: 4px;">Formula</th>
+                  <th style="padding: 4px; text-align: center;">Status</th>
+                  <th style="padding: 4px; text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="vp-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pipeline script operations -->
+        <div style="display: flex; gap: 8px; margin-top: 12px;">
+          <button type="button" id="btn-export-vp-pipeline" style="font-size: 11px; flex: 1;">💾 Save Points Pipeline (.py)</button>
+          <input type="file" id="file-load-vp-pipeline" accept=".py,.json" hidden>
+          <button type="button" id="btn-load-vp-pipeline" style="font-size: 11px; flex: 1;">📂 Load Pipeline Script</button>
+        </div>
+      </div>
+
+      <!-- Tab 2: Cartesian Bases (s1, s2, sg) -->
+      <div id="tab-content-bases" class="kinematics-tab-panel" hidden>
+        <p style="margin-top:0; font-size: 12px; color: var(--text-muted);">
+          Each basis is built from 3 non-collinear points and strictly <b>orthonormalized</b> (90° between axes, unit norm <code>||e|| = 1.0</code> via Euclidean norm division, right-handed <code>det = +1</code>).
+        </p>
+
+        <!-- Global Reference System (sg) -->
+        <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; background: var(--bg-panel-alt);">
+          <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">Global System (sg) — Laboratory Real World</legend>
+          <div style="display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center;">
+            <label for="sg-mode" style="font-size: 11px; font-weight: 600; margin: 0;">Reference System:</label>
+            <select id="sg-mode" style="font-size: 12px;">
+              <option value="identity" selected>Default Laboratory Frame [I 3x3] (Canonical)</option>
+              <option value="active_lcs">Active Transformed Reference System</option>
+              <option value="custom">Custom 3 Markers</option>
+            </select>
+          </div>
+          <div id="sg-custom-fields" style="display: none; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px;">
+            <div>
+              <label for="sg-origin" style="font-size: 10px;">Origin</label>
+              <select id="sg-origin" style="font-size: 11px;"></select>
+            </div>
+            <div>
+              <label for="sg-primary-pt" style="font-size: 10px;">Primary Point</label>
+              <select id="sg-primary-pt" style="font-size: 11px;"></select>
+            </div>
+            <div>
+              <label for="sg-plane-pt" style="font-size: 10px;">Plane Point</label>
+              <select id="sg-plane-pt" style="font-size: 11px;"></select>
+            </div>
+          </div>
+          <div style="font-size: 10px; color: #22c55e; margin-top: 4px;" id="sg-status">✓ Orthonormal Lab System (det = +1.0)</div>
+        </fieldset>
+
+        <!-- Segment 1 (s1 - Proximal) -->
+        <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; background: var(--bg-panel-alt);">
+          <legend style="font-size: 11px; font-weight: 700; color: #3b82f6; padding: 0 4px;">Local System 1 (s1) — Proximal Segment</legend>
+          <div style="display: grid; grid-template-columns: 80px 1fr; gap: 6px; align-items: center; margin-bottom: 6px;">
+            <label for="s1-name" style="font-size: 11px; font-weight: 600; margin: 0;">Name:</label>
+            <input type="text" id="s1-name" value="Segment 1 (Proximal)" style="padding: 3px 6px; font-size: 11px;">
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 6px;">
+            <div>
+              <label for="s1-origin" style="font-size: 10px; font-weight: 600;">1. Origin Point</label>
+              <select id="s1-origin" style="font-size: 11px;"></select>
+            </div>
+            <div>
+              <label for="s1-primary-pt" style="font-size: 10px; font-weight: 600;">2. Primary Axis Pt</label>
+              <select id="s1-primary-pt" style="font-size: 11px;"></select>
+            </div>
+            <div>
+              <label for="s1-plane-pt" style="font-size: 10px; font-weight: 600;">3. Plane Point</label>
+              <select id="s1-plane-pt" style="font-size: 11px;"></select>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
+            <div>
+              <label for="s1-primary-axis" style="font-size: 10px;">Primary Axis Alignment</label>
+              <select id="s1-primary-axis" style="font-size: 11px;">
+                <option value="+z" selected>+Z (Longitudinal)</option>
+                <option value="-z">-Z (Inverted Longitudinal)</option>
+                <option value="+y">+Y (Anterior)</option>
+                <option value="-y">-Y (Posterior)</option>
+                <option value="+x">+X (Lateral)</option>
+                <option value="-x">-X (Medial)</option>
+              </select>
+            </div>
+            <div>
+              <label for="s1-plane-axis" style="font-size: 10px;">Secondary Plane Alignment</label>
+              <select id="s1-plane-axis" style="font-size: 11px;">
+                <option value="+y" selected>+Y (Anterior Plane)</option>
+                <option value="-y">-Y (Posterior Plane)</option>
+                <option value="+x">+X (Lateral Plane)</option>
+                <option value="-x">-X (Medial Plane)</option>
+                <option value="+z">+Z (Vertical Plane)</option>
+                <option value="-z">-Z (Downward Plane)</option>
+              </select>
+            </div>
+          </div>
+          <div id="s1-ortho-badge" style="font-size: 11px; color: var(--text-muted); font-family: monospace;">Select 3 points to build basis</div>
+        </fieldset>
+
+        <!-- Segment 2 (s2 - Distal) -->
+        <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; background: var(--bg-panel-alt);">
+          <legend style="font-size: 11px; font-weight: 700; color: #10b981; padding: 0 4px;">Local System 2 (s2) — Distal Segment</legend>
+          <div style="display: grid; grid-template-columns: 80px 1fr; gap: 6px; align-items: center; margin-bottom: 6px;">
+            <label for="s2-name" style="font-size: 11px; font-weight: 600; margin: 0;">Name:</label>
+            <input type="text" id="s2-name" value="Segment 2 (Distal)" style="padding: 3px 6px; font-size: 11px;">
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 6px;">
+            <div>
+              <label for="s2-origin" style="font-size: 10px; font-weight: 600;">1. Origin Point</label>
+              <select id="s2-origin" style="font-size: 11px;"></select>
+            </div>
+            <div>
+              <label for="s2-primary-pt" style="font-size: 10px; font-weight: 600;">2. Primary Axis Pt</label>
+              <select id="s2-primary-pt" style="font-size: 11px;"></select>
+            </div>
+            <div>
+              <label for="s2-plane-pt" style="font-size: 10px; font-weight: 600;">3. Plane Point</label>
+              <select id="s2-plane-pt" style="font-size: 11px;"></select>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
+            <div>
+              <label for="s2-primary-axis" style="font-size: 10px;">Primary Axis Alignment</label>
+              <select id="s2-primary-axis" style="font-size: 11px;">
+                <option value="+z" selected>+Z (Longitudinal)</option>
+                <option value="-z">-Z (Inverted Longitudinal)</option>
+                <option value="+y">+Y (Anterior)</option>
+                <option value="-y">-Y (Posterior)</option>
+                <option value="+x">+X (Lateral)</option>
+                <option value="-x">-X (Medial)</option>
+              </select>
+            </div>
+            <div>
+              <label for="s2-plane-axis" style="font-size: 10px;">Secondary Plane Alignment</label>
+              <select id="s2-plane-axis" style="font-size: 11px;">
+                <option value="+y" selected>+Y (Anterior Plane)</option>
+                <option value="-y">-Y (Posterior Plane)</option>
+                <option value="+x">+X (Lateral Plane)</option>
+                <option value="-x">-X (Medial Plane)</option>
+                <option value="+z">+Z (Vertical Plane)</option>
+                <option value="-z">-Z (Downward Plane)</option>
+              </select>
+            </div>
+          </div>
+          <div id="s2-ortho-badge" style="font-size: 11px; color: var(--text-muted); font-family: monospace;">Select 3 points to build basis</div>
+        </fieldset>
+
+        <!-- 3D Display Settings -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--bg-panel-alt); border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 10px;">
+          <label style="display: flex; align-items: center; gap: 6px; margin: 0; cursor: pointer; font-size: 11px; font-weight: 600;">
+            <input type="checkbox" id="chk-show-kinematics-triads" checked>
+            <span>Show s1 & s2 RGB Triads in 3D Viewport</span>
+          </label>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 10px; color: var(--text-muted);">Scale:</span>
+            <input type="range" id="triad-scale-slider" min="0.04" max="0.40" step="0.01" value="0.12" style="width: 80px;">
+            <span id="triad-scale-val" style="font-size: 10px; font-weight: 600;">0.12 m</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end;">
+          <button type="button" id="btn-compute-kinematics" class="primary" style="font-size: 12px; font-weight: 700; padding: 6px 14px;">
+            ⚡ Apply Bases & Compute Kinematics
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab 3: Live Relative Kinematics (MR, Euler, Quat) -->
+      <div id="tab-content-kinematics" class="kinematics-tab-panel" hidden>
+        <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px;">
+          <div style="font-weight: 700; color: var(--accent); margin-bottom: 2px;">Mathematical Formulation:</div>
+          <div style="font-family: monospace; font-size: 11px; color: var(--text-bright);">MR2 = sg · s1<sup>T</sup></div>
+          <div style="font-family: monospace; font-size: 11px; color: var(--text-bright);">MR = (MR2 · s2) · sg<sup>T</sup> = sg · s1<sup>T</sup> · s2 · sg<sup>T</sup></div>
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Relative joint rotation matrix expressing Segment 2 in Segment 1 transformed to the Laboratory reference system.</div>
+        </div>
+
+        <!-- Frame & Sequence Bar -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div id="kinematics-live-frame-info" style="font-size: 12px; font-weight: 700; color: var(--text-bright);">
+            Frame: 0 / 0 (0.000 s)
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <label for="kinematics-sequence-select" style="font-size: 11px; font-weight: 600; margin: 0;">Euler Sequence:</label>
+            <select id="kinematics-sequence-select" style="font-size: 11px;">
+              <option value="zxy" selected>Z-X-Y (ISB Knee/Hip Standard)</option>
+              <option value="xyz">X-Y-Z (Cardan Standard)</option>
+              <option value="zyx">Z-Y-X (Nautical / Aerospace)</option>
+              <option value="yxz">Y-X-Z</option>
+              <option value="xzy">X-Z-Y</option>
+              <option value="yzx">Y-Z-X</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Live Relative Rotation Matrix MR (3x3 grid) -->
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 11px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; display: block;">Relative Rotation Matrix MR (Live 3×3):</label>
+          <div class="matrix-grid-3x3" id="mr-matrix-display">
+            <div class="matrix-cell" id="mr-00">1.0000</div>
+            <div class="matrix-cell" id="mr-01">0.0000</div>
+            <div class="matrix-cell" id="mr-02">0.0000</div>
+            <div class="matrix-cell" id="mr-10">0.0000</div>
+            <div class="matrix-cell" id="mr-11">1.0000</div>
+            <div class="matrix-cell" id="mr-12">0.0000</div>
+            <div class="matrix-cell" id="mr-20">0.0000</div>
+            <div class="matrix-cell" id="mr-21">0.0000</div>
+            <div class="matrix-cell" id="mr-22">1.0000</div>
+          </div>
+        </div>
+
+        <!-- Live Cardan / Euler Angles -->
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 11px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; display: block;">Cardan / Euler Angles (Current Frame):</label>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+            <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; text-align: center;">
+              <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;" id="euler-lbl-alpha">Angle 1 (Flex/Ext)</div>
+              <div style="font-size: 16px; font-weight: 700; color: #ef4444;" id="euler-val-alpha">0.00°</div>
+            </div>
+            <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; text-align: center;">
+              <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;" id="euler-lbl-beta">Angle 2 (Add/Abd)</div>
+              <div style="font-size: 16px; font-weight: 700; color: #10b981;" id="euler-val-beta">0.00°</div>
+            </div>
+            <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; text-align: center;">
+              <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;" id="euler-lbl-gamma">Angle 3 (Int/Ext Rot)</div>
+              <div style="font-size: 16px; font-weight: 700; color: #3b82f6;" id="euler-val-gamma">0.00°</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Unit Quaternions (scalar-first) -->
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 11px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; display: block;">Unit Quaternions [scalar-first: (w, x, y, z)]:</label>
+          <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; font-family: monospace; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <span id="quat-display-val">q = (1.0000, 0.0000, 0.0000, 0.0000)</span>
+            <span id="quat-norm-badge" style="color: #22c55e; font-size: 10px; font-weight: 700;">||q|| = 1.0000</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between;">
+          <button type="button" id="btn-plot-euler-curves" style="font-size: 11px; font-weight: 600;">
+            📈 Send Euler Curves to Timeline Plots
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab 4: Export & Pipeline -->
+      <div id="tab-content-export" class="kinematics-tab-panel" hidden>
+        <p style="margin-top:0; font-size: 12px; color: var(--text-muted);">
+          Export all computed segment bases, relative rotation matrices, Euler angles, and Quaternions to CSV for external analysis, or generate a standalone reusable Python pipeline script.
+        </p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px;">
+          <!-- CSV Export Card -->
+          <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px;">Kinematics CSV Export</div>
+              <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4; margin: 0 0 10px 0;">
+                Full frame-by-frame data: origins (s1, s2), basis matrices (s1, s2, sg), relative rotation matrices (MR2, MR), Cardan/Euler angles, and scalar-first Quaternions.
+              </p>
+            </div>
+            <button type="button" id="btn-export-kinematics-csv" class="primary" style="font-size: 11px; font-weight: 700; width: 100%;">
+              📥 Download Kinematics CSV
+            </button>
+          </div>
+
+          <!-- Python Pipeline Script Card -->
+          <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px;">Python Pipeline Script (.py)</div>
+              <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4; margin: 0 0 10px 0;">
+                Self-contained Python script replicating all virtual points, Gram-Schmidt bases, and MR calculations with NumPy. Runnable on any machine without GUI.
+              </p>
+            </div>
+            <button type="button" id="btn-export-kinematics-python" style="font-size: 11px; font-weight: 700; width: 100%;">
+              💾 Save Python Pipeline (.py)
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -749,6 +749,9 @@ function drawSceneToContext(targetCtx, w, h) {
     line(pts[a], pts[b], distColor, 2, targetCtx, w, h);
   }
 
+  // Live 3D Coordinate Triads for s1 and s2 segment bases (RGB: X=Red, Y=Green, Z=Blue)
+  drawKinematicsTriads(targetCtx, w, h);
+
   // Render Marker Points with custom size and custom/palette color
   const visible = pts.map((p, i) => ({ p, i })).filter(v => valid(v.p)).map(v => ({ ...v, q: project(v.p, w, h) })).sort((a, b) => b.q[2] - a.q[2]);
 
@@ -814,6 +817,7 @@ function draw() {
   drawPlot1();
   drawPlot2();
   updateTable();
+  updateKinematicsLiveUI();
 
   // Synchronize any popped out subwindows, including keyed mosaic tiles
   // (e.g. "panel-3d#1", "panel-3d#2" — see tileMosaicViews()).
@@ -976,6 +980,30 @@ function getSeriesForMode(mode, plotId = 1) {
     if (series.length === 0) {
       const zVals = trial.xyz.map(p => valid(p[activeMarkerIndex]) ? p[activeMarkerIndex][2] : NaN);
       series.push({ name: "Z", color: colZ, values: zVals });
+    }
+  } else if (mode === "kinematics-euler" && kinematicsData.euler) {
+    const isPlot2 = plotId === 2 || plotId === "panel-plot2" || (typeof plotId === "string" && plotId.includes("plot2"));
+    const vis = isPlot2 ? plot2CurveVisibility : plot1CurveVisibility;
+    if (vis.x) {
+      series.push({
+        name: "Angle 1 (Flex/Ext °)",
+        color: colX,
+        values: kinematicsData.euler.map(e => e && Number.isFinite(e[0]) ? e[0] : NaN)
+      });
+    }
+    if (vis.y) {
+      series.push({
+        name: "Angle 2 (Add/Abd °)",
+        color: colY,
+        values: kinematicsData.euler.map(e => e && Number.isFinite(e[1]) ? e[1] : NaN)
+      });
+    }
+    if (vis.z) {
+      series.push({
+        name: "Angle 3 (Rotation °)",
+        color: colZ,
+        values: kinematicsData.euler.map(e => e && Number.isFinite(e[2]) ? e[2] : NaN)
+      });
     }
   } else if (mode === "active-speed") {
     const speedVals = [0];
@@ -1443,11 +1471,30 @@ function restoreSessionState(data) {
 
 function refreshMarkerSelectors() {
   if (!trial) return;
+  const sDefaults = {
+    "marker-b": trial.labels.length > 1 ? "1" : "0",
+    "orientation-x-point": trial.labels.length > 1 ? "1" : "0",
+    "orientation-plane-point": trial.labels.length > 2 ? "2" : "0",
+    "s1-origin": "0",
+    "s1-primary-pt": String(Math.min(1, trial.labels.length - 1)),
+    "s1-plane-pt": String(Math.min(2, trial.labels.length - 1)),
+    "s2-origin": String(Math.min(3, trial.labels.length - 1)),
+    "s2-primary-pt": String(Math.min(4, trial.labels.length - 1)),
+    "s2-plane-pt": String(Math.min(5, trial.labels.length - 1)),
+    "sg-origin": "0",
+    "sg-primary-pt": String(Math.min(1, trial.labels.length - 1)),
+    "sg-plane-pt": String(Math.min(2, trial.labels.length - 1))
+  };
+
   for (const key of [
     "marker-a", "marker-b", "marker-select",
-    "orientation-origin", "orientation-x-point", "orientation-plane-point"
+    "orientation-origin", "orientation-x-point", "orientation-plane-point",
+    "s1-origin", "s1-primary-pt", "s1-plane-pt",
+    "s2-origin", "s2-primary-pt", "s2-plane-pt",
+    "sg-origin", "sg-primary-pt", "sg-plane-pt"
   ]) {
     if (!$(key)) continue;
+    const isUserSet = $(key).dataset.userSelected === "true";
     const previous = $(key).value;
     $(key).replaceChildren(...trial.labels.map((label, i) => {
       const option = document.createElement("option");
@@ -1455,13 +1502,13 @@ function refreshMarkerSelectors() {
       option.textContent = label;
       return option;
     }));
-    if (Number(previous) < trial.labels.length) $(key).value = previous;
+    if (isUserSet && previous !== "" && Number(previous) < trial.labels.length) {
+      $(key).value = previous;
+    } else if (sDefaults[key] !== undefined) {
+      $(key).value = sDefaults[key];
+    }
   }
-  if ($("marker-b") && trial.labels.length > 1 && $("marker-b").value === "") {
-    $("marker-b").value = "1";
-  }
-  if ($("orientation-x-point") && trial.labels.length > 1) $("orientation-x-point").value = "1";
-  if ($("orientation-plane-point") && trial.labels.length > 2) $("orientation-plane-point").value = "2";
+  updateKinematicsBasisFeedback();
 }
 
 function load(data) {
@@ -3367,6 +3414,12 @@ document.addEventListener("keydown", e => {
     document.querySelectorAll(".modal-backdrop.open").forEach(m => m.classList.remove("open"));
     if (!$("modal-filter").hidden) closeFilterModal();
     if (!$("modal-lcs").hidden) closeLCSModal();
+    if ($("modal-kinematics") && !$("modal-kinematics").hidden) closeKinematicsModal();
+    return;
+  }
+  if (e.altKey && (e.key === "k" || e.key === "K")) {
+    e.preventDefault();
+    openKinematicsModal();
     return;
   }
   if (e.key === "?" || e.key === "F1") {
@@ -5350,6 +5403,1287 @@ function initInterpolationAndPlotControls() {
   }
 }
 
+// -------------------------------------------------------------
+// Cartesian Bases (s1, s2, sg) & Relative Kinematics Subsystem
+// -------------------------------------------------------------
+const virtualPoints = [];
+
+const kinematicsConfig = {
+  computed: false,
+  sgMode: "identity",
+  s1: { name: "Segment 1", origin: "", primaryPt: "", planePt: "", primaryAxis: "+z", planeAxis: "+y" },
+  s2: { name: "Segment 2", origin: "", primaryPt: "", planePt: "", primaryAxis: "+z", planeAxis: "+y" },
+  sequence: "zxy",
+  showTriads: true,
+  triadScale: 0.12,
+};
+
+const kinematicsData = {
+  s1Bases: null,
+  s1Origin: null,
+  s2Bases: null,
+  s2Origin: null,
+  sgBases: null,
+  MR2: null,
+  MR: null,
+  euler: null,
+  quaternions: null,
+  valid: null,
+};
+
+function openKinematicsModal() {
+  const modal = $("modal-kinematics");
+  if (!modal) return;
+  refreshMarkerSelectors();
+  updateKinematicsBasisFeedback();
+  updateKinematicsLiveUI();
+  modal.hidden = false;
+  floatPane("modal-kinematics");
+}
+
+function closeKinematicsModal() {
+  const modal = $("modal-kinematics");
+  if (!modal) return;
+  dockPane("modal-kinematics");
+  modal.hidden = true;
+}
+
+function vectorNorm(v) {
+  return Math.hypot(v[0], v[1], v[2]);
+}
+
+function vectorNormalize(v) {
+  const norm = Math.hypot(v[0], v[1], v[2]);
+  return norm < 1e-12 ? [0, 0, 0] : [v[0] / norm, v[1] / norm, v[2] / norm];
+}
+
+function vectorDot(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function vectorCross(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+  ];
+}
+
+function matrixMultiply3x3(A, B) {
+  const C = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0]
+  ];
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      C[i][j] = A[i][0] * B[0][j] + A[i][1] * B[1][j] + A[i][2] * B[2][j];
+    }
+  }
+  return C;
+}
+
+function matrixTranspose3x3(A) {
+  return [
+    [A[0][0], A[1][0], A[2][0]],
+    [A[0][1], A[1][1], A[2][1]],
+    [A[0][2], A[1][2], A[2][2]]
+  ];
+}
+
+function matrixDet3x3(m) {
+  return (
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+  );
+}
+
+function buildOrthonormalBasisJS(originPts, primaryPts, planePts, primaryAxis = "+z", planeAxis = "+y") {
+  const nFrames = originPts.length;
+  const bases = [];
+  const validMask = [];
+
+  const pSign = primaryAxis.startsWith("-") ? -1 : 1;
+  const pChar = primaryAxis.replace(/[+-]/g, "").toLowerCase();
+  const plSign = planeAxis.startsWith("-") ? -1 : 1;
+  const plChar = planeAxis.replace(/[+-]/g, "").toLowerCase();
+
+  for (let f = 0; f < nFrames; f++) {
+    const o = originPts[f], p1 = primaryPts[f], p2 = planePts[f];
+    if (!valid(o) || !valid(p1) || !valid(p2)) {
+      bases.push([[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]]);
+      validMask.push(false);
+      continue;
+    }
+
+    const vPrim = [p1[0] - o[0], p1[1] - o[1], p1[2] - o[2]];
+    const vPlane = [p2[0] - o[0], p2[1] - o[1], p2[2] - o[2]];
+    const normPrim = vectorNorm(vPrim);
+    const normPlane = vectorNorm(vPlane);
+    if (normPrim < 1e-9 || normPlane < 1e-9) {
+      bases.push([[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]]);
+      validMask.push(false);
+      continue;
+    }
+
+    // 1. Primary unit versor
+    let ePrim = vectorNormalize(vPrim);
+    if (pSign < 0) ePrim = [-ePrim[0], -ePrim[1], -ePrim[2]];
+
+    // 2. Gram-Schmidt orthogonalization for plane vector
+    const dot = vectorDot(vPlane, ePrim);
+    let vOrtho = [vPlane[0] - dot * ePrim[0], vPlane[1] - dot * ePrim[1], vPlane[2] - dot * ePrim[2]];
+    let normOrtho = vectorNorm(vOrtho);
+    if (normOrtho < 1e-9) {
+      const cand = Math.abs(ePrim[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      vOrtho = vectorCross(ePrim, cand);
+      normOrtho = vectorNorm(vOrtho);
+    }
+    let eSec = vectorNormalize(vOrtho);
+    if (plSign < 0) eSec = [-eSec[0], -eSec[1], -eSec[2]];
+
+    // 3. Construct ex, ey, ez
+    let ex, ey, ez;
+    if (pChar === "z") {
+      ez = ePrim;
+      if (plChar === "y") {
+        ey = eSec;
+        ex = vectorNormalize(vectorCross(ey, ez));
+        ey = vectorCross(ez, ex);
+      } else {
+        ex = eSec;
+        ey = vectorNormalize(vectorCross(ez, ex));
+        ex = vectorCross(ey, ez);
+      }
+    } else if (pChar === "y") {
+      ey = ePrim;
+      if (plChar === "z") {
+        ez = eSec;
+        ex = vectorNormalize(vectorCross(ey, ez));
+        ez = vectorCross(ex, ey);
+      } else {
+        ex = eSec;
+        ez = vectorNormalize(vectorCross(ex, ey));
+        ex = vectorCross(ey, ez);
+      }
+    } else {
+      ex = ePrim;
+      if (plChar === "y") {
+        ey = eSec;
+        ez = vectorNormalize(vectorCross(ex, ey));
+        ey = vectorCross(ez, ex);
+      } else {
+        ez = eSec;
+        ey = vectorNormalize(vectorCross(ez, ex));
+        ez = vectorCross(ex, ey);
+      }
+    }
+
+    ex = vectorNormalize(ex);
+    ey = vectorNormalize(ey);
+    ez = vectorNormalize(ez);
+
+    const mat = [
+      [ex[0], ey[0], ez[0]],
+      [ex[1], ey[1], ez[1]],
+      [ex[2], ey[2], ez[2]]
+    ];
+    bases.push(mat);
+    validMask.push(true);
+  }
+  return { bases, valid: validMask };
+}
+
+function matrixToEulerJS(m, seq = "zxy") {
+  const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
+  const rad2deg = 180 / Math.PI;
+  if (seq === "zxy") {
+    const sin_b = clamp(-m[1][2], -1, 1);
+    const b = Math.asin(sin_b);
+    const cos_b = Math.cos(b);
+    let a, c;
+    if (Math.abs(cos_b) > 1e-6) {
+      a = Math.atan2(m[1][0], m[1][1]);
+      c = Math.atan2(m[0][2], m[2][2]);
+    } else {
+      a = Math.atan2(-m[0][1], m[0][0]);
+      c = 0.0;
+    }
+    return [a * rad2deg, b * rad2deg, c * rad2deg];
+  } else if (seq === "xyz") {
+    const sin_b = clamp(-m[2][0], -1, 1);
+    const b = Math.asin(sin_b);
+    const cos_b = Math.cos(b);
+    let a, c;
+    if (Math.abs(cos_b) > 1e-6) {
+      a = Math.atan2(m[2][1], m[2][2]);
+      c = Math.atan2(m[1][0], m[0][0]);
+    } else {
+      a = Math.atan2(-m[1][2], m[1][1]);
+      c = 0.0;
+    }
+    return [a * rad2deg, b * rad2deg, c * rad2deg];
+  } else if (seq === "zyx") {
+    const sin_b = clamp(m[0][2], -1, 1);
+    const b = Math.asin(sin_b);
+    const cos_b = Math.cos(b);
+    let a, c;
+    if (Math.abs(cos_b) > 1e-6) {
+      a = Math.atan2(-m[0][1], m[0][0]);
+      c = Math.atan2(-m[1][2], m[2][2]);
+    } else {
+      a = Math.atan2(m[1][0], m[1][1]);
+      c = 0.0;
+    }
+    return [a * rad2deg, b * rad2deg, c * rad2deg];
+  } else if (seq === "yxz") {
+    const sin_b = clamp(m[2][1], -1, 1);
+    const b = Math.asin(sin_b);
+    const cos_b = Math.cos(b);
+    let a, c;
+    if (Math.abs(cos_b) > 1e-6) {
+      a = Math.atan2(-m[2][0], m[2][2]);
+      c = Math.atan2(-m[0][1], m[1][1]);
+    } else {
+      a = Math.atan2(m[0][2], m[0][0]);
+      c = 0.0;
+    }
+    return [a * rad2deg, b * rad2deg, c * rad2deg];
+  } else if (seq === "xzy") {
+    const sin_b = clamp(m[1][0], -1, 1);
+    const b = Math.asin(sin_b);
+    const cos_b = Math.cos(b);
+    let a, c;
+    if (Math.abs(cos_b) > 1e-6) {
+      a = Math.atan2(-m[1][2], m[1][1]);
+      c = Math.atan2(-m[2][0], m[0][0]);
+    } else {
+      a = Math.atan2(m[2][1], m[2][2]);
+      c = 0.0;
+    }
+    return [a * rad2deg, b * rad2deg, c * rad2deg];
+  } else if (seq === "yzx") {
+    const sin_b = clamp(-m[0][1], -1, 1);
+    const b = Math.asin(sin_b);
+    const cos_b = Math.cos(b);
+    let a, c;
+    if (Math.abs(cos_b) > 1e-6) {
+      a = Math.atan2(m[0][2], m[0][0]);
+      c = Math.atan2(m[2][1], m[1][1]);
+    } else {
+      a = Math.atan2(-m[2][0], m[2][2]);
+      c = 0.0;
+    }
+    return [a * rad2deg, b * rad2deg, c * rad2deg];
+  }
+  return [0, 0, 0];
+}
+
+function matrixToQuaternionJS(m) {
+  const t = m[0][0] + m[1][1] + m[2][2];
+  let w, x, y, z;
+  if (t > 0) {
+    const s = 0.5 / Math.sqrt(t + 1.0);
+    w = 0.25 / s;
+    x = (m[2][1] - m[1][2]) * s;
+    y = (m[0][2] - m[2][0]) * s;
+    z = (m[1][0] - m[0][1]) * s;
+  } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+    const s = 2.0 * Math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]);
+    w = (m[2][1] - m[1][2]) / s;
+    x = 0.25 * s;
+    y = (m[0][1] + m[1][0]) / s;
+    z = (m[0][2] + m[2][0]) / s;
+  } else if (m[1][1] > m[2][2]) {
+    const s = 2.0 * Math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]);
+    w = (m[0][2] - m[2][0]) / s;
+    x = (m[0][1] + m[1][0]) / s;
+    y = 0.25 * s;
+    z = (m[1][2] + m[2][1]) / s;
+  } else {
+    const s = 2.0 * Math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]);
+    w = (m[1][0] - m[0][1]) / s;
+    x = (m[0][2] + m[2][0]) / s;
+    y = (m[1][2] + m[2][1]) / s;
+    z = 0.25 * s;
+  }
+  let q = [w, x, y, z];
+  if (q[0] < 0) q = [-q[0], -q[1], -q[2], -q[3]];
+  const norm = Math.hypot(q[0], q[1], q[2], q[3]);
+  if (norm > 1e-12) {
+    q = [q[0] / norm, q[1] / norm, q[2] / norm, q[3] / norm];
+  }
+  return q;
+}
+
+function evaluateExpressionJS(expr, trialData) {
+  const nFrames = trialData.xyz.length;
+  const labels = trialData.labels;
+  const coords = [];
+
+  const regex = /(?:p|markers)\[['"]([^'"]+)['"]\]/g;
+  let match;
+  const usedMarkers = new Set();
+  while ((match = regex.exec(expr)) !== null) {
+    usedMarkers.add(match[1]);
+  }
+  for (const m of usedMarkers) {
+    if (!labels.includes(m)) {
+      throw new Error(`Marker "${m}" not found in trial labels.`);
+    }
+  }
+
+  const markerIndices = {};
+  for (const m of usedMarkers) {
+    markerIndices[m] = labels.indexOf(m);
+  }
+
+  let cleanExpr = expr
+    .replace(/np\.sin/g, "Math.sin")
+    .replace(/np\.cos/g, "Math.cos")
+    .replace(/np\.sqrt/g, "Math.sqrt")
+    .replace(/np\.abs/g, "Math.abs");
+
+  const fn = new Function("p", "Math", `return (${cleanExpr});`);
+
+  for (let f = 0; f < nFrames; f++) {
+    const pt = [NaN, NaN, NaN];
+    for (let dim = 0; dim < 3; dim++) {
+      const pDim = {};
+      let dimValid = true;
+      for (const m of usedMarkers) {
+        const val = trialData.xyz[f][markerIndices[m]][dim];
+        if (!Number.isFinite(val)) {
+          dimValid = false;
+          break;
+        }
+        pDim[m] = val;
+      }
+      if (dimValid) {
+        try {
+          pt[dim] = Number(fn(pDim, Math));
+        } catch (e) {
+          pt[dim] = NaN;
+        }
+      }
+    }
+    coords.push(pt);
+  }
+  return coords;
+}
+
+async function addVirtualPoint(name, expr) {
+  if (!trial) return;
+  const cleanName = name.trim();
+  const cleanExpr = expr.trim();
+  const errEl = $("vp-error");
+  if (errEl) errEl.style.display = "none";
+
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(cleanName)) {
+    if (errEl) {
+      errEl.textContent = "Point name must start with a letter and contain only letters, numbers, hyphens, and underscores.";
+      errEl.style.display = "block";
+    }
+    return;
+  }
+  if (trial.labels.includes(cleanName)) {
+    if (errEl) {
+      errEl.textContent = `Point name "${cleanName}" already exists in trial labels.`;
+      errEl.style.display = "block";
+    }
+    return;
+  }
+
+  let coords = null;
+  if (boot.server) {
+    try {
+      const resp = await fetch("/api/analyze/evaluate_point", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ trial, name: cleanName, expression: cleanExpr })
+      });
+      if (resp.ok) {
+        const res = await resp.json();
+        coords = res.coords;
+      }
+    } catch (e) {
+      console.warn("Server evaluation failed, falling back to client JS:", e);
+    }
+  }
+
+  if (!coords) {
+    try {
+      coords = evaluateExpressionJS(cleanExpr, trial);
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = "Evaluation error: " + err.message;
+        errEl.style.display = "block";
+      }
+      return;
+    }
+  }
+
+  trial.labels.push(cleanName);
+  for (let f = 0; f < trial.xyz.length; f++) {
+    trial.xyz[f].push(coords[f] || [NaN, NaN, NaN]);
+  }
+
+  virtualPoints.push({
+    name: cleanName,
+    expression: cleanExpr,
+    coords
+  });
+
+  refreshMarkerSelectors();
+  renderVirtualPointsTable();
+  if ($("vp-name")) $("vp-name").value = "";
+  if ($("vp-expr")) $("vp-expr").value = "";
+  status(`Created virtual point "${cleanName}".`);
+}
+
+function renderVirtualPointsTable() {
+  const table = $("vp-table");
+  const tbody = $("vp-table-body");
+  const empty = $("vp-empty-msg");
+  const badge = $("vp-count-badge");
+  if (!table || !tbody) return;
+
+  if (badge) badge.textContent = `${virtualPoints.length} point${virtualPoints.length === 1 ? "" : "s"} defined`;
+
+  if (!virtualPoints.length) {
+    table.style.display = "none";
+    if (empty) empty.style.display = "block";
+    tbody.innerHTML = "";
+    return;
+  }
+
+  table.style.display = "table";
+  if (empty) empty.style.display = "none";
+  tbody.innerHTML = "";
+
+  virtualPoints.forEach((vp, idx) => {
+    const tr = document.createElement("tr");
+    tr.style.borderBottom = "1px solid var(--border-color)";
+
+    const tdName = document.createElement("td");
+    tdName.style.padding = "4px";
+    tdName.style.fontWeight = "600";
+    tdName.textContent = vp.name;
+
+    const tdExpr = document.createElement("td");
+    tdExpr.style.padding = "4px";
+    tdExpr.style.fontFamily = "monospace";
+    tdExpr.textContent = vp.expression;
+
+    const tdStatus = document.createElement("td");
+    tdStatus.style.padding = "4px";
+    tdStatus.style.textAlign = "center";
+    tdStatus.style.color = "#22c55e";
+    tdStatus.textContent = `✓ ${vp.coords.length}f`;
+
+    const tdAct = document.createElement("td");
+    tdAct.style.padding = "4px";
+    tdAct.style.textAlign = "right";
+    const btnDel = document.createElement("button");
+    btnDel.type = "button";
+    btnDel.textContent = "🗑";
+    btnDel.style.padding = "2px 6px";
+    btnDel.style.fontSize = "11px";
+    btnDel.onclick = () => removeVirtualPoint(idx);
+    tdAct.appendChild(btnDel);
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdExpr);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdAct);
+    tbody.appendChild(tr);
+  });
+}
+
+function removeVirtualPoint(index) {
+  if (index < 0 || index >= virtualPoints.length) return;
+  const removed = virtualPoints.splice(index, 1)[0];
+  const lIdx = trial.labels.indexOf(removed.name);
+  if (lIdx >= 0) {
+    trial.labels.splice(lIdx, 1);
+    for (let f = 0; f < trial.xyz.length; f++) {
+      trial.xyz[f].splice(lIdx, 1);
+    }
+  }
+  refreshMarkerSelectors();
+  renderVirtualPointsTable();
+  status(`Removed virtual point "${removed.name}".`);
+}
+
+function exportVirtualPointsPipeline() {
+  if (!virtualPoints.length) {
+    status("No virtual points defined to export.", true);
+    return;
+  }
+  const lines = [
+    '"""Virtual Points Creation Pipeline (NumPy / OpenBiomech)"""',
+    "import numpy as np",
+    "",
+    "def create_virtual_points(p):",
+    "    # p is a dictionary of marker trajectories {label: (n_frames, 3) ndarray}",
+  ];
+  virtualPoints.forEach(vp => {
+    lines.push(`    p['${vp.name}'] = ${vp.expression}`);
+  });
+  lines.push("    return p");
+  lines.push("");
+
+  const script = lines.join("\n");
+  const trialStem = (trial && trial.name ? trial.name : "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  download(script, `${trialStem}_virtual_points_pipeline.py`, "text/x-python");
+  status("Exported virtual points pipeline script.");
+}
+
+async function loadVirtualPointsPipeline(file) {
+  try {
+    const text = await file.text();
+    const regex = /p\[['"]([^'"]+)['"]\]\s*=\s*(.+)$/gm;
+    let match;
+    let count = 0;
+    while ((match = regex.exec(text)) !== null) {
+      const name = match[1];
+      const expr = match[2].trim();
+      await addVirtualPoint(name, expr);
+      count++;
+    }
+    status(`Loaded ${count} virtual point(s) from pipeline.`);
+  } catch (e) {
+    status("Failed to load pipeline: " + e.message, true);
+  }
+}
+
+function updateKinematicsBasisFeedback() {
+  if (!trial || !trial.labels.length) return;
+
+  const getPt = id => {
+    const el = $(id);
+    if (!el) return null;
+    const idx = Number(el.value);
+    if (idx >= 0 && idx < trial.labels.length && trial.xyz[0]) {
+      return trial.xyz[0][idx];
+    }
+    return null;
+  };
+
+  const s1O = getPt("s1-origin");
+  const s1P = getPt("s1-primary-pt");
+  const s1Pl = getPt("s1-plane-pt");
+  const bS1 = $("s1-ortho-badge");
+  if (s1O && s1P && s1Pl && $("s1-origin")?.value !== $("s1-primary-pt")?.value) {
+    const pAxis = $("s1-primary-axis") ? $("s1-primary-axis").value : "+z";
+    const plAxis = $("s1-plane-axis") ? $("s1-plane-axis").value : "+y";
+    const res = buildOrthonormalBasisJS([s1O], [s1P], [s1Pl], pAxis, plAxis);
+    if (res.valid[0]) {
+      const det = matrixDet3x3(res.bases[0]);
+      if (bS1) {
+        bS1.textContent = `✓ Orthonormal 90.0° (||ex||=1.000, ||ey||=1.000, ||ez||=1.000, det=+${det.toFixed(3)})`;
+        bS1.style.color = "#22c55e";
+      }
+    } else if (bS1) {
+      bS1.textContent = "⚠ Degenerate points (points collinear or identical)";
+      bS1.style.color = "#ef4444";
+    }
+  } else if (bS1) {
+    bS1.textContent = "Select 3 distinct points (Origin, Primary, Plane)";
+    bS1.style.color = "var(--text-muted)";
+  }
+
+  const s2O = getPt("s2-origin");
+  const s2P = getPt("s2-primary-pt");
+  const s2Pl = getPt("s2-plane-pt");
+  const bS2 = $("s2-ortho-badge");
+  if (s2O && s2P && s2Pl && $("s2-origin")?.value !== $("s2-primary-pt")?.value) {
+    const pAxis = $("s2-primary-axis") ? $("s2-primary-axis").value : "+z";
+    const plAxis = $("s2-plane-axis") ? $("s2-plane-axis").value : "+y";
+    const res = buildOrthonormalBasisJS([s2O], [s2P], [s2Pl], pAxis, plAxis);
+    if (res.valid[0]) {
+      const det = matrixDet3x3(res.bases[0]);
+      if (bS2) {
+        bS2.textContent = `✓ Orthonormal 90.0° (||ex||=1.000, ||ey||=1.000, ||ez||=1.000, det=+${det.toFixed(3)})`;
+        bS2.style.color = "#22c55e";
+      }
+    } else if (bS2) {
+      bS2.textContent = "⚠ Degenerate points (points collinear or identical)";
+      bS2.style.color = "#ef4444";
+    }
+  } else if (bS2) {
+    bS2.textContent = "Select 3 distinct points (Origin, Primary, Plane)";
+    bS2.style.color = "var(--text-muted)";
+  }
+}
+
+async function computeKinematics() {
+  if (!trial) {
+    status("No trial loaded.", true);
+    return;
+  }
+
+  const markerAt = id => trial.labels[Number($(id)?.value || 0)];
+  const s1Origin = markerAt("s1-origin");
+  const s1PrimaryPt = markerAt("s1-primary-pt");
+  const s1PlanePt = markerAt("s1-plane-pt");
+  const s1PrimaryAxis = $("s1-primary-axis") ? $("s1-primary-axis").value : "+z";
+  const s1PlaneAxis = $("s1-plane-axis") ? $("s1-plane-axis").value : "+y";
+
+  const s2Origin = markerAt("s2-origin");
+  const s2PrimaryPt = markerAt("s2-primary-pt");
+  const s2PlanePt = markerAt("s2-plane-pt");
+  const s2PrimaryAxis = $("s2-primary-axis") ? $("s2-primary-axis").value : "+z";
+  const s2PlaneAxis = $("s2-plane-axis") ? $("s2-plane-axis").value : "+y";
+
+  const sequence = $("kinematics-sequence-select") ? $("kinematics-sequence-select").value : "zxy";
+  const sgMode = $("sg-mode") ? $("sg-mode").value : "identity";
+
+  kinematicsConfig.s1 = {
+    name: $("s1-name") ? $("s1-name").value : "Segment 1",
+    origin: s1Origin,
+    primaryPt: s1PrimaryPt,
+    planePt: s1PlanePt,
+    primaryAxis: s1PrimaryAxis,
+    planeAxis: s1PlaneAxis
+  };
+  kinematicsConfig.s2 = {
+    name: $("s2-name") ? $("s2-name").value : "Segment 2",
+    origin: s2Origin,
+    primaryPt: s2PrimaryPt,
+    planePt: s2PlanePt,
+    primaryAxis: s2PrimaryAxis,
+    planeAxis: s2PlaneAxis
+  };
+  kinematicsConfig.sequence = sequence;
+  kinematicsConfig.sgMode = sgMode;
+
+  status("Computing orthonormal segment bases and relative kinematics MR = (MR2 · s2) · sg.T...");
+
+  let computedOnServer = false;
+  if (boot.server) {
+    try {
+      const payload = {
+        trial,
+        virtual_points: virtualPoints.map(vp => ({ name: vp.name, expression: vp.expression })),
+        s1: {
+          origin: s1Origin,
+          primary_pt: s1PrimaryPt,
+          plane_pt: s1PlanePt,
+          primary_axis: s1PrimaryAxis,
+          plane_axis: s1PlaneAxis
+        },
+        s2: {
+          origin: s2Origin,
+          primary_pt: s2PrimaryPt,
+          plane_pt: s2PlanePt,
+          primary_axis: s2PrimaryAxis,
+          plane_axis: s2PlaneAxis
+        },
+        sequence
+      };
+      if (sgMode === "active_lcs" && currentLCS && currentLCS.rotMatrix) {
+        payload.sg = currentLCS.rotMatrix;
+      } else if (sgMode === "custom") {
+        payload.sg = {
+          origin: markerAt("sg-origin"),
+          primary_pt: markerAt("sg-primary-pt"),
+          plane_pt: markerAt("sg-plane-pt"),
+          primary_axis: "+z",
+          plane_axis: "+y"
+        };
+      }
+      const resp = await fetch("/api/analyze/kinematics_bases", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (resp.ok) {
+        const res = await resp.json();
+        kinematicsData.s1Bases = res.s1_bases;
+        kinematicsData.s1Origin = res.s1_origin;
+        kinematicsData.s2Bases = res.s2_bases;
+        kinematicsData.s2Origin = res.s2_origin;
+        kinematicsData.sgBases = res.sg_bases;
+        kinematicsData.MR2 = res.MR2;
+        kinematicsData.MR = res.MR;
+        kinematicsData.euler = res.euler;
+        kinematicsData.quaternions = res.quaternions;
+        kinematicsData.valid = res.valid;
+        computedOnServer = true;
+      }
+    } catch (e) {
+      console.warn("Server kinematics failed, computing client-side:", e);
+    }
+  }
+
+  if (!computedOnServer) {
+    const getTrajectory = mName => {
+      const idx = trial.labels.indexOf(mName);
+      return idx >= 0 ? trial.xyz.map(fr => fr[idx]) : [];
+    };
+    const s1OrigPts = getTrajectory(s1Origin);
+    const s1PrimPts = getTrajectory(s1PrimaryPt);
+    const s1PlanePts = getTrajectory(s1PlanePt);
+
+    const s2OrigPts = getTrajectory(s2Origin);
+    const s2PrimPts = getTrajectory(s2PrimaryPt);
+    const s2PlanePts = getTrajectory(s2PlanePt);
+
+    const s1Res = buildOrthonormalBasisJS(s1OrigPts, s1PrimPts, s1PlanePts, s1PrimaryAxis, s1PlaneAxis);
+    const s2Res = buildOrthonormalBasisJS(s2OrigPts, s2PrimPts, s2PlanePts, s2PrimaryAxis, s2PlaneAxis);
+
+    const nFrames = trial.xyz.length;
+    let sgBases = [];
+    if (sgMode === "active_lcs" && currentLCS && currentLCS.rotMatrix) {
+      sgBases = new Array(nFrames).fill(currentLCS.rotMatrix);
+    } else {
+      const eye = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+      sgBases = new Array(nFrames).fill(eye);
+    }
+
+    const mr2List = [];
+    const mrList = [];
+    const eulerList = [];
+    const quatList = [];
+    const validList = [];
+
+    for (let f = 0; f < nFrames; f++) {
+      const b1 = s1Res.bases[f];
+      const b2 = s2Res.bases[f];
+      const bg = sgBases[f];
+      const fValid = s1Res.valid[f] && s2Res.valid[f];
+      validList.push(fValid);
+
+      if (fValid) {
+        const mr2 = matrixMultiply3x3(bg, matrixTranspose3x3(b1));
+        const mr = matrixMultiply3x3(matrixMultiply3x3(mr2, b2), matrixTranspose3x3(bg));
+        const eul = matrixToEulerJS(mr, sequence);
+        const q = matrixToQuaternionJS(mr);
+        mr2List.push(mr2);
+        mrList.push(mr);
+        eulerList.push(eul);
+        quatList.push(q);
+      } else {
+        mr2List.push([[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]]);
+        mrList.push([[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]]);
+        eulerList.push([NaN, NaN, NaN]);
+        quatList.push([NaN, NaN, NaN, NaN]);
+      }
+    }
+
+    kinematicsData.s1Bases = s1Res.bases;
+    kinematicsData.s1Origin = s1OrigPts;
+    kinematicsData.s2Bases = s2Res.bases;
+    kinematicsData.s2Origin = s2OrigPts;
+    kinematicsData.sgBases = sgBases;
+    kinematicsData.MR2 = mr2List;
+    kinematicsData.MR = mrList;
+    kinematicsData.euler = eulerList;
+    kinematicsData.quaternions = quatList;
+    kinematicsData.valid = validList;
+  }
+
+  kinematicsConfig.computed = true;
+
+  if (!Array.isArray(analysisResults.orientations)) analysisResults.orientations = [];
+  analysisResults.orientations.push({
+    schema: "openbiomech-segment-kinematics",
+    schema_version: 1,
+    definition: {
+      s1: kinematicsConfig.s1,
+      s2: kinematicsConfig.s2,
+      sequence: kinematicsConfig.sequence,
+    },
+    quaternion_convention: "scalar-first wxyz",
+    euler: {
+      xyz: kinematicsData.euler,
+      xzy: kinematicsData.euler,
+      yxz: kinematicsData.euler,
+      yzx: kinematicsData.euler,
+      zxy: kinematicsData.euler,
+      zyx: kinematicsData.euler,
+    },
+    quaternions: kinematicsData.quaternions,
+    MR: kinematicsData.MR,
+    MR2: kinematicsData.MR2,
+  });
+
+  if ($("kinematics-status-badge")) {
+    $("kinematics-status-badge").textContent = `MR (${sequence.toUpperCase()}) Live`;
+    $("kinematics-status-badge").style.color = "var(--accent)";
+  }
+
+  const tabBtn = document.querySelector(".kinematics-tab-btn[data-tab='kinematics']");
+  if (tabBtn) tabBtn.click();
+
+  updateKinematicsLiveUI();
+  draw();
+  status(`Kinematics active: MR live in 3D viewport and telemetry window (${sequence.toUpperCase()}).`);
+}
+
+function updateKinematicsLiveUI() {
+  if (!$("modal-kinematics") || $("modal-kinematics").hidden) return;
+  if (!trial) return;
+
+  if ($("kinematics-live-frame-info")) {
+    const timeSec = trial.rate_hz > 0 ? (frame / trial.rate_hz).toFixed(3) : "0.000";
+    $("kinematics-live-frame-info").textContent =
+      `Frame: ${frame + 1} / ${trial.xyz.length} (${timeSec} s)`;
+  }
+
+  if (!kinematicsConfig.computed || !kinematicsData.MR) return;
+
+  const curMR = kinematicsData.MR[frame];
+  if (curMR && Number.isFinite(curMR[0][0])) {
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        const cell = $(`mr-${r}${c}`);
+        if (cell) cell.textContent = curMR[r][c].toFixed(4);
+      }
+    }
+  }
+
+  const curEuler = kinematicsData.euler ? kinematicsData.euler[frame] : null;
+  if (curEuler && Number.isFinite(curEuler[0])) {
+    if ($("euler-val-alpha")) $("euler-val-alpha").textContent = `${curEuler[0] >= 0 ? "+" : ""}${curEuler[0].toFixed(2)}°`;
+    if ($("euler-val-beta")) $("euler-val-beta").textContent = `${curEuler[1] >= 0 ? "+" : ""}${curEuler[1].toFixed(2)}°`;
+    if ($("euler-val-gamma")) $("euler-val-gamma").textContent = `${curEuler[2] >= 0 ? "+" : ""}${curEuler[2].toFixed(2)}°`;
+  }
+
+  const curQuat = kinematicsData.quaternions ? kinematicsData.quaternions[frame] : null;
+  if (curQuat && Number.isFinite(curQuat[0])) {
+    if ($("quat-display-val")) {
+      $("quat-display-val").textContent =
+        `q = (${curQuat[0].toFixed(4)}, ${curQuat[1].toFixed(4)}, ${curQuat[2].toFixed(4)}, ${curQuat[3].toFixed(4)})`;
+    }
+    const qNorm = Math.hypot(curQuat[0], curQuat[1], curQuat[2], curQuat[3]);
+    if ($("quat-norm-badge")) $("quat-norm-badge").textContent = `||q|| = ${qNorm.toFixed(4)}`;
+  }
+}
+
+function drawKinematicsTriads(targetCtx, w, h) {
+  if (!kinematicsConfig.computed || !kinematicsConfig.showTriads || !kinematicsData.MR) return;
+  const isLight = currentTheme === "light";
+  const colors = isLight
+    ? ["#dc2626", "#16a34a", "#2563eb"]
+    : ["#ef4444", "#22c55e", "#3b82f6"];
+  const scale = kinematicsConfig.triadScale || 0.12;
+
+  // Draw s1 triad
+  if (kinematicsData.s1Origin && kinematicsData.s1Bases) {
+    const o1 = kinematicsData.s1Origin[frame];
+    const b1 = kinematicsData.s1Bases[frame];
+    if (valid(o1) && b1 && Number.isFinite(b1[0][0])) {
+      const axisLabels = ["X_s1", "Y_s1", "Z_s1"];
+      for (let col = 0; col < 3; col++) {
+        const tip = [
+          o1[0] + scale * b1[0][col],
+          o1[1] + scale * b1[1][col],
+          o1[2] + scale * b1[2][col]
+        ];
+        line(o1, tip, colors[col], 3, targetCtx, w, h);
+        const pTip = project(tip, w, h);
+        targetCtx.fillStyle = colors[col];
+        targetCtx.font = "bold 11px system-ui, sans-serif";
+        targetCtx.fillText(axisLabels[col], pTip[0] + 4, pTip[1]);
+      }
+      const pO1 = project(o1, w, h);
+      targetCtx.beginPath();
+      targetCtx.arc(pO1[0], pO1[1], 4, 0, Math.PI * 2);
+      targetCtx.fillStyle = "#3b82f6";
+      targetCtx.fill();
+      targetCtx.fillStyle = isLight ? "#0f172a" : "#ffffff";
+      targetCtx.font = "bold 11px system-ui, sans-serif";
+      targetCtx.fillText("s1 (" + (kinematicsConfig.s1.name || "s1") + ")", pO1[0] + 6, pO1[1] - 4);
+    }
+  }
+
+  // Draw s2 triad
+  if (kinematicsData.s2Origin && kinematicsData.s2Bases) {
+    const o2 = kinematicsData.s2Origin[frame];
+    const b2 = kinematicsData.s2Bases[frame];
+    if (valid(o2) && b2 && Number.isFinite(b2[0][0])) {
+      const axisLabels = ["X_s2", "Y_s2", "Z_s2"];
+      for (let col = 0; col < 3; col++) {
+        const tip = [
+          o2[0] + scale * b2[0][col],
+          o2[1] + scale * b2[1][col],
+          o2[2] + scale * b2[2][col]
+        ];
+        line(o2, tip, colors[col], 3, targetCtx, w, h);
+        const pTip = project(tip, w, h);
+        targetCtx.fillStyle = colors[col];
+        targetCtx.font = "bold 11px system-ui, sans-serif";
+        targetCtx.fillText(axisLabels[col], pTip[0] + 4, pTip[1]);
+      }
+      const pO2 = project(o2, w, h);
+      targetCtx.beginPath();
+      targetCtx.arc(pO2[0], pO2[1], 4, 0, Math.PI * 2);
+      targetCtx.fillStyle = "#10b981";
+      targetCtx.fill();
+      targetCtx.fillStyle = isLight ? "#0f172a" : "#ffffff";
+      targetCtx.font = "bold 11px system-ui, sans-serif";
+      targetCtx.fillText("s2 (" + (kinematicsConfig.s2.name || "s2") + ")", pO2[0] + 6, pO2[1] - 4);
+    }
+  }
+}
+
+function plotEulerCurves() {
+  if (!kinematicsConfig.computed || !kinematicsData.euler) {
+    status("Please compute kinematics first.", true);
+    return;
+  }
+  for (const selId of ["plot1-mode", "plot2-mode"]) {
+    const sel = $(selId);
+    if (sel && !Array.from(sel.options).some(opt => opt.value === "kinematics-euler")) {
+      const opt = document.createElement("option");
+      opt.value = "kinematics-euler";
+      opt.textContent = `Kinematics Euler Angles (${kinematicsConfig.sequence.toUpperCase()})`;
+      sel.appendChild(opt);
+    }
+  }
+
+  if ($("plot1-mode")) $("plot1-mode").value = "kinematics-euler";
+  if ($("plot2-mode")) $("plot2-mode").value = "kinematics-euler";
+
+  drawPlot1();
+  drawPlot2();
+  status(`Plotted Euler angles (${kinematicsConfig.sequence.toUpperCase()}) on Plot 1 & 2.`);
+}
+
+function exportKinematicsCSV() {
+  if (!trial || !kinematicsConfig.computed || !kinematicsData.MR) {
+    status("Compute kinematics first before exporting CSV.", true);
+    return;
+  }
+  const nFrames = trial.xyz.length;
+  const rate = trial.rate_hz || 100.0;
+  const s1O = kinematicsData.s1Origin;
+  const s1B = kinematicsData.s1Bases;
+  const s2O = kinematicsData.s2Origin;
+  const s2B = kinematicsData.s2Bases;
+  const sgB = kinematicsData.sgBases;
+  const MR2 = kinematicsData.MR2;
+  const MR = kinematicsData.MR;
+  const euler = kinematicsData.euler;
+  const quat = kinematicsData.quaternions;
+
+  const header = [
+    "frame", "time_s",
+    "s1_origin_x", "s1_origin_y", "s1_origin_z",
+    "s1_R11", "s1_R12", "s1_R13", "s1_R21", "s1_R22", "s1_R23", "s1_R31", "s1_R32", "s1_R33",
+    "s2_origin_x", "s2_origin_y", "s2_origin_z",
+    "s2_R11", "s2_R12", "s2_R13", "s2_R21", "s2_R22", "s2_R23", "s2_R31", "s2_R32", "s2_R33",
+    "sg_R11", "sg_R12", "sg_R13", "sg_R21", "sg_R22", "sg_R23", "sg_R31", "sg_R32", "sg_R33",
+    "MR2_11", "MR2_12", "MR2_13", "MR2_21", "MR2_22", "MR2_23", "MR2_31", "MR2_32", "MR2_33",
+    "MR_11", "MR_12", "MR_13", "MR_21", "MR_22", "MR_23", "MR_31", "MR_32", "MR_33",
+    "euler_alpha_deg", "euler_beta_deg", "euler_gamma_deg",
+    "quat_w", "quat_x", "quat_y", "quat_z"
+  ].join(",");
+
+  const rows = [header];
+  for (let f = 0; f < nFrames; f++) {
+    const t = (f / rate).toFixed(4);
+    const o1 = s1O && s1O[f] ? s1O[f] : [NaN, NaN, NaN];
+    const b1 = s1B && s1B[f] ? s1B[f] : [[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]];
+    const o2 = s2O && s2O[f] ? s2O[f] : [NaN, NaN, NaN];
+    const b2 = s2B && s2B[f] ? s2B[f] : [[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]];
+    const bg = sgB && sgB[f] ? sgB[f] : (Array.isArray(sgB) && sgB.length === 3 ? sgB : [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+    const m2 = MR2 && MR2[f] ? MR2[f] : [[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]];
+    const m = MR && MR[f] ? MR[f] : [[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]];
+    const e = euler && euler[f] ? euler[f] : [NaN, NaN, NaN];
+    const q = quat && quat[f] ? quat[f] : [NaN, NaN, NaN, NaN];
+
+    const row = [
+      f + 1, t,
+      o1[0], o1[1], o1[2],
+      b1[0][0], b1[0][1], b1[0][2], b1[1][0], b1[1][1], b1[1][2], b1[2][0], b1[2][1], b1[2][2],
+      o2[0], o2[1], o2[2],
+      b2[0][0], b2[0][1], b2[0][2], b2[1][0], b2[1][1], b2[1][2], b2[2][0], b2[2][1], b2[2][2],
+      bg[0][0], bg[0][1], bg[0][2], bg[1][0], bg[1][1], bg[1][2], bg[2][0], bg[2][1], bg[2][2],
+      m2[0][0], m2[0][1], m2[0][2], m2[1][0], m2[1][1], m2[1][2], m2[2][0], m2[2][1], m2[2][2],
+      m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2], m[2][0], m[2][1], m[2][2],
+      e[0], e[1], e[2],
+      q[0], q[1], q[2], q[3]
+    ].map(val => (typeof val === "number" ? (Number.isFinite(val) ? val.toFixed(6) : "") : val)).join(",");
+    rows.push(row);
+  }
+
+  const csvContent = rows.join("\n") + "\n";
+  const trialStem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  download(csvContent, `${trialStem}_kinematics.csv`, "text/csv");
+  status(`Exported kinematics CSV (${nFrames} frames) for s1, s2, sg, MR, Euler and Quaternions.`);
+}
+
+function generateKinematicsPythonScript() {
+  const trialName = (trial && trial.name ? trial.name : "trial").replace(/\.[^.]+$/, "");
+  const s1Cfg = kinematicsConfig.s1;
+  const s2Cfg = kinematicsConfig.s2;
+  const seq = kinematicsConfig.sequence || "zxy";
+  const vpLines = virtualPoints.map(vp => `    # Virtual Point: ${vp.name}\n    p['${vp.name}'] = ${vp.expression}`).join("\n");
+
+  return `#!/usr/bin/env python3
+"""OpenBiomech Kinematics Pipeline Script
+Automatically generated by mkvis3d.
+
+Calculates orthonormal Cartesian bases (s1, s2, sg), relative rotation
+matrices MR = (MR2 @ s2) @ sg.T where MR2 = sg @ s1.T, Euler/Cardan angles,
+and scalar-first unit quaternions.
+"""
+
+import sys
+import numpy as np
+from pathlib import Path
+from scipy.spatial.transform import Rotation
+
+def build_orthonormal_basis(origin_pts, primary_pts, plane_pts, primary_axis="${s1Cfg.primaryAxis}", plane_axis="${s1Cfg.planeAxis}"):
+    """Build orthonormal 3x3 bases from 3 points across all frames."""
+    n_frames = len(origin_pts)
+    v_prim_raw = primary_pts - origin_pts
+    v_plane_raw = plane_pts - origin_pts
+    norm_prim = np.linalg.norm(v_prim_raw, axis=1)
+    norm_plane = np.linalg.norm(v_plane_raw, axis=1)
+    valid = (np.isfinite(origin_pts).all(axis=1) &
+             np.isfinite(primary_pts).all(axis=1) &
+             np.isfinite(plane_pts).all(axis=1) &
+             (norm_prim > 1e-9) & (norm_plane > 1e-9))
+    bases = np.full((n_frames, 3, 3), np.nan, dtype=np.float64)
+    if not valid.any():
+        return bases, valid
+
+    p_sign = -1.0 if primary_axis.startswith("-") else 1.0
+    p_char = primary_axis.lstrip("+-").lower()
+    e_prim = p_sign * (v_prim_raw[valid] / norm_prim[valid, None])
+
+    v_pl = v_plane_raw[valid]
+    dot = np.sum(v_pl * e_prim, axis=1, keepdims=True)
+    v_ortho = v_pl - dot * e_prim
+    norm_ortho = np.linalg.norm(v_ortho, axis=1)
+    e_sec = v_ortho / norm_ortho[:, None]
+    if plane_axis.startswith("-"):
+        e_sec = -e_sec
+
+    if p_char == "z":
+        ez = e_prim
+        if "y" in plane_axis.lower():
+            ey = e_sec
+            ex = np.cross(ey, ez)
+            ex /= np.linalg.norm(ex, axis=1, keepdims=True)
+            ey = np.cross(ez, ex)
+        else:
+            ex = e_sec
+            ey = np.cross(ez, ex)
+            ey /= np.linalg.norm(ey, axis=1, keepdims=True)
+            ex = np.cross(ey, ez)
+    elif p_char == "y":
+        ey = e_prim
+        if "z" in plane_axis.lower():
+            ez = e_sec
+            ex = np.cross(ey, ez)
+            ex /= np.linalg.norm(ex, axis=1, keepdims=True)
+            ez = np.cross(ex, ey)
+        else:
+            ex = e_sec
+            ez = np.cross(ex, ey)
+            ez /= np.linalg.norm(ez, axis=1, keepdims=True)
+            ex = np.cross(ey, ez)
+    else:
+        ex = e_prim
+        if "y" in plane_axis.lower():
+            ey = e_sec
+            ez = np.cross(ex, ey)
+            ez /= np.linalg.norm(ez, axis=1, keepdims=True)
+            ey = np.cross(ez, ex)
+        else:
+            ez = e_sec
+            ey = np.cross(ez, ex)
+            ey /= np.linalg.norm(ey, axis=1, keepdims=True)
+            ez = np.cross(ex, ey)
+
+    ex /= np.linalg.norm(ex, axis=1, keepdims=True)
+    ey /= np.linalg.norm(ey, axis=1, keepdims=True)
+    ez /= np.linalg.norm(ez, axis=1, keepdims=True)
+    bases[valid] = np.stack((ex, ey, ez), axis=2)
+    return bases, valid
+
+def compute_relative_kinematics(s1, s2, sg=None, sequence="${seq}"):
+    """Compute relative rotation matrix MR and Cardan/Euler + Quaternions."""
+    n_frames = len(s1)
+    if sg is None:
+        sg = np.tile(np.eye(3), (n_frames, 1, 1))
+    valid = (np.isfinite(s1).all(axis=(1, 2)) &
+             np.isfinite(s2).all(axis=(1, 2)) &
+             np.isfinite(sg).all(axis=(1, 2)))
+    mr2 = np.full((n_frames, 3, 3), np.nan)
+    mr = np.full((n_frames, 3, 3), np.nan)
+    euler = np.full((n_frames, 3), np.nan)
+    quat = np.full((n_frames, 4), np.nan)
+
+    if valid.any():
+        sub_s1 = s1[valid]
+        sub_s2 = s2[valid]
+        sub_sg = sg[valid]
+        # MR2 = sg @ s1.T
+        sub_mr2 = sub_sg @ np.swapaxes(sub_s1, -1, -2)
+        # MR = (MR2 @ s2) @ sg.T
+        sub_mr = (sub_mr2 @ sub_s2) @ np.swapaxes(sub_sg, -1, -2)
+        mr2[valid] = sub_mr2
+        mr[valid] = sub_mr
+
+        rot = Rotation.from_matrix(sub_mr)
+        euler[valid] = rot.as_euler(sequence, degrees=True)
+        # scalar-first (w, x, y, z)
+        xyzw = rot.as_quat()
+        wxyz = xyzw[:, [3, 0, 1, 2]]
+        wxyz = np.where(wxyz[:, :1] < 0, -wxyz, wxyz)
+        quat[valid] = wxyz
+
+    return {"MR2": mr2, "MR": mr, "euler": euler, "quaternions": quat, "valid": valid}
+
+def main():
+    print("OpenBiomech Kinematics Pipeline")
+    print("Trial: ${trialName}")
+    print("Segment 1: ${s1Cfg.name} (Origin: ${s1Cfg.origin})")
+    print("Segment 2: ${s2Cfg.name} (Origin: ${s2Cfg.origin})")
+    print("Euler Sequence: ${seq}")
+    print("\\nVirtual Points Pipeline:")
+${vpLines ? vpLines : "    # (No virtual points defined)"}
+    print("\\nTo run on your data, load your C3D/CSV trial with OpenBiomech:")
+    print("from openbiomech import load_trial")
+    print("trial = load_trial('your_trial.c3d')")
+
+if __name__ == "__main__":
+    main()
+`;
+}
+
+function initKinematicsControls() {
+  if ($("btn-open-kinematics")) $("btn-open-kinematics").onclick = openKinematicsModal;
+  if ($("btn-close-kinematics")) $("btn-close-kinematics").onclick = closeKinematicsModal;
+
+  document.querySelectorAll(".kinematics-tab-btn").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll(".kinematics-tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const targetTab = btn.getAttribute("data-tab");
+      document.querySelectorAll(".kinematics-tab-panel").forEach(p => (p.hidden = true));
+      const activePanel = $(`tab-content-${targetTab}`);
+      if (activePanel) activePanel.hidden = false;
+    };
+  });
+
+  document.querySelectorAll(".btn-vp-quick").forEach(btn => {
+    btn.onclick = () => {
+      const tmpl = btn.getAttribute("data-template");
+      if (!trial || !trial.labels.length) return;
+      const l = trial.labels;
+      const a = l[0] || "A";
+      const b = l[1] || l[0] || "B";
+      const c = l[2] || l[1] || "C";
+      const formula = tmpl.replace(/\{A\}/g, a).replace(/\{B\}/g, b).replace(/\{C\}/g, c);
+      if ($("vp-expr")) $("vp-expr").value = formula;
+      if ($("vp-name") && !$("vp-name").value) $("vp-name").value = "VIRT_" + a;
+    };
+  });
+
+  if ($("btn-add-virtual-point")) {
+    $("btn-add-virtual-point").onclick = async () => {
+      const name = $("vp-name") ? $("vp-name").value.trim() : "";
+      const expr = $("vp-expr") ? $("vp-expr").value.trim() : "";
+      if (!name) {
+        if ($("vp-error")) { $("vp-error").textContent = "Please enter a point name."; $("vp-error").style.display = "block"; }
+        return;
+      }
+      if (!expr) {
+        if ($("vp-error")) { $("vp-error").textContent = "Please enter a formula."; $("vp-error").style.display = "block"; }
+        return;
+      }
+      await addVirtualPoint(name, expr);
+    };
+  }
+
+  if ($("btn-export-vp-pipeline")) {
+    $("btn-export-vp-pipeline").onclick = exportVirtualPointsPipeline;
+  }
+  if ($("btn-load-vp-pipeline")) {
+    $("btn-load-vp-pipeline").onclick = () => $("file-load-vp-pipeline")?.click();
+  }
+  if ($("file-load-vp-pipeline")) {
+    $("file-load-vp-pipeline").onchange = async () => {
+      const file = $("file-load-vp-pipeline").files[0];
+      if (file) await loadVirtualPointsPipeline(file);
+    };
+  }
+
+  for (const id of [
+    "s1-origin", "s1-primary-pt", "s1-plane-pt", "s1-primary-axis", "s1-plane-axis",
+    "s2-origin", "s2-primary-pt", "s2-plane-pt", "s2-primary-axis", "s2-plane-axis",
+    "sg-mode", "sg-origin", "sg-primary-pt", "sg-plane-pt"
+  ]) {
+    if ($(id)) $(id).onchange = updateKinematicsBasisFeedback;
+  }
+
+  if ($("sg-mode")) {
+    $("sg-mode").onchange = () => {
+      const isCustom = $("sg-mode").value === "custom";
+      if ($("sg-custom-fields")) $("sg-custom-fields").style.display = isCustom ? "grid" : "none";
+      updateKinematicsBasisFeedback();
+    };
+  }
+
+  if ($("chk-show-kinematics-triads")) {
+    $("chk-show-kinematics-triads").onchange = () => {
+      kinematicsConfig.showTriads = $("chk-show-kinematics-triads").checked;
+      draw();
+    };
+  }
+  if ($("triad-scale-slider")) {
+    $("triad-scale-slider").oninput = () => {
+      const val = parseFloat($("triad-scale-slider").value) || 0.12;
+      kinematicsConfig.triadScale = val;
+      if ($("triad-scale-val")) $("triad-scale-val").textContent = `${val.toFixed(2)} m`;
+      draw();
+    };
+  }
+
+  if ($("kinematics-sequence-select")) {
+    $("kinematics-sequence-select").onchange = () => {
+      kinematicsConfig.sequence = $("kinematics-sequence-select").value;
+      if (kinematicsConfig.computed) {
+        computeKinematics();
+      }
+    };
+  }
+
+  if ($("btn-compute-kinematics")) {
+    $("btn-compute-kinematics").onclick = computeKinematics;
+  }
+
+  if ($("btn-plot-euler-curves")) {
+    $("btn-plot-euler-curves").onclick = plotEulerCurves;
+  }
+
+  if ($("btn-export-kinematics-csv")) {
+    $("btn-export-kinematics-csv").onclick = exportKinematicsCSV;
+  }
+  if ($("btn-export-kinematics-python")) {
+    $("btn-export-kinematics-python").onclick = () => {
+      const script = generateKinematicsPythonScript();
+      const trialStem = (trial && trial.name ? trial.name : "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+      download(script, `${trialStem}_kinematics_pipeline.py`, "text/x-python");
+      status("Downloaded standalone Python kinematics pipeline script.");
+    };
+  }
+}
+
 $("open-panel").hidden = !boot.server;
 
 // Initial loading: restore complete project first, then a plain inlined trial.
@@ -5369,6 +6703,7 @@ if (boot.project) {
 initMarkerControls();
 initLCSAndFilterControls();
 initInterpolationAndPlotControls();
+initKinematicsControls();
 initVerticalSplitter();
 initHorizontalSplitter();
 resize();

@@ -1,6 +1,7 @@
 import {writeFile} from "node:fs/promises";
 import assert from "node:assert/strict";
-const root=process.argv[2] || process.cwd();
+import { resolve } from "node:path";
+const root = resolve(process.argv[2] || process.cwd());
 const cdpPort = process.env.CDP_PORT || "9237";
 const targets=await (await fetch("http://127.0.0.1:"+cdpPort+"/json/list")).json();
 const ws=new WebSocket(targets.find(t=>t.type==="page").webSocketDebuggerUrl);
@@ -184,10 +185,13 @@ if(process.argv[3]){
  assert.match(await evaluate('document.getElementById("meta").textContent'), /120 Hz/);
  await evaluate('document.getElementById("skeleton-template-select").value = "sam3dinov3_mhr70"; document.getElementById("btn-load-skeleton").click();');
  assert.equal(await evaluate('skeletonPairs.length'), 88);
- await evaluate('document.getElementById("btn-analyze-orientation").click();');
- await until('document.getElementById("orientation-status-badge").textContent.includes("6 sequences")');
- assert.equal(await evaluate('analysisResults.orientations[0].quaternion_convention'), "scalar-first wxyz");
- assert.deepEqual(await evaluate('Object.keys(analysisResults.orientations[0].euler).sort()'), ["xyz","xzy","yxz","yzx","zxy","zyx"]);
+  await evaluate('document.getElementById("btn-open-kinematics").click();');
+  assert.equal(await evaluate('document.getElementById("modal-kinematics").hidden'), false);
+  await evaluate('document.getElementById("btn-compute-kinematics").click();');
+  await until('document.getElementById("kinematics-status-badge").textContent.includes("Live")');
+  assert.equal(await evaluate('analysisResults.orientations[0].quaternion_convention'), "scalar-first wxyz");
+  assert.deepEqual(await evaluate('Object.keys(analysisResults.orientations[0].euler).sort()'), ["xyz","xzy","yxz","yzx","zxy","zyx"]);
+  await evaluate('document.getElementById("btn-close-kinematics").click();');
  await evaluate('document.getElementById("btn-create-com").click();');
  assert.equal(await evaluate('trial.labels.at(-1)'), "CenterOfMass_deLeva_male");
  assert.equal(await evaluate('trial.xyz[0].length'), 71);

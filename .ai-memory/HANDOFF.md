@@ -1,22 +1,30 @@
-# Session Handoff: Fast 3D Refresh, Visual3D Gap Timeline, Curve Toggles & 1-Click Interpolation
+# Session Handoff: Cartesian Bases (s1, s2, sg), Virtual Points Creator & Relative Kinematics
 
 - **Status:** Completed
 - **Current State:**
-  - Implemented automated Fast 3D Viewport Refresh (`refresh3DViewport()`) cycling DOM display/reflow, clearing stale canvas transforms, syncing with `window.devicePixelRatio`, resetting camera angles to isometric view, and recalculating scene bounds. Automatically triggered on Reference System (LCS) changes (`applyReferenceSystem`, `resetLCS`, `$("up").onchange`), filter operations (`applyFilter`, `revertFilter`, quick filter), and marker interpolation/revert. Also exposed via manual `↻ Refresh 3D` button in the 3D pane header.
-  - Missing or NaN marker frames are strictly dropped from the 3D scene (no phantom points at origin, no connected bones to NaNs; guarded `line(a, b)` and `project(raw)`).
-  - Trajectory gaps are highlighted on the plot timeline with Visual3D-style vertical semi-transparent shaded bands, diagonal cross-hatching, solid bottom indicator bars, and duration badges (`Xf gap`). Plot header displays dynamic gap summary badge (`⚠ X gaps (Y.Y%)` in red vs `✓ 100% OK` in green).
-  - Added interactive coordinate curve visibility chips (`[X]`, `[Y]`, `[Z]`) in Plot 1 & Plot 2 headers, and dedicated single-coordinate modes (`active-x`, `active-y`, `active-z`, `active-xyz`). Toggling curves automatically rescales the vertical axis to exclusively fit visible series.
-  - Added 1-click **`⚡ Interpolate`** tool in the plot header for the active marker with selectable algorithms (`Cubic Spline (PCHIP)`, `Linear`, `Nearest`). Gaps are filled in `rawLoadedXYZ` using pure vanilla JS `gapFill1D()`, immediately updating the 3D animation, reconnecting timeline curves, and enabling 1-click **`↩ Revert`** to restore raw missing frames at any time.
-  - All 220 pytest tests passed (`uv run pytest -m "not browser"`), `ruff check .` passed with 0 errors, and automated Chrome CDP tests verified all workflows.
+  - Removed orientation / Euler / Quaternion clutter from the left sidebar and replaced it with a single clean button: `📐 Segment Bases (s1, s2, sg) & Kinematics`.
+  - Added dedicated floating modal window (`#modal-kinematics`) with 4 tabs:
+    1. **Virtual Points Creator:** Allows users to define custom virtual landmarks using NumPy vector expressions (e.g. `(p['p1'] + p['p2']) / 2`, cross products, offsets). Multiple points can be added indefinitely with custom names and are immediately appended to `trial.labels` and `rawLoadedXYZ`.
+    2. **Cartesian Bases ($s_1, s_2, s_g$):** Define two segment Cartesian bases ($s_1$ proximal, $s_2$ distal) and Global lab system ($s_g$) using 3 non-collinear points (Origin, Primary Axis, Plane point) and axis permutations.
+    3. **Live Relative Kinematics:** Computes relative orientation using the exact user-specified formulation:
+       $$MR_2 = s_g \cdot s_1^T$$
+       $$MR = (MR_2 \cdot s_2) \cdot s_g^T = s_g \cdot s_1^T \cdot s_2 \cdot s_g^T$$
+       Strictly enforces Gram-Schmidt orthonormalization: unit norm ($\|e\| = 1$, each versor divided component-by-component by its Euclidean norm), mutual perpendicularity ($90^\circ$), and right-handed parity ($\det = +1$).
+       Displays real-time $3 \times 3$ $MR$ rotation matrix, Cardan/Euler angles across all 6 Tait-Bryan sequences (`zxy`, `xyz`, `zyx`, `yxz`, `xzy`, `yzx`), and scalar-first unit quaternions $(w, x, y, z)$.
+       Scrubbing the timeline or playing the animation updates the live telemetry in real-time and renders 3D RGB triads directly at segment origins in the 3D viewport.
+    4. **Export & Pipeline:** Allows 1-click export of kinematics matrices and Euler/Quaternion angles to CSV, and generates a standalone, reusable Python script pipeline (`.py`) containing the point definitions and orthonormal basis transformations.
+  - Linux binary distribution built and verified via `scripts/build_app.py`: standalone single-file executable `dist/mkvis3d` (76MB, no Python required).
+  - All 227 pytest tests passed (`uv run pytest -m "not browser"`), `uv run ruff check .` passed with 0 errors, `uv run ruff format --check .` passed, and automated headless Chrome CDP test suite (`tests/browser_smoke.mjs` and `scratch/test_kinematics_e2e.mjs`) verified all interactions.
 
 - **What Worked:**
-  1. **Fast 3D Viewport Refresh:** Programmatically cycling `.pane-body` display between `"none"` and `""` with forced reflow (`void el.offsetHeight`) drops stale GPU compositor surfaces and triggers proper canvas scaling without requiring manual window popout/redock.
-  2. **Visual3D Gap Shading & Missing Frame Handling:** Drawing shaded vertical bands with diagonal hatching pattern directly in `drawSinglePlot()` provides high-contrast Visual3D-grade timeline visualization while ensuring NaN frames never render in 3D.
-  3. **Multi-Curve Toggles & Dynamic Scaling:** Independent toggle chips (`plot1CurveVisibility`, `plot2CurveVisibility`) filter curves from `getSeriesForMode()`, allowing users to inspect isolated X, Y, or Z components at maximum vertical resolution.
-  4. **1-Click Interpolation & Revert Layer:** Backing up `rawLoadedXYZ` per marker in `interpolatedMarkers[markerIdx]` enables non-destructive gap filling that seamlessly combines with subsequent Reference System (LCS) matrix transformations and smoothing filters.
+  1. **Strict Orthonormalization:** Gram-Schmidt projection followed by explicit vector normalization ensures $\|e_x\|=\|e_y\|=\|e_z\|=1.0$, $e_i \cdot e_j = 0$, and $\det = +1.0$ at every frame.
+  2. **Dual Engine Architecture:** Standalone JavaScript engine powers the offline HTML viewer exports without server connectivity, while Python backend (`/api/analyze/kinematics_bases` and `/api/analyze/evaluate_point`) provides an oracle for GUI server mode and automated pytest regression tests.
+  3. **Live Telemetry & 3D Triad Overlay:** RGB triad rendering (Red=X, Green=Y, Blue=Z) directly at segment origins provides immediate visual spatial orientation feedback during playback.
+  4. **Dynamic Plot Integration:** Sending Euler angles directly to Plot 1 (`mode="kinematics-euler"`) seamlessly graphs flexion/extension, ab/adduction, and internal/external rotation curves across the motion timeline.
 
 - **Failed Approaches:**
-  - Relying solely on `resize()` without cycling DOM display was insufficient when the browser engine retained stale canvas backing buffers after reference system coordinate changes.
+  - In `buildOrthonormalBasisJS`, declaring `const valid = [];` shadowed the outer point validity predicate `valid(p)`. Renamed the collection array to `validMask` to resolve the shadowing error.
+  - Relying on default browser `<select>` option indices without explicit dataset flags caused select elements to initialize to index `0`. Handled via `sDefaults` map setting distinct default marker indices (0, 1, 2 for $s_1$; 3, 4, 5 for $s_2$).
 
 - **Open Questions & Next Steps:**
-  - Commit changes to `main` and push to `origin/main`.
+  - Stage, commit, and push all verified changes to `main`.

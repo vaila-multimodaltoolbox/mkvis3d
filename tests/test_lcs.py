@@ -148,4 +148,3 @@ def test_transform_trial_reference_system_with_translation():
     new_p2 = transformed_rot.marker("p2")
     new_dist = np.linalg.norm(new_p1 - new_p2, axis=-1)
     assert np.allclose(orig_dist, new_dist, atol=1e-12)
-

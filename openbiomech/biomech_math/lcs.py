@@ -249,7 +249,9 @@ def transform_trial_reference_system(
                     force=new_force,
                     moment=new_moment,
                     cop=new_cop,
-                    origin=tuple(R @ np.array(fp.origin) + t) if hasattr(fp, "origin") and fp.origin else None,
+                    origin=tuple(R @ np.array(fp.origin) + t)
+                    if hasattr(fp, "origin") and fp.origin
+                    else None,
                 )
             )
 
@@ -265,4 +267,3 @@ def transform_trial_reference_system(
         analog=trial.analog.copy(),
     )
     return new_trial, R, det
-
