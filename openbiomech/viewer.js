@@ -1267,7 +1267,7 @@ function load(data) {
   refreshMarkerSelectors();
   if ($("marker-b")) $("marker-b").value = String(Math.min(1, data.labels.length - 1));
 
-  for (const id of ["play", "prev", "next", "timeline", "export", "snapshot", "first", "last", "seek-motion", "btn-load-skeleton", "btn-clear-skeleton", "btn-apply-rate", "btn-create-com", "btn-analyze-orientation", "btn-export-analyses"]) {
+  for (const id of ["play", "prev", "next", "timeline", "first", "last", "seek-motion", "btn-load-skeleton", "btn-clear-skeleton", "btn-apply-rate", "btn-create-com", "btn-analyze-orientation", "btn-export-analyses"]) {
     if ($(id)) $(id).disabled = false;
   }
   $("timeline").max = String(data.xyz.length - 1);
@@ -1652,8 +1652,8 @@ document.addEventListener("click", () => {
 
 // File Menu Actions
 if ($("action-open-file")) $("action-open-file").onclick = () => $("file").click();
-if ($("action-export-plot")) $("action-export-plot").onclick = () => $("export").click();
-if ($("action-export-html")) $("action-export-html").onclick = () => $("snapshot").click();
+if ($("action-export-plot")) $("action-export-plot").onclick = () => exportDistanceCsv();
+if ($("action-export-html")) $("action-export-html").onclick = () => saveStandaloneHtmlSnapshot();
 
 if ($("action-export-all-csv")) {
   $("action-export-all-csv").onclick = () => {
@@ -2812,20 +2812,22 @@ function loadVailaProject(project) {
 
 if ($("action-save-vaila")) $("action-save-vaila").onclick = saveVailaProject;
 
-$("export").onclick = () => {
+function exportDistanceCsv() {
+  if (!trial) return;
   const rows = ["frame,time_s,distance_m"];
   distances.forEach((d, i) => rows.push(`${i},${i / trial.rate_hz},${Number.isFinite(d) ? d : ""}`));
   download(rows.join("\n") + "\n", "distance.csv", "text/csv");
-};
+}
 
-$("snapshot").onclick = () => {
+function saveStandaloneHtmlSnapshot() {
+  if (!trial) return;
   const root = document.documentElement.cloneNode(true);
   root.setAttribute("data-theme", currentTheme);
   root.setAttribute("data-marker-size", String(markerSize));
   root.setAttribute("data-marker-color", markerColor);
   root.querySelector("#trial-data").textContent = JSON.stringify({ server: false, trial }).replace(/</g, "\\u003c");
   download("<!doctype html>\n" + root.outerHTML, "movement.html", "text/html");
-};
+}
 
 // Drag & Drop File Handling
 window.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
