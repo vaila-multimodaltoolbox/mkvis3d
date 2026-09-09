@@ -285,7 +285,7 @@ binary fixtures without checking size.
 
 ## Documentation
 
-- **[📖 User Manual & Biomechanics Theory Guide](docs/MANUAL.md)** ([Interactive HTML](docs/manual.html)) — **complete Kwon3D & Visual3D parity guide, mathematical derivations, Cartesian bases, relative kinematics, virtual points, and practical tutorials**
+- **[📖 User Manual & Biomechanics Guide](docs/MANUAL.md)** ([Interactive HTML](docs/manual.html)) — **complete software guide, mathematical derivations, Cartesian bases, relative kinematics, virtual points, and practical tutorials**
 - **[Documentation Hub](docs/index.md)** ([HTML](docs/index.html)) — start here
 - **[CLI Reference](docs/cli.md)** ([HTML](docs/cli.html)) — every `mkvis3d` command, flags, and examples
 - **[Open `.vaila` Project Format](docs/vaila-format.md)** — versioned ZIP/JSON specification for complete reproducible projects

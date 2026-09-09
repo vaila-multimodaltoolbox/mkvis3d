@@ -1,8 +1,8 @@
-# mkvis3d / OpenBiomech — Complete User Manual & Biomechanics Theory Guide
+# mkvis3d / OpenBiomech — Complete User Manual & Biomechanics Guide
 
-> **An Open-Source, Reproducible Alternative to C-Motion Visual3D, BTK Mokka, and Kwon3D**  
+> **An Open-Source, Reproducible Motion Viewer and Biomechanical Analysis Suite**  
 > *Author:* OpenBiomech Project & Contributors  
-> *Theoretical Foundations:* Inspired by Dr. Young-Hoo Kwon's *Theories and Practices in Motion Analysis* (`kwon3d.com/theory/prac.html`), ISB Recommendations, and Winter's *Biomechanics and Motor Control of Human Movement*.
+> *Theoretical Foundations:* Formulated according to International Society of Biomechanics (ISB) recommendations, Winter's *Biomechanics and Motor Control of Human Movement*, and classical 3D motion analysis mathematical frameworks.
 
 ---
 
@@ -60,7 +60,7 @@
   - [10.1 Tutorial A: Hip Joint Kinematics during Gait](#101-tutorial-a-hip-joint-kinematics-during-gait)
   - [10.2 Tutorial B: Deep Squat Knee Kinematics & GRF Symmetry](#102-tutorial-b-deep-squat-knee-kinematics--grf-symmetry)
   - [10.3 Tutorial C: Countermovement Jump (CMJ) Impulse & CoM](#103-tutorial-c-countermovement-jump-cmj-impulse--com)
-- [11. Kwon3D & Visual3D Parity Cross-Reference](#11-kwon3d--visual3d-parity-cross-reference)
+- [11. Biomechanical Standards & Literature Cross-Reference](#11-biomechanical-standards--literature-cross-reference)
 - [12. Keyboard & Mouse Shortcuts](#12-keyboard--mouse-shortcuts)
 
 ---
@@ -546,9 +546,9 @@ uv run mkvis3d.py dynamics trial.json --output results.csv
 
 ---
 
-## 11. Kwon3D & Visual3D Parity Cross-Reference
+## 11. Biomechanical Standards & Literature Cross-Reference
 
-| Concept | Kwon3D | Visual3D | mkvis3d (OpenBiomech) |
+| Concept | Classical Motion Analysis | Visual3D / Mokka | mkvis3d (OpenBiomech) |
 |---|---|---|---|
 | **Global Reference Frame** | Global Reference Frame (GRF) | Lab Coordinate System (LCS) | Global System ($s_g$) / Lab Frame |
 | **Segment Coordinate System** | Local Reference Frame (LRF) | Segment Coordinate System (SCS) | Segment Cartesian Basis ($s_1, s_2$) |

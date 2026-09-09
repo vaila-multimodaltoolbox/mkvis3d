@@ -274,16 +274,19 @@
     </div>
     <nav id="toc-list">
       <a href="#ch1" class="toc-item active">1. Overview & Architecture</a>
-      <a href="#ch2" class="toc-item">2. Coordinate Systems & Bases</a>
-      <a href="#ch3" class="toc-item">3. Relative Kinematics (MR, Euler)</a>
-      <a href="#ch4" class="toc-item">4. Virtual Points (NumPy)</a>
-      <a href="#ch5" class="toc-item">5. Filtering & Interpolation</a>
-      <a href="#ch6" class="toc-item">6. Center of Mass (de Leva)</a>
-      <a href="#ch7" class="toc-item">7. Force Plates & Kinetics</a>
-      <a href="#ch8" class="toc-item">8. Visualization & Multi-Window</a>
-      <a href="#ch9" class="toc-item">9. Exports & CLI Automation</a>
-      <a href="#ch10" class="toc-item">10. Tutorials & Kwon3D Parity</a>
-      <a href="#shortcuts" class="toc-item">11. Keyboard Shortcuts</a>
+      <a href="#ch2" class="toc-item">2. Data Formats & I/O</a>
+      <a href="#ch3" class="toc-item">3. 3D Viewport & Navigation</a>
+      <a href="#ch4" class="toc-item">4. Timeline & Multi-Plot Analysis</a>
+      <a href="#ch5" class="toc-item">5. Distance & Point Tools</a>
+      <a href="#ch6" class="toc-item">6. Coordinate Systems & Bases</a>
+      <a href="#ch7" class="toc-item">7. Relative Kinematics (MR, Euler)</a>
+      <a href="#ch8" class="toc-item">8. Virtual Points (NumPy)</a>
+      <a href="#ch9" class="toc-item">9. Filtering & Gap Filling</a>
+      <a href="#ch10" class="toc-item">10. Center of Mass (de Leva)</a>
+      <a href="#ch11" class="toc-item">11. Force Platforms & Kinetics</a>
+      <a href="#ch12" class="toc-item">12. Video Sync & Multi-Window</a>
+      <a href="#ch13" class="toc-item">13. Command-Line Reference (CLI)</a>
+      <a href="#ch14" class="toc-item">14. Tutorials, Standards & Shortcuts</a>
     </nav>
   </aside>
 
@@ -293,7 +296,7 @@
       
       <div class="top-actions">
         <div style="font-size: 12px; color: var(--text-muted);">
-          OpenBiomech Project · Verified against Kwon3D & Visual3D Standards
+          OpenBiomech Project · Verified Biomechanical Analysis & 3D Motion Visualization
         </div>
         <div style="display: flex; gap: 8px;">
           <button id="btn-theme-toggle" class="btn" title="Toggle Light/Dark Theme">🌙 Theme</button>
@@ -303,40 +306,107 @@
 
       <!-- Chapter 1 -->
       <section id="ch1" class="manual-section">
-        <h1>mkvis3d — User Manual & Biomechanics Theory Guide</h1>
+        <h1>mkvis3d — User Manual & Biomechanics Guide</h1>
         <p>
-          Welcome to <strong>mkvis3d</strong> (package <code>openbiomech</code>), a reproducible, open-source biomechanical analysis suite and 3D motion viewer designed as a high-performance, modern alternative to <strong>C-Motion Visual3D</strong>, <strong>BTK Mokka</strong>, and <strong>Kwon3D</strong>.
+          Welcome to <strong>mkvis3d</strong> (package <code>openbiomech</code>), a modern, open-source, and reproducible biomechanical analysis suite and 3D motion viewer. It is designed to provide clinical gait laboratories, sports biomechanics research facilities, and universities with an autonomous, high-performance platform for processing 3D optical motion capture data, analog force signals, and electromyography.
         </p>
         <div class="card">
-          <h3 style="margin-top: 0;">Key Capabilities</h3>
+          <h3 style="margin-top: 0;">Key Capabilities Matrix</h3>
           <ul>
             <li><strong>Complete C3D I/O:</strong> Reads and writes binary C3D files (Intel, DEC VAX, MIPS; float and integer) preserving 3D markers, analog force channels, EMG, and parameter groups.</li>
             <li><strong>Cartesian Bases (s1, s2, sg):</strong> 3-point segment coordinate system construction with strict Gram-Schmidt orthonormalization.</li>
             <li><strong>Live Relative Kinematics:</strong> Real-time rotation matrix <code>MR = sg · s1^T · s2 · sg^T</code>, Cardan/Euler angles across all 6 Tait-Bryan sequences, and scalar-first quaternions.</li>
             <li><strong>Virtual Point Creator:</strong> Create anatomical joint centers using standard NumPy vector syntax with reusable pipeline scripts.</li>
-            <li><strong>Signal Conditioning:</strong> Zero-phase 4th-order Butterworth low-pass filtering and 1-click PCHIP monotonic gap filling.</li>
-            <li><strong>Kinetics:</strong> Types 1–5 force platform calibration, Center of Pressure (COP), and bottom-up recursive Newton-Euler inverse dynamics.</li>
+            <li><strong>Signal Conditioning:</strong> Zero-phase 4th-order Butterworth low-pass filtering, Hampel spike filtering, and 1-click PCHIP monotonic gap filling.</li>
+            <li><strong>Kinetics:</strong> Types 1–5 force platform calibration, dynamic Center of Pressure (COP), and bottom-up recursive Newton-Euler inverse dynamics.</li>
           </ul>
         </div>
       </section>
 
       <!-- Chapter 2 -->
       <section id="ch2" class="manual-section">
-        <h2>2. Biomechanical Coordinate Systems & Orthonormal Bases</h2>
-        <p>
-          In classical motion analysis (Kwon3D, Visual3D, ISB), defining segment movement requires constructing <strong>Local Segment Coordinate Systems (LCS / SCS)</strong> and relating them to the <strong>Global Reference System (GRF)</strong>.
-        </p>
-        
-        <h3>2.1 Global System (sg) vs Local Systems (s1, s2)</h3>
+        <h2>2. Data Formats & Biomechanical I/O</h2>
+        <p>mkvis3d supports industry-standard motion capture and biomechanical exchange formats:</p>
         <ul>
-          <li><strong>Global Reference System (sg):</strong> The laboratory world frame. By default, it is the canonical 3x3 identity matrix <code>[I 3x3]</code> (where Z is Vertical Up, X is Anterior, Y is Lateral).</li>
-          <li><strong>Proximal System (s1):</strong> The local coordinate system of the parent segment (e.g. Pelvis or Thigh).</li>
-          <li><strong>Distal System (s2):</strong> The local coordinate system of the child segment (e.g. Thigh or Shank).</li>
+          <li><strong>C3D (.c3d):</strong> Standard binary format preserving 3D point coordinates, analog channels, sampling frequencies, video sync frame ratios, and parameter groups (<code>POINT</code>, <code>ANALOG</code>, <code>FORCE_PLATFORM</code>). Supports float32 and integer data across Little-Endian and Big-Endian architectures.</li>
+          <li><strong>CSV (.csv):</strong> Universal tabular format containing frame index, time (s), and 3D coordinate columns (<code>X</code>, <code>Y</code>, <code>Z</code>) per marker.</li>
+          <li><strong>Raw 3D (.3d):</strong> ASCII and binary 3D trajectory data formats.</li>
+          <li><strong>Project Session State (.vaila):</strong> Complete JSON-encoded project file capturing current camera view, active marker, selected skeletons, custom virtual points, filter parameters, and LCS definitions.</li>
+          <li><strong>Biovision Hierarchy (.bvh):</strong> Standard skeletal animation file containing hierarchical bone offsets and continuous Euler joint rotations.</li>
+          <li><strong>Blender Python Script (.py):</strong> Fully automated script for photorealistic rendering in Blender (Cycles/Eevee) with material shaders, armatures, and keyframed trajectories.</li>
         </ul>
+      </section>
 
-        <h3>2.2 3-Point Basis Construction & Gram-Schmidt Orthonormalization</h3>
-        <p>A Cartesian basis is built from three non-collinear markers: <strong>Origin</strong> (r_orig), <strong>Primary Axis</strong> (r_prim), and <strong>Plane Point</strong> (r_plane):</p>
-        
+      <!-- Chapter 3 -->
+      <section id="ch3" class="manual-section">
+        <h2>3. 3D Viewport & Scene Navigation</h2>
+        <h3>3.1 Camera Controls</h3>
+        <ul>
+          <li><strong>Orbit:</strong> Click and drag the Left Mouse Button to rotate around the subject's center.</li>
+          <li><strong>Pan:</strong> Hold <span class="key-cap">Shift</span> and drag the Left Mouse Button to translate the viewport laterally and vertically.</li>
+          <li><strong>Zoom:</strong> Scroll the Mouse Wheel forward/backward.</li>
+          <li><strong>Fit & Reset:</strong> Press <span class="key-cap">R</span> or <span class="key-cap">Home</span> to auto-frame all visible markers and reset camera orbit angles.</li>
+        </ul>
+        <h3>3.2 Viewport Tools & Rendering</h3>
+        <ul>
+          <li><strong>Fast 3D Viewport Refresh (↻):</strong> Re-instantiates WebGL/Canvas rendering context, cleans GPU compositor surfaces, and recalculates scene bounding boxes. Use this whenever coordinate frames are transformed.</li>
+          <li><strong>Multi-Monitor Popout (⧉):</strong> Detach the 3D viewport into an independent OS window for multi-screen biomechanics setups.</li>
+          <li><strong>Marker Customization:</strong> Adjust marker sphere radius via the sidebar slider, select color presets or choose custom hex values. Press <span class="key-cap">C</span> to cycle colors.</li>
+          <li><strong>Labels Toggle:</strong> Press <span class="key-cap">L</span> to toggle on-screen text labels above markers.</li>
+          <li><strong>Floor Grid:</strong> Press <span class="key-cap">G</span> to toggle the calibrated 1-meter floor grid.</li>
+          <li><strong>Stick Figure Skeletons:</strong> Select kinematic chain templates (Plug-in Gait, Helen Hayes, ISB Lower Body) or configure custom inter-marker bone links.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 4 -->
+      <section id="ch4" class="manual-section">
+        <h2>4. Interactive Timeline & Multi-Plot Analysis</h2>
+        <h3>4.1 Playback Controls</h3>
+        <p>
+          The synchronized timeline scrubber controls motion playback across all viewports and graph panes. Press <span class="key-cap">Space</span> to Play/Pause, <span class="key-cap">←</span> / <span class="key-cap">→</span> to step single frames, and select playback speed multipliers from <code>0.1x</code> to <code>5.0x</code>.
+        </p>
+        <h3>4.2 Multi-Plot Panes (Plot 1, Plot 2, Plot 3)</h3>
+        <ul>
+          <li><strong>Component Isolation:</strong> View combined 3D trajectory or isolate single axes (X only, Y only, or Z only) to inspect anatomical movement planes independently.</li>
+          <li><strong>Missing Frame Visualization:</strong> Occluded marker frames (NaN) appear as distinct shaded vertical bands directly across the timeline curve.</li>
+          <li><strong>1-Click Gap Interpolation:</strong> Click directly on the marker timeline curve to fill gaps with shape-preserving PCHIP or linear interpolation. Non-destructive backup allows clicking <strong>↩ Revert</strong> at any time.</li>
+          <li><strong>Derivatives:</strong> Automatically computes 1st derivative (velocity, m/s) and 2nd derivative (acceleration, m/s²).</li>
+          <li><strong>Analog Channels:</strong> Plots raw force plate signals (Fx, Fy, Fz, Mx, My, Mz) and synchronized electromyography (EMG).</li>
+          <li><strong>Kinematic Euler Angles:</strong> Send live joint angles (α, β, γ) from segment bases directly to plot timelines.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 5 -->
+      <section id="ch5" class="manual-section">
+        <h2>5. Point Selection & 3D Distance Measurement</h2>
+        <p>
+          mkvis3d includes a real-time Euclidean distance tool for biomechanical measurement between any two landmarks:
+        </p>
+        <div class="math-block">
+          d(t) = √((x_B(t) - x_A(t))² + (y_B(t) - y_A(t))² + (z_B(t) - z_A(t))²)
+        </div>
+        <ul>
+          <li>Select <strong>Marker A</strong> and <strong>Marker B</strong> from the sidebar dropdowns.</li>
+          <li>Renders a live connecting 3D line between the two markers in the viewport.</li>
+          <li>Generates a dynamic distance timeline curve on Plot 1 with instantaneous readout in meters.</li>
+          <li>Calculates summary statistics: Minimum, Maximum, Mean, and Standard Deviation (SD) across the trial.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 6 -->
+      <section id="ch6" class="manual-section">
+        <h2>6. Coordinate Systems & Orthonormal Bases (sg, s1, s2)</h2>
+        <p>
+          In biomechanics and human movement analysis, joint kinematics require defining <strong>Local Segment Coordinate Systems (LCS / SCS)</strong> and referencing them to the <strong>Global Reference System (GRF)</strong>.
+        </p>
+        <h3>6.1 System Definitions</h3>
+        <ul>
+          <li><strong>Global Reference System (sg):</strong> Laboratory world coordinate system. Canonical 3x3 identity matrix [I 3x3] where Z is Vertical Up, X is Anterior, and Y is Lateral.</li>
+          <li><strong>Proximal System (s1):</strong> Local coordinate system of the parent segment (e.g. Pelvis or Thigh).</li>
+          <li><strong>Distal System (s2):</strong> Local coordinate system of the child segment (e.g. Thigh or Shank).</li>
+        </ul>
+        <h3>6.2 3-Point Basis Construction & Gram-Schmidt Orthonormalization</h3>
+        <p>Each basis is built from three non-collinear markers: <strong>Origin</strong> (r_orig), <strong>Primary Point</strong> (r_prim), and <strong>Plane Point</strong> (r_plane):</p>
         <div class="math-block">
           v_prim = r_prim - r_orig<br>
           v_plane = r_plane - r_orig<br>
@@ -345,145 +415,170 @@
           e_sec = v_ortho / ||v_ortho||<br>
           e_tert = e_prim × e_sec
         </div>
-        
         <p>
-          Each axis versor is explicitly divided by its Euclidean norm. mkvis3d strictly verifies that:
-          <br><span class="badge-ok">✓ ||ex|| = 1.000, ||ey|| = 1.000, ||ez|| = 1.000</span>
-          <br><span class="badge-ok">✓ Mutual 90.0° orthogonality: ei · ej = 0</span>
-          <br><span class="badge-ok">✓ Right-handed parity: det([ex, ey, ez]) = +1.000</span>
+          Every axis is strictly normalized by its Euclidean norm. mkvis3d verifies in real time:
+          <br><span class="badge-ok">✓ Unit norm: ||ex|| = 1.000, ||ey|| = 1.000, ||ez|| = 1.000</span>
+          <br><span class="badge-ok">✓ Mutual orthogonality: 90.0° between all axis pairs (ei · ej = 0)</span>
+          <br><span class="badge-ok">✓ Right-handed chirality: det([ex, ey, ez]) = +1.000</span>
         </p>
-      </section>
-
-      <!-- Chapter 3 -->
-      <section id="ch3" class="manual-section">
-        <h2>3. Relative Joint Kinematics (MR, Cardan/Euler & Quaternions)</h2>
-        <p>
-          The relative joint rotation matrix expressing the distal segment (s2) in the proximal segment frame (s1), transformed through the laboratory reference frame (sg), is computed live at every frame:
-        </p>
-        
-        <div class="math-block">
-          MR2 = sg · s1^T<br>
-          MR = (MR2 · s2) · sg^T = sg · s1^T · s2 · sg^T
-        </div>
-
-        <h3>3.1 Tait-Bryan / Cardan Angle Extraction</h3>
-        <p>mkvis3d decomposes <code>MR</code> into clinical anatomical angles across all 6 Tait-Bryan sequences (<code>zxy</code>, <code>xyz</code>, <code>zyx</code>, <code>yxz</code>, <code>xzy</code>, <code>yzx</code>):</p>
-        <ul>
-          <li><strong>Angle 1 (α):</strong> Flexion (+) / Extension (−) [Sagittal plane]</li>
-          <li><strong>Angle 2 (β):</strong> Abduction (+) / Adduction (−) [Coronal plane]</li>
-          <li><strong>Angle 3 (γ):</strong> Internal (+) / External (−) Rotation [Axial plane]</li>
-        </ul>
-
-        <h3>3.2 Scalar-First Unit Quaternions</h3>
-        <p>To avoid gimbal lock singularities, orientation is continuously tracked using scalar-first unit quaternions:</p>
-        <div class="math-block">
-          q = (w, x, y, z), where ||q|| = √(w² + x² + y² + z²) = 1.0
-        </div>
-      </section>
-
-      <!-- Chapter 4 -->
-      <section id="ch4" class="manual-section">
-        <h2>4. Virtual Points & Secondary Landmark Creator</h2>
-        <p>
-          Anatomical joint centers cannot be measured directly on skin surfaces. mkvis3d allows creating secondary virtual points using NumPy vector syntax in the dedicated modal:
-        </p>
-        <div class="card">
-          <h4>Common Formula Examples:</h4>
-          <p><strong>1. Midpoint of two markers (e.g. Pelvis center):</strong></p>
-          <pre><code>(p['RASI'] + p['LASI']) / 2</code></pre>
-          <p><strong>2. Normal perpendicular vector (via cross product):</strong></p>
-          <pre><code>np.cross(p['p2'] - p['p1'], p['p3'] - p['p1'])</code></pre>
-          <p><strong>3. Anatomical offset from bony landmark:</strong></p>
-          <pre><code>p['KNEE_LAT'] + 0.05 * (p['KNEE_MED'] - p['KNEE_LAT'])</code></pre>
-        </div>
-      </section>
-
-      <!-- Chapter 5 -->
-      <section id="ch5" class="manual-section">
-        <h2>5. Signal Conditioning: Filtering & Gap Interpolation</h2>
-        <h3>5.1 Butterworth Dual-Pass Filter</h3>
-        <p>
-          A 4th-order zero-phase Butterworth low-pass filter (forward-backward dual-pass) eliminates high-frequency marker noise without phase distortion. Cutoff frequencies are automatically corrected for dual-pass attenuation per Winter (1990).
-        </p>
-        <h3>5.2 1-Click Gap Interpolation</h3>
-        <p>
-          Missing or occluded marker frames (NaN) are highlighted on the timeline with Visual3D-style shaded bands. Users can fill gaps with a single click using:
-        </p>
-        <ul>
-          <li><strong>Cubic Spline (PCHIP):</strong> Shape-preserving piecewise cubic Hermite spline that avoids overshoots.</li>
-          <li><strong>Linear:</strong> Direct linear segment interpolation.</li>
-          <li><strong>↩ Revert:</strong> Non-destructive backup allows restoring raw missing frames at any time.</li>
-        </ul>
-      </section>
-
-      <!-- Chapter 6 -->
-      <section id="ch6" class="manual-section">
-        <h2>6. Anthropometry & Whole-Body Center of Mass (de Leva 1996)</h2>
-        <p>
-          mkvis3d implements the validated 16-segment <strong>de Leva (1996)</strong> model. Mass fractions and longitudinal CoM positions are adjusted for biological sex:
-        </p>
-        <div class="math-block">
-          r_CoM(t) = (1 / M_total) · ∑ [ m_i · r_i,CoM(t) ]
-        </div>
-        <p>Clicking <strong>Create CoM</strong> adds a live 3D visual marker tracking whole-body CoM throughout the motion.</p>
       </section>
 
       <!-- Chapter 7 -->
       <section id="ch7" class="manual-section">
-        <h2>7. Force Platforms, Ground Reaction Forces & Kinetics</h2>
+        <h2>7. Relative Joint Kinematics (MR, Cardan/Euler & Quaternions)</h2>
+        <p>
+          The relative joint rotation matrix expressing distal segment s2 in proximal segment s1, transformed through the laboratory reference frame sg, is calculated live at every frame:
+        </p>
+        <div class="math-block">
+          MR2 = sg · s1^T<br>
+          MR = (MR2 · s2) · sg^T = sg · s1^T · s2 · sg^T
+        </div>
+        <h3>7.1 Cardan / Euler Angle Sequences</h3>
+        <p>mkvis3d decomposes MR into clinical anatomical angles across all 6 Tait-Bryan sequences:</p>
         <ul>
-          <li><strong>Calibration & COP:</strong> Supports Types 1–5 platforms using 6x6 calibration matrices and geometric sensor origin corrections.</li>
-          <li><strong>Vertical Threshold:</strong> Automatically hides COP and GRF vectors below <code>15 N</code> to avoid non-contact singularities.</li>
-          <li><strong>3D Vectors:</strong> Renders real-time ground reaction force arrows with dynamic color scaling and magnitude readouts.</li>
+          <li><strong>Z-X-Y (ISB Standard for Knee & Hip):</strong>
+            <ul>
+              <li>α (Z-axis): Flexion (+) / Extension (−) [Sagittal plane]</li>
+              <li>β (X-axis): Adduction (+) / Abduction (−) [Coronal plane]</li>
+              <li>γ (Y-axis): Internal (+) / External (−) Rotation [Transverse plane]</li>
+            </ul>
+          </li>
+          <li><strong>X-Y-Z (Cardan Standard):</strong> Flexion → Abduction → Rotation.</li>
+          <li><strong>Z-Y-X (Aerospace / Nautical):</strong> Yaw → Pitch → Roll.</li>
+          <li><strong>Y-X-Z, X-Z-Y, Y-Z-X:</strong> Additional permutations available via the sequence dropdown.</li>
         </ul>
+        <h3>7.2 Scalar-First Unit Quaternions</h3>
+        <p>To avoid gimbal lock singularities, relative orientation is continuously parameterized using scalar-first quaternions:</p>
+        <div class="math-block">
+          q = (w, x, y, z), where ||q|| = √(w² + x² + y² + z²) = 1.0000
+        </div>
       </section>
 
       <!-- Chapter 8 -->
       <section id="ch8" class="manual-section">
-        <h2>8. Workspace Visualization & Multi-Window Navigation</h2>
+        <h2>8. Virtual Points & Secondary Landmark Creator</h2>
         <p>
-          mkvis3d provides a flexible multi-window desktop interface:
+          Joint centers (e.g. Hip Joint Center, Knee Joint Center) cannot be measured directly on skin surfaces. mkvis3d allows creating unlimited secondary virtual points using standard NumPy vector syntax:
         </p>
-        <ul>
-          <li><strong>Multi-Monitor Popout (⧉):</strong> Detach 3D Viewport, Plots, Table, or Video into independent windows.</li>
-          <li><strong>Fast 3D Viewport Refresh (↻):</strong> Drops GPU compositor surfaces, recalculates bounds, and resets camera.</li>
-          <li><strong>Reference Video Sync:</strong> Syncs high-speed video frames directly with 3D marker cloud trajectories.</li>
-        </ul>
+        <div class="card">
+          <p><strong>1. Midpoint of two markers (e.g. Pelvis center):</strong></p>
+          <pre><code>(p['RASI'] + p['LASI']) / 2</code></pre>
+          <p><strong>2. Offset along anatomical axis (e.g. Knee center):</strong></p>
+          <pre><code>p['KNEE_LAT'] + 0.05 * (p['KNEE_MED'] - p['KNEE_LAT'])</code></pre>
+          <p><strong>3. Vector translation:</strong></p>
+          <pre><code>p['A'] + (p['B'] - p['C'])</code></pre>
+          <p><strong>4. Perpendicular vector via cross product:</strong></p>
+          <pre><code>np.cross(p['p2'] - p['p1'], p['p3'] - p['p1'])</code></pre>
+        </div>
+        <p>
+          Click <strong>💾 Save Points Pipeline (.py)</strong> to export points as reproducible Python scripts runnable on any server without GUI.
+        </p>
       </section>
 
       <!-- Chapter 9 -->
       <section id="ch9" class="manual-section">
-        <h2>9. Data Export, Pipelines & CLI Automation</h2>
+        <h2>9. Signal Conditioning: Filtering & Gap Interpolation</h2>
+        <h3>9.1 Hampel Outlier Detection Filter</h3>
+        <p>Detects and removes sensor spikes using a sliding window and Median Absolute Deviation (MAD):</p>
+        <div class="math-block">
+          MAD = median(|x_i - median(x)|), |x_i - median(x)| > 3.0 × 1.4826 · MAD
+        </div>
+        <h3>9.2 Gap Filling Algorithms</h3>
         <ul>
-          <li><strong>Standalone HTML:</strong> Self-contained offline viewer viewable on any computer without software installation.</li>
-          <li><strong>C3D Export:</strong> Exports edited trajectories while preserving synchronized analog force plate and EMG signals.</li>
-          <li><strong>Blender Script:</strong> Generates Python script for photorealistic rendering in Blender Cycles/Eevee.</li>
-          <li><strong>Python Pipeline (.py):</strong> Generates standalone script replicating all virtual points and Cartesian bases.</li>
+          <li><strong>Cubic Spline (PCHIP):</strong> Shape-preserving Piecewise Cubic Hermite Interpolation. Prevents unphysical overshoots while preserving signal monotonicity.</li>
+          <li><strong>Linear Interpolation:</strong> Direct linear segment filling.</li>
+          <li><strong>Nearest Neighbor & Kalman:</strong> Constant-velocity state prediction for occluded markers.</li>
+          <li><strong>Max Gap Threshold:</strong> Limits filling to gaps below specified duration (e.g. 10 frames).</li>
         </ul>
+        <h3>9.3 Zero-Phase Butterworth Lowpass Filter</h3>
+        <p>
+          4th-order zero-phase Butterworth filter (forward-backward dual pass) eliminating phase delay. The cutoff frequency f_c is adjusted for dual-pass attenuation per Winter (1990):
+        </p>
+        <div class="math-block">
+          C = (2^(1/4) - 1)^(1/4) ≈ 0.801968, f_c,adjusted = f_c / C
+        </div>
       </section>
 
       <!-- Chapter 10 -->
       <section id="ch10" class="manual-section">
-        <h2>10. Tutorials & Kwon3D Parity Cross-Reference</h2>
+        <h2>10. Anthropometry & Whole-Body Center of Mass (de Leva 1996)</h2>
+        <p>
+          mkvis3d implements the validated 16-segment <strong>de Leva (1996)</strong> body segment parameter model with sex-specific mass fractions and longitudinal CoM positions:
+        </p>
+        <div class="math-block">
+          r_CoM(t) = (1 / M_total) · ∑ [ m_i · r_i,CoM(t) ]
+        </div>
+        <ul>
+          <li><strong>16 Segments:</strong> Head, Upper Trunk, Mid Trunk, Lower Trunk, Thigh (L/R), Shank (L/R), Foot (L/R), Upper Arm (L/R), Forearm (L/R), Hand (L/R).</li>
+          <li><strong>Sex Adjustments:</strong> Accounts for differences in pelvic morphology and mass distribution between males and females.</li>
+          <li><strong>Live 3D Visualization:</strong> Displays instantaneous CoM sphere and projected floor intersection for balance and postural stability assessment.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 11 -->
+      <section id="ch11" class="manual-section">
+        <h2>11. Force Platforms, Ground Reaction Forces & Kinetics</h2>
+        <h3>11.1 Force Platform Calibration (Types 1–5)</h3>
+        <p>
+          Decodes and applies 6x6 calibration matrices and sensor geometric origin offsets (x_0, y_0, z_0) across all standard AMTI, Kistler, and Bertec plate configurations.
+        </p>
+        <h3>11.2 Center of Pressure (COP)</h3>
+        <div class="math-block">
+          x_cop = (-M_y + F_x · z_0) / F_z + x_0, y_cop = (M_x + F_y · z_0) / F_z + y_0
+        </div>
+        <p>
+          <strong>Contact Threshold:</strong> Forces below <code>15 N</code> are automatically thresholded to eliminate non-contact division-by-zero noise.
+        </p>
+        <h3>11.3 Bottom-Up Recursive Newton-Euler Inverse Dynamics</h3>
+        <div class="math-block">
+          F_joint = m · a_cm - F_ext - m · g<br>
+          M_joint = I · ω_dot + ω × (I · ω) - M_ext - (r_p × F_p) - (r_d × F_d)<br>
+          P_joint = F_joint · v_joint + M_joint · ω_rel
+        </div>
+      </section>
+
+      <!-- Chapter 12 -->
+      <section id="ch12" class="manual-section">
+        <h2>12. Video Synchronization & Multi-Window Desktop</h2>
+        <ul>
+          <li><strong>Video Sync:</strong> Load synchronized reference video (.mp4, .webm) and adjust frame delay offset to align high-speed video frames with 3D marker cloud trajectories.</li>
+          <li><strong>Multi-Window Floating Panes:</strong> Drag header bars to reposition 3D Viewport, Plots, Table, or Video panes anywhere on screen.</li>
+          <li><strong>Multi-Monitor Popout (⧉):</strong> Detach any pane to an independent OS window across multiple physical displays.</li>
+          <li><strong>Session State:</strong> Save entire layout and configuration via <strong>File ▾ Save Complete Project (.vaila)</strong>.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 13 -->
+      <section id="ch13" class="manual-section">
+        <h2>13. Command-Line Interface (CLI) Complete Reference</h2>
         <table>
           <thead>
-            <tr><th>Concept</th><th>Kwon3D</th><th>Visual3D</th><th>mkvis3d</th></tr>
+            <tr><th>Command</th><th>Syntax</th><th>Description</th></tr>
           </thead>
           <tbody>
-            <tr><td>Global Frame</td><td>Global Reference Frame (GRF)</td><td>Lab Coordinate System (LCS)</td><td>Global System (sg)</td></tr>
-            <tr><td>Segment Frame</td><td>Local Reference Frame (LRF)</td><td>Segment System (SCS)</td><td>Cartesian Basis (s1, s2)</td></tr>
-            <tr><td>Relative Rotation</td><td>Transformation Matrix [R]</td><td>Relative Orientation</td><td>MR = sg · s1^T · s2 · sg^T</td></tr>
-            <tr><td>Angles</td><td>Cardan Angles</td><td>Cardan / Euler Angles</td><td>Tait-Bryan (ZXY, XYZ...)</td></tr>
-            <tr><td>Orientation</td><td>Euler Parameters</td><td>Quaternions</td><td>Scalar-First Quaternions</td></tr>
-            <tr><td>Virtual Points</td><td>Control Points</td><td>Landmark Creator</td><td>Virtual Points (NumPy)</td></tr>
-            <tr><td>Anthropometry</td><td>Zatsiorsky-Seluyanov</td><td>Dempster</td><td>de Leva (1996) 16-Segment</td></tr>
+            <tr><td><code>info</code></td><td><code>mkvis3d info trial.c3d</code></td><td>Print trial metadata, frame count, rate, marker labels, and analog channels.</td></tr>
+            <tr><td><code>segment</code></td><td><code>mkvis3d segment trial.c3d P1 P2</code></td><td>Compute segment length, longitudinal axis, and trajectory stats.</td></tr>
+            <tr><td><code>view</code></td><td><code>mkvis3d view trial.c3d -o viewer.html</code></td><td>Export standalone, self-contained interactive HTML viewer.</td></tr>
+            <tr><td><code>gui</code></td><td><code>mkvis3d gui trial.c3d --port 43225</code></td><td>Launch local interactive GUI desktop server.</td></tr>
+            <tr><td><code>blender</code></td><td><code>mkvis3d blender trial.c3d -o anim.py</code></td><td>Generate Blender Python script for photorealistic Cycles rendering.</td></tr>
+            <tr><td><code>bvh</code></td><td><code>mkvis3d bvh trial.c3d -o motion.bvh</code></td><td>Export standard Biovision Hierarchy mocap file.</td></tr>
+            <tr><td><code>lcs</code></td><td><code>mkvis3d lcs trial.c3d -o lab.c3d</code></td><td>Transform coordinate system to canonical Laboratory Coordinate System.</td></tr>
+            <tr><td><code>filter</code></td><td><code>mkvis3d filter trial.c3d -o flt.c3d</code></td><td>Apply Butterworth lowpass and PCHIP gap fill headlessly.</td></tr>
+            <tr><td><code>dynamics</code></td><td><code>mkvis3d dynamics input.json -o out.csv</code></td><td>Compute bottom-up recursive Newton-Euler inverse dynamics.</td></tr>
           </tbody>
         </table>
       </section>
 
-      <!-- Chapter 11 -->
-      <section id="shortcuts" class="manual-section">
-        <h2>11. Keyboard & Mouse Shortcuts</h2>
+      <!-- Chapter 14 -->
+      <section id="ch14" class="manual-section">
+        <h2>14. Practical Tutorials, Standards & Shortcuts</h2>
+        <h3>14.1 Practical Biomechanics Tutorials</h3>
+        <ul>
+          <li><strong>Tutorial 1: Clinical Gait Analysis:</strong> Load C3D trial, define Pelvis (s1) and Thigh (s2) bases, select ZXY Euler sequence, and plot Knee Flexion/Extension curves across the gait cycle.</li>
+          <li><strong>Tutorial 2: Deep Squat Kinematics:</strong> Create Knee joint center virtual points, construct bilateral Thigh and Shank bases, inspect abduction/adduction alignment and peak knee flexion angles.</li>
+          <li><strong>Tutorial 3: Countermovement Jump (CMJ):</strong> Inspect vertical ground reaction forces (Fz), identify unweighting, braking, and propulsive phases, verify COP trajectories and jump height.</li>
+        </ul>
+        <h3>14.2 Keyboard & Mouse Shortcuts</h3>
         <table>
           <thead>
             <tr><th>Shortcut</th><th>Action</th></tr>
@@ -491,6 +586,7 @@
           <tbody>
             <tr><td><span class="key-cap">Space</span></td><td>Play / Pause motion playback</td></tr>
             <tr><td><span class="key-cap">←</span> / <span class="key-cap">→</span></td><td>Step 1 frame backward / forward</td></tr>
+            <tr><td><span class="key-cap">Home</span> / <span class="key-cap">End</span></td><td>Jump to first frame / last frame</td></tr>
             <tr><td><span class="key-cap">Left Drag</span></td><td>Orbit 3D camera view (yaw and pitch)</td></tr>
             <tr><td><span class="key-cap">Shift + Drag</span></td><td>Pan 3D camera across scene</td></tr>
             <tr><td><span class="key-cap">Mouse Wheel</span></td><td>Zoom 3D camera in / out</td></tr>
@@ -499,7 +595,11 @@
             <tr><td><span class="key-cap">Alt + L</span></td><td>Open Reference System & Origin (LCS) Modal</td></tr>
             <tr><td><span class="key-cap">Alt + F</span></td><td>Open Signal Filtering & Gap Fill Modal</td></tr>
             <tr><td><span class="key-cap">Alt + T</span></td><td>Toggle Light / Dark theme mode</td></tr>
-            <tr><td><span class="key-cap">F1</span> / <span class="key-cap">?</span></td><td><strong>Open User Manual & Biomechanics Guide</strong></td></tr>
+            <tr><td><span class="key-cap">F1</span></td><td><strong>Open User Manual & Biomechanics Guide</strong></td></tr>
+            <tr><td><span class="key-cap">?</span></td><td>Open Quick Shortcuts Dialog</td></tr>
+            <tr><td><span class="key-cap">C</span></td><td>Cycle marker appearance colors</td></tr>
+            <tr><td><span class="key-cap">G</span></td><td>Toggle calibrated floor grid</td></tr>
+            <tr><td><span class="key-cap">L</span></td><td>Toggle marker text labels in 3D viewport</td></tr>
             <tr><td><span class="key-cap">Esc</span></td><td>Close any open modal dialog</td></tr>
           </tbody>
         </table>

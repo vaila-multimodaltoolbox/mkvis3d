@@ -3416,7 +3416,7 @@ function closeManualModal() {
 
 if ($("btn-open-manual")) $("btn-open-manual").onclick = () => openManualModal();
 if ($("action-help-manual")) $("action-help-manual").onclick = () => openManualModal();
-if ($("action-help-theory")) $("action-help-theory").onclick = () => openManualModal("m-ch-2");
+if ($("action-help-theory")) $("action-help-theory").onclick = () => openManualModal("m-ch-6");
 if ($("btn-close-manual")) $("btn-close-manual").onclick = closeManualModal;
 
 const manualPopoutBtn = $("btn-manual-popout");
