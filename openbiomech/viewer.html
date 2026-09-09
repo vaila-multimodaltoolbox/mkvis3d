@@ -651,6 +651,8 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
     <button class="menu-btn" aria-haspopup="true">File ▾</button>
     <div class="dropdown-menu">
       <div class="dropdown-item" id="action-open-file">Open File... <span class="shortcut-hint">Ctrl+O</span></div>
+      <div class="dropdown-item" id="action-load-video">🎬 Carregar Vídeo de Referência (mp4/mov/mkv/avi)...</div>
+      <input type="file" id="video-file-input" accept=".mp4,.mov,.mkv,.avi,video/*" hidden>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Sample Trials in data/</div>
       <div class="dropdown-item" data-example="pilot0102_squat03.c3d">Vicon Squat (pilot0102_squat03.c3d)</div>
@@ -1158,6 +1160,30 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
               <tbody id="marker-table-body"></tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <!-- Reference Video Sync Window (Optional) -->
+      <section id="panel-video" class="window-pane" hidden>
+        <div class="pane-header">
+          <div class="pane-title">
+            <span>Vídeo de Referência</span>
+          </div>
+          <div class="pane-tools">
+            <button class="btn-pane-tool btn-float" data-pane="panel-video" title="Janela Flutuante (Arrastável / Redimensionável)">↗</button>
+            <button id="btn-close-video" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Fechar Vídeo">✕</button>
+          </div>
+        </div>
+        <div class="pane-body" style="display: flex; flex-direction: column;">
+          <div id="video-mismatch-panel" hidden style="background: var(--bg-panel-alt); border: 1px solid #c9822b; border-left: 4px solid #c9822b; border-radius: 6px; padding: 8px 12px; margin: 8px; font-size: 11px;">
+            <div style="font-weight: 700; color: #c9822b; margin-bottom: 4px;">⚠ Vídeo e trial não coincidem (frames / FPS)</div>
+            <div id="video-mismatch-text" style="color: var(--text-muted); margin-bottom: 8px;"></div>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" id="btn-video-trim" style="font-size: 11px; padding: 4px 10px;" title="Cortar os dados de mocap para a duração do vídeo e exportar CSV/C3D">✂ Cortar Dados</button>
+              <button type="button" id="btn-video-interp" style="font-size: 11px; padding: 4px 10px;" title="Reamostrar os dados de mocap para o FPS estimado do vídeo e exportar CSV/C3D">↔ Interpolar Dados</button>
+            </div>
+          </div>
+          <video id="ref-video" style="flex: 1; width: 100%; min-height: 0; background: #000;" muted playsinline></video>
         </div>
       </section>
     </div>

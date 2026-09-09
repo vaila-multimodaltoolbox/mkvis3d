@@ -26,6 +26,13 @@ let activeSkeletonTemplate = "none";
 let loadedCustomTemplate = null;
 let popoutWindows = {};
 
+// Reference video sync state (item 6): refVideoFile holds the loaded File
+// plus its object URL; refVideoInfo holds the last mismatch-check numbers
+// (estimated FPS, duration, expected frame count) used by the trim/
+// interpolate actions.
+let refVideoFile = null;
+let refVideoInfo = null;
+
 // Visual3D LCS and Signal Conditioning State
 let rawLoadedXYZ = null;
 let currentLCS = { ap: "+Y", axial: "+Z" };
@@ -804,6 +811,9 @@ function draw() {
   for (const paneId of Object.keys(popoutWindows)) {
     syncPopoutContent(paneId);
   }
+
+  // Keep the reference video (if loaded) frame-locked to playback.
+  syncRefVideo();
 }
 
 // Plot caching to avoid expensive calculations every animation frame
@@ -2494,6 +2504,249 @@ function exportBVHMotionFile() {
 
 if ($("action-export-blender")) $("action-export-blender").onclick = exportBlenderPythonScript;
 if ($("action-export-bvh")) $("action-export-bvh").onclick = exportBVHMotionFile;
+
+// Reference video sync (item 6): load a local mp4/mov/mkv/avi file and play
+// it back frame-locked to the mocap animation, warning when the video's
+// duration/FPS don't match the trial so the user can trim or interpolate.
+function loadVideoFile(file) {
+  if (!trial) {
+    status("Carregue um trial antes de carregar o vídeo de referência.", true);
+    return;
+  }
+  const video = $("ref-video");
+  if (!video) return;
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  if (!["mp4", "mov", "mkv", "avi", "webm", "m4v"].includes(ext)) {
+    status(`Formato de vídeo não reconhecido: .${ext}. Use mp4, mov, mkv ou avi.`, true);
+    return;
+  }
+  if (refVideoFile && refVideoFile.url) {
+    try { URL.revokeObjectURL(refVideoFile.url); } catch (_) {}
+  }
+  const url = URL.createObjectURL(file);
+  refVideoFile = { file, url };
+  refVideoInfo = null;
+  if ($("video-mismatch-panel")) $("video-mismatch-panel").hidden = true;
+
+  video.onerror = () => {
+    status(
+      `Não foi possível decodificar "${file.name}" (.${ext}). Navegadores só decodificam nativamente ` +
+      `MP4/MOV com H.264+AAC, ou MKV/WEBM se internamente forem VP9/H.264+Opus/AAC — AVI quase nunca ` +
+      `funciona. Converta o arquivo para MP4 (H.264) e tente novamente.`,
+      true
+    );
+  };
+  video.onloadedmetadata = async () => {
+    // panel-video has no fixed slot in the grid layout presets (setLayout);
+    // it opens as a floating pane, same mechanism as dragging the filter
+    // modal off the main window, so it never displaces panel-3d/plots/table.
+    if (!activeFloatingPanes.has("panel-video")) floatPane("panel-video");
+    status(`Vídeo carregado: ${file.name} (${video.duration.toFixed(2)}s, ${video.videoWidth}×${video.videoHeight}).`);
+    const estimatedFps = await estimateVideoFps(video);
+    checkVideoTrialMismatch(video, estimatedFps);
+  };
+  video.src = url;
+  video.load();
+}
+
+if ($("action-load-video")) $("action-load-video").onclick = () => $("video-file-input").click();
+if ($("video-file-input")) {
+  $("video-file-input").onchange = e => {
+    const file = e.target.files && e.target.files[0];
+    if (file) loadVideoFile(file);
+    e.target.value = "";
+  };
+}
+if ($("btn-close-video")) {
+  $("btn-close-video").onclick = () => {
+    const video = $("ref-video");
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+    if (refVideoFile && refVideoFile.url) {
+      try { URL.revokeObjectURL(refVideoFile.url); } catch (_) {}
+    }
+    refVideoFile = null;
+    refVideoInfo = null;
+    if ($("panel-video")) $("panel-video").hidden = true;
+    if ($("video-mismatch-panel")) $("video-mismatch-panel").hidden = true;
+    resize();
+  };
+}
+
+// Samples ~0.6s of decoded frames via requestVideoFrameCallback to estimate
+// the container's real playback FPS (not always exposed in metadata).
+// Resolves null when the API is unsupported, so callers must treat a null
+// estimate as "FPS unknown" rather than a mismatch.
+function estimateVideoFps(video) {
+  return new Promise(resolve => {
+    if (typeof video.requestVideoFrameCallback !== "function") {
+      resolve(null);
+      return;
+    }
+    const sampleWindowSec = 0.6;
+    const wasMuted = video.muted;
+    video.muted = true;
+    let count = 0;
+    let startMediaTime = null;
+    const finish = fps => {
+      video.pause();
+      video.currentTime = 0;
+      video.muted = wasMuted;
+      resolve(fps && Number.isFinite(fps) && fps > 0 ? fps : null);
+    };
+    const onFrame = (_now, metadata) => {
+      if (startMediaTime === null) startMediaTime = metadata.mediaTime;
+      count++;
+      const elapsedMedia = metadata.mediaTime - startMediaTime;
+      if (elapsedMedia < sampleWindowSec && count < 90) {
+        video.requestVideoFrameCallback(onFrame);
+      } else {
+        finish(elapsedMedia > 0 ? (count - 1) / elapsedMedia : null);
+      }
+    };
+    video.requestVideoFrameCallback(onFrame);
+    video.play().catch(() => finish(null));
+  });
+}
+
+// Compares the video's expected frame count (duration * trial rate) and its
+// estimated FPS against the loaded trial, and shows/hides the mismatch
+// warning panel with the concrete numbers when they disagree.
+function checkVideoTrialMismatch(video, estimatedFps) {
+  if (!trial) return;
+  const expectedFrames = Math.round(video.duration * trial.rate_hz);
+  const frameDiff = Math.abs(expectedFrames - trial.xyz.length);
+  const frameTolerance = Math.max(1, Math.round(trial.xyz.length * 0.02));
+  const fpsMismatch = estimatedFps
+    ? Math.abs(estimatedFps - trial.rate_hz) > Math.max(0.5, trial.rate_hz * 0.02)
+    : false;
+  refVideoInfo = { estimatedFps, durationSec: video.duration, expectedFrames };
+
+  const panel = $("video-mismatch-panel");
+  if (!panel) return;
+  if (frameDiff <= frameTolerance && !fpsMismatch) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const fpsText = estimatedFps ? `${estimatedFps.toFixed(2)} fps` : "FPS não detectado";
+  $("video-mismatch-text").textContent =
+    `Vídeo: ${fpsText} · ${video.duration.toFixed(2)}s · ${expectedFrames} frames esperados no trial. ` +
+    `Trial: ${trial.rate_hz.toFixed(2)} fps · ${trial.xyz.length} frames.`;
+}
+
+// Builds a standalone marker-trial payload (same shape MarkerTrial JSON uses
+// for /api/export/c3d) from the current trial with new xyz/rate_hz, and
+// exports it as CSV (always, no server needed) plus C3D (when the local GUI
+// server is running). Analog channels are intentionally dropped: trimming
+// or resampling to a video's timebase has no defined mapping for force-plate
+// subsamples, and this path only concerns marker/video alignment.
+async function exportVideoSyncTrial(newTrial, description) {
+  const header = ["frame", "time_s"];
+  newTrial.labels.forEach(lbl => header.push(`${lbl}_x`, `${lbl}_y`, `${lbl}_z`));
+  const rows = [header.join(",")];
+  newTrial.xyz.forEach((framePts, f) => {
+    const row = [f, (f / newTrial.rate_hz).toFixed(5)];
+    framePts.forEach(pt => {
+      if (valid(pt)) row.push(pt[0], pt[1], pt[2]);
+      else row.push("", "", "");
+    });
+    rows.push(row.join(","));
+  });
+  download(rows.join("\n") + "\n", `${newTrial.name}.csv`, "text/csv");
+  status(`CSV exportado (${description}): ${newTrial.name}.csv`);
+
+  if (!boot.server) return;
+  try {
+    const response = await fetch("/api/export/c3d", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(newTrial),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Failed to export C3D.");
+    }
+    downloadBlob(await response.blob(), `${newTrial.name}.c3d`);
+    status(`C3D também exportado (${description}): ${newTrial.name}.c3d`);
+  } catch (error) {
+    status(`CSV exportado, mas o C3D falhou: ${error.message}`, true);
+  }
+}
+
+function trimTrialToVideoDuration() {
+  if (!trial || !refVideoInfo) return;
+  const endFrame = Math.max(1, Math.min(trial.xyz.length, refVideoInfo.expectedFrames));
+  const newTrial = {
+    name: `${(trial.name || "trial").replace(/\.[^.]+$/, "")}_trim_video`,
+    rate_hz: trial.rate_hz,
+    labels: trial.labels.slice(),
+    xyz: trial.xyz.slice(0, endFrame),
+  };
+  exportVideoSyncTrial(newTrial, `cortado para ${endFrame} frames (${refVideoInfo.durationSec.toFixed(2)}s do vídeo)`);
+}
+
+function interpolateTrialToVideoFps() {
+  if (!trial || !refVideoInfo || !refVideoInfo.estimatedFps) {
+    status("FPS do vídeo não pôde ser estimado; não é possível interpolar.", true);
+    return;
+  }
+  const targetFps = refVideoInfo.estimatedFps;
+  const targetFrameCount = Math.max(2, Math.round(refVideoInfo.durationSec * targetFps));
+  const srcLen = trial.xyz.length;
+  const nMarkers = trial.labels.length;
+  const newXyz = new Array(targetFrameCount);
+  for (let f = 0; f < targetFrameCount; f++) {
+    const srcPos = Math.max(0, Math.min(srcLen - 1, (f / targetFps) * trial.rate_hz));
+    const i0 = Math.floor(srcPos);
+    const i1 = Math.min(srcLen - 1, i0 + 1);
+    const frac = srcPos - i0;
+    const framePts = new Array(nMarkers);
+    for (let m = 0; m < nMarkers; m++) {
+      const p0 = trial.xyz[i0][m], p1 = trial.xyz[i1][m];
+      if (valid(p0) && valid(p1)) {
+        framePts[m] = [0, 1, 2].map(j => p0[j] + (p1[j] - p0[j]) * frac);
+      } else if (valid(p0)) {
+        framePts[m] = p0.slice();
+      } else if (valid(p1)) {
+        framePts[m] = p1.slice();
+      } else {
+        framePts[m] = [null, null, null];
+      }
+    }
+    newXyz[f] = framePts;
+  }
+  const newTrial = {
+    name: `${(trial.name || "trial").replace(/\.[^.]+$/, "")}_resampled_video`,
+    rate_hz: targetFps,
+    labels: trial.labels.slice(),
+    xyz: newXyz,
+  };
+  exportVideoSyncTrial(newTrial, `reamostrado de ${trial.rate_hz.toFixed(2)} para ${targetFps.toFixed(2)} fps`);
+}
+
+if ($("btn-video-trim")) $("btn-video-trim").onclick = trimTrialToVideoDuration;
+if ($("btn-video-interp")) $("btn-video-interp").onclick = interpolateTrialToVideoFps;
+
+// Mirrors playback (frame position, speed, play/pause) onto the reference
+// video element every draw() call — the same central point every frame-
+// advancing code path (tick(), step(), scrub, popout scrub) already funnels
+// through, so no extra wiring is needed at each call site.
+function syncRefVideo() {
+  const video = $("ref-video");
+  if (!video || !refVideoFile || !trial || !video.duration) return;
+  const targetTime = Math.min(video.duration, frame / trial.rate_hz);
+  if (Math.abs(video.currentTime - targetTime) > 0.04) {
+    video.currentTime = targetTime;
+  }
+  const speed = Number($("speed") ? $("speed").value : 1) || 1;
+  if (Math.abs(video.playbackRate - speed) > 1e-6) video.playbackRate = speed;
+  if (playing && video.paused) video.play().catch(() => {});
+  else if (!playing && !video.paused) video.pause();
+}
 
 // Windows Menu Actions
 if ($("action-win-3d")) $("action-win-3d").onclick = () => {
