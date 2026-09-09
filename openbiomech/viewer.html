@@ -392,6 +392,12 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
   min-width: 280px;
   min-height: 180px;
 }
+#modal-lcs.floating-pane, #modal-filter.floating-pane {
+  width: 580px;
+  height: 620px;
+  max-height: 90vh;
+}
+#modal-lcs .pane-body, #modal-filter .pane-body { overflow-y: auto; }
 .window-pane.floating-pane .pane-header {
   cursor: grab;
   background: var(--floating-header-bg);
@@ -1226,12 +1232,12 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
 </div>
 
 <!-- Visual3D Laboratory Coordinate System (LCS) Modal -->
-<div id="modal-lcs" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-lcs-title">
-  <div class="modal-dialog" style="width: 560px;">
-    <div class="modal-header">
-      <h3 id="modal-lcs-title">Visual3D Laboratory Coordinate System (LCS)</h3>
-      <button class="modal-close" id="btn-close-lcs" aria-label="Close">✕</button>
-    </div>
+<section id="modal-lcs" class="window-pane" hidden role="dialog" aria-modal="true" aria-labelledby="modal-lcs-title">
+  <div class="pane-header">
+    <div class="pane-title"><h3 id="modal-lcs-title">Visual3D Laboratory Coordinate System (LCS)</h3></div>
+    <div class="pane-tools"><button class="modal-close" id="btn-close-lcs" aria-label="Close">✕</button></div>
+  </div>
+  <div class="pane-body">
     <div class="modal-body">
       <p style="margin-top:0; font-size: 12px; color: var(--text-muted);">
         Configure laboratory orientation following the <strong>Visual3D Set_Laboratory_Coordinate_System</strong> standard.
@@ -1296,15 +1302,15 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       </div>
     </div>
   </div>
-</div>
+</section>
 
 <!-- Signal Smoothing, Filtering & Gap-Fill Modal -->
-<div id="modal-filter" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-filter-title">
-  <div class="modal-dialog" style="width: 580px;">
-    <div class="modal-header">
-      <h3 id="modal-filter-title">Smooth, Filter & Gap Fill (interp_smooth_split)</h3>
-      <button class="modal-close" id="btn-close-filter" aria-label="Close">✕</button>
-    </div>
+<section id="modal-filter" class="window-pane" hidden role="dialog" aria-modal="true" aria-labelledby="modal-filter-title">
+  <div class="pane-header">
+    <div class="pane-title"><h3 id="modal-filter-title">Smooth, Filter & Gap Fill (interp_smooth_split)</h3></div>
+    <div class="pane-tools"><button class="modal-close" id="btn-close-filter" aria-label="Close">✕</button></div>
+  </div>
+  <div class="pane-body">
     <div class="modal-body">
       <p style="margin-top:0; font-size: 12px; color: var(--text-muted);">
         Biomechanics signal conditioning pipeline: Hampel outlier spike removal, interpolation of missing frames, and zero-phase Butterworth smoothing.
@@ -1408,7 +1414,7 @@ button.primary:hover { background: var(--accent-hover); color: var(--accent-text
       </div>
     </div>
   </div>
-</div>
+</section>
 
 <script type="application/json" id="trial-data">__TRIAL_DATA__</script>
 <script type="application/json" id="skeleton-templates-data">__SKELETON_TEMPLATES__</script>

@@ -2490,6 +2490,8 @@ if ($("action-help-about")) {
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
     document.querySelectorAll(".modal-backdrop.open").forEach(m => m.classList.remove("open"));
+    if (!$("modal-filter").hidden) closeFilterModal();
+    if (!$("modal-lcs").hidden) closeLCSModal();
     return;
   }
   if (e.key === "?" || e.key === "F1") {
@@ -3503,12 +3505,15 @@ function openLCSModal() {
   if ($("lcs-axial-select")) $("lcs-axial-select").value = currentLCS.axial;
   if ($("lcs-ap-select")) $("lcs-ap-select").value = currentLCS.ap;
   updateLCSFeedback();
-  modal.classList.add("open");
+  modal.hidden = false;
+  floatPane("modal-lcs");
 }
 
 function closeLCSModal() {
   const modal = $("modal-lcs");
-  if (modal) modal.classList.remove("open");
+  if (!modal) return;
+  dockPane("modal-lcs");
+  modal.hidden = true;
 }
 
 function updateLCSFeedback() {
@@ -3654,12 +3659,16 @@ function openFilterModal() {
     $("flt-active-marker-name").textContent = trial.labels[activeMarkerIndex];
   }
   updateFilterPreview();
-  modal.classList.add("open");
+  modal.hidden = false;
+  floatPane("modal-filter");
 }
 
 function closeFilterModal() {
   const modal = $("modal-filter");
-  if (modal) modal.classList.remove("open");
+  if (modal) {
+    dockPane("modal-filter");
+    modal.hidden = true;
+  }
   filterPreviewActive = false;
   filterPreviewSeries = null;
   drawPlots();
