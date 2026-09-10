@@ -21,11 +21,20 @@ let yaw = -0.45, pitch = 0.22, zoom = 1, pan = [0, 0], center = [0, 0, 0], span 
 // alternating, or transient marker dropout) — see getFloorHeight().
 let autoFloorZ = 0;
 let distances = [], activeMarkerIndex = 0, showDistance = true;
-let angles = [], showAngle = true, angleMode = "3pt";
+let angles = [], showAngle = false, angleMode = "3pt";
+let selectedMarkerIndices = new Set([0]);
+let pinnedMarkerIndices = new Set();
+let viewportMode = "rotate";
+let selectionBox = null;
 let skeletonPairs = [];
+let customSegments = [];
 let activeSkeletonTemplate = "none";
 let loadedCustomTemplate = null;
 let popoutWindows = {};
+let skeletonColor = "auto";
+let skeletonPaletteIndex = -1;
+let quickFilterCutoff = 6.0;
+let pointerDownButton = 0;
 
 // Reference video sync & multi-camera state
 let refVideosList = [];
@@ -88,7 +97,7 @@ function setMarkerColor(colorHex, colorName) {
   }
   if ($("marker-color-name-badge")) $("marker-color-name-badge").textContent = colorName;
   if ($("marker-color-custom") && colorHex !== "auto") $("marker-color-custom").value = colorHex;
-  document.querySelectorAll(".color-swatch-btn").forEach(btn => {
+  document.querySelectorAll("#marker-color-swatches .color-swatch-btn").forEach(btn => {
     btn.classList.toggle("selected", btn.dataset.color === colorHex);
   });
   status(`Marker color: ${colorName}`);
@@ -112,6 +121,45 @@ function resetMarkerStyle() {
   setMarkerColor("auto", "Default");
 }
 
+function setSkeletonColor(colorHex, colorName) {
+  skeletonColor = colorHex;
+  if (!colorName) {
+    if (colorHex === "auto") {
+      colorName = "Default";
+    } else {
+      const match = MARKER_PALETTE.find(p => p.hex.toLowerCase() === colorHex.toLowerCase());
+      colorName = match ? match.name : colorHex;
+    }
+  }
+  if ($("skeleton-color-name-badge")) $("skeleton-color-name-badge").textContent = colorName;
+  if ($("skeleton-color-custom") && colorHex !== "auto") $("skeleton-color-custom").value = colorHex;
+  document.querySelectorAll("#skeleton-color-swatches .color-swatch-btn").forEach(btn => {
+    btn.classList.toggle("selected", btn.dataset.color === colorHex);
+  });
+  status(`Skeleton color: ${colorName}`);
+  draw();
+  saveSessionState();
+}
+
+function resetSkeletonStyle() {
+  skeletonPaletteIndex = -1;
+  setSkeletonColor("auto", "Default");
+}
+
+function setViewportMode(mode) {
+  if (!["select", "rotate", "pan"].includes(mode)) return;
+  viewportMode = mode;
+  for (const m of ["select", "rotate", "pan"]) {
+    const btn = $(`btn-mode-${m}`);
+    if (btn) {
+      btn.classList.toggle("active", m === mode);
+      btn.setAttribute("aria-pressed", m === mode ? "true" : "false");
+    }
+  }
+}
+
+let showLabAxes = true;
+let groundLevel = "auto";
 let currentTheme = "dark";
 try {
   const saved = localStorage.getItem("mkvis3d_theme") || sessionStorage.getItem("mkvis3d_theme");
@@ -147,17 +195,13 @@ function setTheme(theme) {
     $("action-theme-light").textContent = (currentTheme === "light" ? "✓ " : "  ") + "Light Mode (Claro)";
   }
 
-  // Update Options menu items
-  if ($("action-opt-theme-dark")) {
-    $("action-opt-theme-dark").textContent = (currentTheme === "dark" ? "✓ " : "  ") + "Dark Mode (Escuro)";
-  }
-  if ($("action-opt-theme-light")) {
-    $("action-opt-theme-light").textContent = (currentTheme === "light" ? "✓ " : "  ") + "Light Mode (Claro)";
-  }
-
-  const autoSwatch = document.querySelector('.color-swatch-btn[data-color="auto"]');
+  const autoSwatch = document.querySelector('#marker-color-swatches .color-swatch-btn[data-color="auto"]');
   if (autoSwatch) {
     autoSwatch.style.background = currentTheme === "light" ? "#475569" : "#9bbed7";
+  }
+  const skeletonAutoSwatch = document.querySelector('#skeleton-color-swatches .color-swatch-btn[data-color="auto"]');
+  if (skeletonAutoSwatch) {
+    skeletonAutoSwatch.style.background = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
   }
 
   // Synchronize detached/popout windows
@@ -266,9 +310,7 @@ function fit() {
 // Compute floor height for ground grid
 function getFloorHeight() {
   if (!trial) return 0;
-  const option = document.querySelector("[data-floor].active");
-  const mode = option ? option.dataset.floor : "auto";
-  if (mode === "origin") return 0;
+  if (groundLevel === "origin") return 0;
 
   // If force plates are present, ground surface is at plate level
   if (trial.force_plates && trial.force_plates.length && showForcePlates) {
@@ -403,6 +445,21 @@ function applySkeletonTemplate(templateObj) {
     }
   }
 
+  if (Array.isArray(customSegments) && customSegments.length > 0) {
+    for (const seg of customSegments) {
+      if (!Array.isArray(seg) || seg.length < 2) continue;
+      const aStr = String(seg[0]).toLowerCase().trim();
+      const bStr = String(seg[1]).toLowerCase().trim();
+      const idxA = labelMap.get(aStr);
+      const idxB = labelMap.get(bStr);
+      if (idxA !== undefined && idxB !== undefined && idxA !== idxB) {
+        if (!skeletonPairs.some(p => (p[0] === idxA && p[1] === idxB) || (p[0] === idxB && p[1] === idxA))) {
+          skeletonPairs.push([Math.min(idxA, idxB), Math.max(idxA, idxB)]);
+        }
+      }
+    }
+  }
+
   if ($("bones")) $("bones").checked = skeletonPairs.length > 0;
   const badge = $("skeleton-status-badge");
   if (badge) {
@@ -531,7 +588,8 @@ function createDeLevaCOM() {
 
 function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
   if (!$("bones") || !$("bones").checked || !skeletonPairs.length || !pts) return;
-  const boneColor = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
+  const themeDefaultColor = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
+  const boneColor = skeletonColor === "auto" ? themeDefaultColor : skeletonColor;
   for (const [i, j] of skeletonPairs) {
     if (valid(pts[i]) && valid(pts[j])) {
       line(pts[i], pts[j], boneColor, 2, targetCtx, w, h);
@@ -723,7 +781,7 @@ function drawSceneToContext(targetCtx, w, h) {
     ? ["#dc2626", "#16a34a", "#2563eb"]
     : ["#ef8686", "#82d99d", "#7faeeb"];
   const axesLabels = ["X", "Y", "Z"];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; showLabAxes && i < 3; i++) {
     const end = [0, 0, 0]; end[i] = span * 0.22;
     line(origin, end, axesColors[i], 2, targetCtx, w, h);
     const p = project(end, w, h);
@@ -767,6 +825,7 @@ function drawSceneToContext(targetCtx, w, h) {
   const baseRadius = markerSize;
   for (const { i, q } of visible) {
     const isAct = i === activeIdx;
+    const isSelected = selectedMarkerIndices.has(i);
     const isA = showDistance && i === a, isB = showDistance && i === b;
     const isCOM = trial.labels[i]?.startsWith("CenterOfMass_deLeva");
     targetCtx.beginPath();
@@ -775,19 +834,56 @@ function drawSceneToContext(targetCtx, w, h) {
     targetCtx.fillStyle = isCOM ? "#ec4899" : (isAct ? actColor : (isA ? actColor : (isB ? bColor : regularColor)));
     targetCtx.fill();
 
+    // Group highlight halo for selected markers that are not the single active marker
+    if (isSelected && !isAct) {
+      targetCtx.beginPath();
+      targetCtx.arc(q[0], q[1], radius + 2.5, 0, Math.PI * 2);
+      targetCtx.strokeStyle = isLight ? "rgba(15, 118, 110, 0.85)" : "rgba(89, 222, 195, 0.85)";
+      targetCtx.lineWidth = 1.8;
+      targetCtx.stroke();
+    }
+
+    // Persistent golden halo for pinned / marked markers
+    const isPinned = pinnedMarkerIndices.has(i);
+    if (isPinned) {
+      targetCtx.beginPath();
+      targetCtx.arc(q[0], q[1], radius + 4.5, 0, Math.PI * 2);
+      targetCtx.strokeStyle = isLight ? "#d97706" : "#f59e0b";
+      targetCtx.lineWidth = 2.2;
+      targetCtx.stroke();
+    }
+
     if (isAct || isCOM) {
       targetCtx.strokeStyle = isLight ? "#0f172a" : "#ffffff";
       targetCtx.lineWidth = Math.max(1.5, baseRadius * 0.4);
       targetCtx.stroke();
     }
 
-    if ($("labels") && $("labels").checked) {
-      targetCtx.fillStyle = isAct
-        ? (isLight ? "#0f172a" : "#ffffff")
-        : (isLight ? "#475569" : "#adbdcd");
-      targetCtx.font = (isAct ? "bold 11px" : "10px") + " system-ui, sans-serif";
-      targetCtx.fillText(trial.labels[i], q[0] + radius + 3, q[1] - 3);
+    const showGlobalLabels = $("labels") && $("labels").checked;
+    if (showGlobalLabels || isPinned) {
+      targetCtx.fillStyle = isPinned
+        ? (isLight ? "#b45309" : "#fcd34d")
+        : (isAct ? (isLight ? "#0f172a" : "#ffffff") : (isLight ? "#475569" : "#adbdcd"));
+      targetCtx.font = (isPinned || isAct ? "bold 11px" : "10px") + " system-ui, sans-serif";
+      const prefix = isPinned ? "📌 " : "";
+      targetCtx.fillText(prefix + trial.labels[i], q[0] + radius + 3, q[1] - 3);
     }
+  }
+
+  // Draw Marquee Box Selection Overlay if dragging in select mode
+  if (selectionBox && targetCtx === ctx) {
+    targetCtx.save();
+    const bx = Math.min(selectionBox.x1, selectionBox.x2);
+    const by = Math.min(selectionBox.y1, selectionBox.y2);
+    const bw = Math.abs(selectionBox.x2 - selectionBox.x1);
+    const bh = Math.abs(selectionBox.y2 - selectionBox.y1);
+    targetCtx.fillStyle = isLight ? "rgba(15, 118, 110, 0.15)" : "rgba(89, 222, 195, 0.15)";
+    targetCtx.fillRect(bx, by, bw, bh);
+    targetCtx.strokeStyle = isLight ? "#0f766e" : "#59dec3";
+    targetCtx.lineWidth = 1.5;
+    targetCtx.setLineDash([4, 3]);
+    targetCtx.strokeRect(bx, by, bw, bh);
+    targetCtx.restore();
   }
 }
 
@@ -833,6 +929,7 @@ function draw() {
   }
   if ($("angle-details-val")) {
     const is3pt = angleMode === "3pt";
+    const isAbs = angleMode === "abs";
     const a = Number($("angle-marker-a") ? $("angle-marker-a").value : 0);
     const b = Number($("angle-marker-b") ? $("angle-marker-b").value : 1);
     const c = Number($("angle-marker-c") ? $("angle-marker-c").value : 2);
@@ -840,6 +937,9 @@ function draw() {
     const v1b = Number($("angle-v1-b") ? $("angle-v1-b").value : 1);
     const v2c = Number($("angle-v2-c") ? $("angle-v2-c").value : 2);
     const v2d = Number($("angle-v2-d") ? $("angle-v2-d").value : 3);
+    const absA = Number($("angle-abs-a") ? $("angle-abs-a").value : 0);
+    const absB = Number($("angle-abs-b") ? $("angle-abs-b").value : 1);
+    const absAxis = $("angle-abs-axis") ? $("angle-abs-axis").value : "+Z";
     const framePts = trial.xyz[frame];
     let u = null, v = null;
     if (framePts) {
@@ -848,6 +948,14 @@ function draw() {
         if (valid(pa) && valid(pb) && valid(pc)) {
           u = [pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]];
           v = [pc[0] - pb[0], pc[1] - pb[1], pc[2] - pb[2]];
+        }
+      } else if (isAbs) {
+        const pa = framePts[absA], pb = framePts[absB];
+        if (valid(pa) && valid(pb)) {
+          const segVec = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+          const axisData = getGlobalAxisVector(absAxis, segVec);
+          u = axisData.uVec;
+          v = axisData.refVec;
         }
       } else {
         const p1 = framePts[v1a], p2 = framePts[v1b], p3 = framePts[v2c], p4 = framePts[v2d];
@@ -974,7 +1082,7 @@ function updatePlotHeaderUI(plotNum, mode) {
 function drawPlot1() {
   const canvasG = graph1;
   const gx = gx1;
-  const mode = $("plot1-mode") ? $("plot1-mode").value : "distance";
+  const mode = $("plot1-mode") ? $("plot1-mode").value : "active-xyz";
   updatePlotHeaderUI(1, mode);
   drawSinglePlot(canvasG, gx, mode, $("plot1-readout"), 1);
 }
@@ -1299,7 +1407,8 @@ function updateTable() {
     if (!row) continue;
     const p = pts[i];
     const isOk = valid(p);
-    row.classList.toggle("selected", i === activeMarkerIndex);
+    row.classList.toggle("selected", selectedMarkerIndices.has(i));
+    row.classList.toggle("active-marker", i === activeMarkerIndex);
     row.cells[2].textContent = isOk ? "OK" : "Missing";
     row.cells[2].style.color = isOk ? okColor : errColor;
     row.cells[3].textContent = isOk ? p[0].toFixed(3) : "—";
@@ -1313,7 +1422,13 @@ function buildTable() {
   if (!tbody || !trial) return;
   tbody.replaceChildren(...trial.labels.map((lbl, i) => {
     const tr = document.createElement("tr");
-    tr.onclick = () => selectActiveMarker(i);
+    tr.onclick = e => {
+      if (e.shiftKey) {
+        toggleMarkerSelection(i);
+      } else {
+        setSingleSelectedMarker(i);
+      }
+    };
     tr.innerHTML = `<td>${i + 1}</td><td><strong>${lbl}</strong></td><td>—</td><td>—</td><td>—</td><td>—</td>`;
     return tr;
   }));
@@ -1327,9 +1442,25 @@ function measure() {
   saveSessionState();
 }
 
+function getGlobalAxisVector(axisKey, u) {
+  switch (axisKey) {
+    case "+Z": return { uVec: u, refVec: [0, 0, 1] };
+    case "-Z": return { uVec: u, refVec: [0, 0, -1] };
+    case "+Y": return { uVec: u, refVec: [0, 1, 0] };
+    case "-Y": return { uVec: u, refVec: [0, -1, 0] };
+    case "+X": return { uVec: u, refVec: [1, 0, 0] };
+    case "-X": return { uVec: u, refVec: [-1, 0, 0] };
+    case "sagittal": return { uVec: [0, u[1], u[2]], refVec: [0, 0, 1] };
+    case "frontal": return { uVec: [u[0], 0, u[2]], refVec: [0, 0, 1] };
+    case "transverse": return { uVec: [u[0], u[1], 0], refVec: [0, 1, 0] };
+    default: return { uVec: u, refVec: [0, 0, 1] };
+  }
+}
+
 function measureAngle() {
   if (!trial) return;
   const is3pt = angleMode === "3pt";
+  const isAbs = angleMode === "abs";
   const a = Number($("angle-marker-a") ? $("angle-marker-a").value : 0);
   const b = Number($("angle-marker-b") ? $("angle-marker-b").value : 1);
   const c = Number($("angle-marker-c") ? $("angle-marker-c").value : 2);
@@ -1337,6 +1468,9 @@ function measureAngle() {
   const v1b = Number($("angle-v1-b") ? $("angle-v1-b").value : 1);
   const v2c = Number($("angle-v2-c") ? $("angle-v2-c").value : 2);
   const v2d = Number($("angle-v2-d") ? $("angle-v2-d").value : 3);
+  const absA = Number($("angle-abs-a") ? $("angle-abs-a").value : 0);
+  const absB = Number($("angle-abs-b") ? $("angle-abs-b").value : 1);
+  const absAxis = $("angle-abs-axis") ? $("angle-abs-axis").value : "+Z";
 
   const nFrames = trial.xyz.length;
   angles = new Array(nFrames);
@@ -1350,6 +1484,14 @@ function measureAngle() {
         if (valid(pa) && valid(pb) && valid(pc)) {
           u = [pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]];
           v = [pc[0] - pb[0], pc[1] - pb[1], pc[2] - pb[2]];
+        }
+      } else if (isAbs) {
+        const pa = framePts[absA], pb = framePts[absB];
+        if (valid(pa) && valid(pb)) {
+          const segVec = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+          const axisData = getGlobalAxisVector(absAxis, segVec);
+          u = axisData.uVec;
+          v = axisData.refVec;
         }
       } else {
         const p1 = framePts[v1a], p2 = framePts[v1b], p3 = framePts[v2c], p4 = framePts[v2d];
@@ -1389,12 +1531,77 @@ function pause() {
   draw();
 }
 
-function selectActiveMarker(idx) {
+function syncActiveMarkerUI() {
+  if ($("marker-select")) $("marker-select").value = String(activeMarkerIndex);
+  if ($("clean-marker-select")) $("clean-marker-select").value = String(activeMarkerIndex);
+  if ($("flt-active-marker-name") && trial && trial.labels && trial.labels[activeMarkerIndex]) {
+    $("flt-active-marker-name").textContent = trial.labels[activeMarkerIndex];
+  }
+}
+
+function selectActiveMarker(idx, syncSelection = true) {
   activeMarkerIndex = idx;
-  if ($("marker-select")) $("marker-select").value = String(idx);
-  if ($("clean-marker-select")) $("clean-marker-select").value = String(idx);
+  if (syncSelection) {
+    selectedMarkerIndices = new Set([idx]);
+  }
+  syncActiveMarkerUI();
+  syncPointsModal();
+  updateTable();
   draw();
   saveSessionState();
+}
+
+function setSingleSelectedMarker(idx) {
+  selectActiveMarker(idx, true);
+}
+
+function toggleMarkerSelection(idx) {
+  if (selectedMarkerIndices.has(idx)) {
+    selectedMarkerIndices.delete(idx);
+    if (activeMarkerIndex === idx && selectedMarkerIndices.size > 0) {
+      activeMarkerIndex = Array.from(selectedMarkerIndices)[selectedMarkerIndices.size - 1];
+    }
+  } else {
+    selectedMarkerIndices.add(idx);
+    activeMarkerIndex = idx;
+  }
+  syncActiveMarkerUI();
+  syncPointsModal();
+  updateTable();
+  draw();
+  saveSessionState();
+}
+
+function clearMarkerSelectionGroup() {
+  selectedMarkerIndices = new Set();
+  syncPointsModal();
+  updateTable();
+  draw();
+  saveSessionState();
+}
+
+function setSelectedMarkers(indices, explicitActiveIndex = null) {
+  selectedMarkerIndices = new Set(indices);
+  if (explicitActiveIndex !== null && explicitActiveIndex >= 0) {
+    activeMarkerIndex = explicitActiveIndex;
+  } else if (selectedMarkerIndices.size > 0 && !selectedMarkerIndices.has(activeMarkerIndex)) {
+    activeMarkerIndex = Array.from(selectedMarkerIndices)[selectedMarkerIndices.size - 1];
+  }
+  syncActiveMarkerUI();
+  syncPointsModal();
+  updateTable();
+  draw();
+  saveSessionState();
+}
+
+function selectAllMarkers() {
+  if (!trial || !trial.labels) return;
+  const all = trial.labels.map((_, i) => i);
+  setSelectedMarkers(all, activeMarkerIndex);
+}
+
+function unselectAllMarkers() {
+  clearMarkerSelectionGroup();
 }
 
 function syncLoopToggleButton() {
@@ -1429,6 +1636,7 @@ function collectViewerState() {
       trail: $("trail") ? $("trail").checked : true,
       bones: $("bones") ? $("bones").checked : true,
       loop: $("loop") ? $("loop").checked : true,
+      showLabAxes, groundLevel,
       showDistance,
       showAngle,
       angleMode,
@@ -1448,9 +1656,18 @@ function collectViewerState() {
       theme: currentTheme,
       markerSize,
       markerColor,
+      skeletonColor,
+      selectedMarkerIndices: Array.from(selectedMarkerIndices),
+      pinnedMarkerIndices: Array.from(pinnedMarkerIndices),
+      quickFilterCutoff,
+      customSegments,
+      viewportMode,
       currentLCS,
       activeFilterConfig,
-      plot1Mode: $("plot1-mode") ? $("plot1-mode").value : "distance",
+      angleAbsA: $("angle-abs-a") ? $("angle-abs-a").value : "0",
+      angleAbsB: $("angle-abs-b") ? $("angle-abs-b").value : "1",
+      angleAbsAxis: $("angle-abs-axis") ? $("angle-abs-axis").value : "+Z",
+      plot1Mode: $("plot1-mode") ? $("plot1-mode").value : "active-xyz",
       plot2Mode: $("plot2-mode") ? $("plot2-mode").value : "active-z",
       plot1CurveVisibility,
       plot2CurveVisibility,
@@ -1470,11 +1687,12 @@ function saveSessionState() {
   }
 }
 
-function restoreSessionState(data) {
+function readSessionState() {
+  try { return JSON.parse(sessionStorage.getItem("mkvis3d_session") || "null"); } catch (e) { return null; }
+}
+
+function restoreSessionState(data, state = readSessionState()) {
   try {
-    const raw = sessionStorage.getItem("mkvis3d_session");
-    if (!raw) return;
-    const state = JSON.parse(raw);
     if (!state || state.trialName !== data.name) return;
 
     if (state.currentLCS && typeof state.currentLCS === "object") {
@@ -1525,6 +1743,9 @@ function restoreSessionState(data) {
     if (typeof state.bones === "boolean" && $("bones")) $("bones").checked = state.bones;
     if (typeof state.loop === "boolean" && $("loop")) $("loop").checked = state.loop;
     syncLoopToggleButton();
+    if (typeof state.showLabAxes === "boolean") showLabAxes = state.showLabAxes;
+    if (["auto", "origin"].includes(state.groundLevel)) groundLevel = state.groundLevel;
+    syncSceneMenu();
     if (typeof state.showDistance === "boolean") setDistanceVisible(state.showDistance);
     if (typeof state.showAngle === "boolean") setAngleVisible(state.showAngle);
     if (state.angleMode) setAngleMode(state.angleMode);
@@ -1535,6 +1756,9 @@ function restoreSessionState(data) {
     if (state.angleV1B && $("angle-v1-b")) $("angle-v1-b").value = state.angleV1B;
     if (state.angleV2C && $("angle-v2-c")) $("angle-v2-c").value = state.angleV2C;
     if (state.angleV2D && $("angle-v2-d")) $("angle-v2-d").value = state.angleV2D;
+    if (state.angleAbsA && $("angle-abs-a")) $("angle-abs-a").value = state.angleAbsA;
+    if (state.angleAbsB && $("angle-abs-b")) $("angle-abs-b").value = state.angleAbsB;
+    if (state.angleAbsAxis && $("angle-abs-axis")) $("angle-abs-axis").value = state.angleAbsAxis;
     if (typeof state.showForcePlates === "boolean") {
       showForcePlates = state.showForcePlates;
       if ($("show-force-plates")) $("show-force-plates").checked = showForcePlates;
@@ -1566,6 +1790,29 @@ function restoreSessionState(data) {
     }
     if (typeof state.markerColor === "string") {
       setMarkerColor(state.markerColor);
+    }
+    if (typeof state.skeletonColor === "string") {
+      setSkeletonColor(state.skeletonColor);
+    }
+    if (state.viewportMode && ["select", "rotate", "pan"].includes(state.viewportMode)) {
+      setViewportMode(state.viewportMode);
+    }
+    if (Array.isArray(state.selectedMarkerIndices) && data && data.labels) {
+      const validIndices = state.selectedMarkerIndices.filter(i => Number.isInteger(i) && i >= 0 && i < data.labels.length);
+      selectedMarkerIndices = new Set(validIndices.length > 0 ? validIndices : [activeMarkerIndex]);
+      syncPointsModal();
+      updateTable();
+    }
+    if (Array.isArray(state.pinnedMarkerIndices) && data && data.labels) {
+      const validPinned = state.pinnedMarkerIndices.filter(i => Number.isInteger(i) && i >= 0 && i < data.labels.length);
+      pinnedMarkerIndices = new Set(validPinned);
+    }
+    if (Number.isFinite(state.quickFilterCutoff) && state.quickFilterCutoff > 0) {
+      quickFilterCutoff = state.quickFilterCutoff;
+      if ($("quick-filter-cutoff")) $("quick-filter-cutoff").value = String(quickFilterCutoff);
+    }
+    if (Array.isArray(state.customSegments)) {
+      customSegments = state.customSegments.filter(s => Array.isArray(s) && s.length >= 2 && typeof s[0] === "string" && typeof s[1] === "string");
     }
     if (state.plotHeight && $("windows-container")) {
       $("windows-container").style.setProperty("--plot-height", state.plotHeight);
@@ -1619,7 +1866,9 @@ function refreshMarkerSelectors() {
     "angle-v1-a": "0",
     "angle-v1-b": trial.labels.length > 1 ? "1" : "0",
     "angle-v2-c": trial.labels.length > 2 ? "2" : "0",
-    "angle-v2-d": trial.labels.length > 3 ? "3" : (trial.labels.length > 1 ? "1" : "0")
+    "angle-v2-d": trial.labels.length > 3 ? "3" : (trial.labels.length > 1 ? "1" : "0"),
+    "angle-abs-a": "0",
+    "angle-abs-b": trial.labels.length > 1 ? "1" : "0"
   };
 
   for (const key of [
@@ -1630,6 +1879,7 @@ function refreshMarkerSelectors() {
     "sg-origin", "sg-primary-pt", "sg-plane-pt",
     "angle-marker-a", "angle-marker-b", "angle-marker-c",
     "angle-v1-a", "angle-v1-b", "angle-v2-c", "angle-v2-d",
+    "angle-abs-a", "angle-abs-b",
     "vp-csv-replace-marker", "clean-marker-select"
   ]) {
     if (!$(key)) continue;
@@ -1651,11 +1901,15 @@ function refreshMarkerSelectors() {
 }
 
 function load(data) {
+  const savedViewerState = readSessionState();
+  showLabAxes = true;
+  groundLevel = "auto";
   trial = data;
   window.trial = data;
   frame = 0;
   pause();
   activeMarkerIndex = 0;
+  selectedMarkerIndices = new Set(data.labels && data.labels.length > 0 ? [0] : []);
   skeletonPairs = [];
   interpolatedMarkers = {};
   plot1CurveVisibility = { x: true, y: true, z: true };
@@ -1685,6 +1939,7 @@ function load(data) {
 
   initSkeleton(data.labels);
   buildTable();
+  syncPointsModal();
 
   // Handle Force Plates
   rawForcePlates = data.force_plates ? JSON.parse(JSON.stringify(data.force_plates)) : null;
@@ -1726,14 +1981,13 @@ function load(data) {
       sel.appendChild(optGroup);
     }
   }
-  if (hasForcePlates && $("plot1-mode")) {
-    $("plot1-mode").value = "fp-all-fz";
-  }
+  if ($("plot1-mode")) $("plot1-mode").value = "active-xyz";
+  if ($("plot2-mode")) $("plot2-mode").value = "active-z";
 
   fit();
   measure();
   measureAngle();
-  restoreSessionState(data);
+  restoreSessionState(data, savedViewerState);
   $("meta").textContent = `${data.xyz.length} frames · ${data.labels.length} markers · ${data.rate_hz} Hz · coordinates in meters`;
   const hasRefTransform = (
     (currentLCS.x && currentLCS.x !== "+X") ||
@@ -1766,6 +2020,29 @@ function resize() {
   draw();
 }
 new ResizeObserver(resize).observe($("workspace"));
+
+// Device preference, deliberately independent of saved projects and session state.
+function setSidebarVisible(visible, persist = true) {
+  const sidebar = $("sidebar");
+  const toggle = $("btn-toggle-sidebar");
+  if (!visible && sidebar.contains(document.activeElement)) toggle.focus();
+  sidebar.hidden = !visible;
+  sidebar.inert = !visible;
+  toggle.setAttribute("aria-expanded", String(visible));
+  toggle.setAttribute("aria-label", visible ? "Hide sidebar" : "Show sidebar");
+  toggle.title = visible ? "Hide sidebar" : "Show sidebar";
+  toggle.textContent = visible ? "‹" : "›";
+  $("action-win-sidebar").setAttribute("aria-expanded", String(visible));
+  $("action-win-sidebar").textContent = (visible ? "✓ " : "") + "Sidebar";
+  if (persist) {
+    try { localStorage.setItem("mkvis3d_sidebar_visible", String(visible)); } catch (e) {}
+  }
+  // The workspace ResizeObserver above resizes and redraws the canvases.
+}
+let sidebarVisible = true;
+try { sidebarVisible = localStorage.getItem("mkvis3d_sidebar_visible") !== "false"; } catch (e) {}
+setSidebarVisible(sidebarVisible, false);
+$("btn-toggle-sidebar").onclick = $("action-win-sidebar").onclick = () => setSidebarVisible($("sidebar").hidden);
 
 function refresh3DViewport() {
   // 1. Force layout reflow and drop stale textures on 3D pane
@@ -1908,37 +2185,126 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
-// Interactive 3D Orbit, Pan & Click-to-Select Marker
+// Interactive 3D Orbit, Pan, Zoom & Box/Click-to-Select Marker
 let drag = null;
 let pointerDownPos = null;
-canvas.onpointerdown = e => {
+
+function handleCanvasPointerDown(e) {
+  if (e.button === 2) {
+    // Right-click: do not initiate drag/box, mark button 2, avoid deselect
+    pointerDownButton = 2;
+    drag = null;
+    selectionBox = null;
+    return;
+  }
+  // Accept Left click (0) and Middle click (1)
+  if (e.button !== 0 && e.button !== 1) return;
+  pointerDownButton = e.button;
   drag = [e.clientX, e.clientY];
   pointerDownPos = [e.clientX, e.clientY];
-  canvas.setPointerCapture(e.pointerId);
-};
-canvas.onpointermove = e => {
-  if (!drag) return;
+  selectionBox = null;
+  hideCanvasContextMenu();
+  canvas.focus();
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+}
+
+function handleCanvasPointerMove(e) {
+  if (!drag || !pointerDownPos) return;
+  const totalDist = Math.hypot(e.clientX - pointerDownPos[0], e.clientY - pointerDownPos[1]);
   const dx = e.clientX - drag[0], dy = e.clientY - drag[1];
-  if (e.shiftKey) {
-    pan[0] += dx;
-    pan[1] += dy;
-  } else {
+  drag = [e.clientX, e.clientY];
+
+  // Middle mouse button (button 1) unconditionally orbits the camera
+  if (pointerDownButton === 1) {
+    selectionBox = null;
     yaw += dx * 0.008;
     pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.008));
+    draw();
+    saveSessionState();
+    return;
   }
-  drag = [e.clientX, e.clientY];
-  draw();
-  saveSessionState();
-};
-canvas.onpointerup = e => {
-  if (pointerDownPos && trial && trial.xyz && trial.xyz[frame]) {
-    const clickDist = Math.hypot(e.clientX - pointerDownPos[0], e.clientY - pointerDownPos[1]);
-    if (clickDist < 5) {
-      // Direct click on 3D canvas - test if a marker was clicked
+
+  // Ctrl / Meta + Left drag: Zoom In / Zoom Out (dy < 0 zooms in, dy > 0 zooms out)
+  if (e.ctrlKey || e.metaKey) {
+    selectionBox = null;
+    zoom = Math.max(0.1, Math.min(20, zoom * Math.exp(-dy * 0.01)));
+    draw();
+    saveSessionState();
+    return;
+  }
+
+  // Shift + Left drag: Pan scene
+  if (e.shiftKey) {
+    selectionBox = null;
+    pan[0] += dx;
+    pan[1] += dy;
+    draw();
+    saveSessionState();
+    return;
+  }
+
+  // Alt + Left drag: Marquee Box Selection
+  if (e.altKey) {
+    if (totalDist >= 5) {
       const rect = canvas.getBoundingClientRect();
+      const x1 = Math.min(pointerDownPos[0], e.clientX) - rect.left;
+      const y1 = Math.min(pointerDownPos[1], e.clientY) - rect.top;
+      const x2 = Math.max(pointerDownPos[0], e.clientX) - rect.left;
+      const y2 = Math.max(pointerDownPos[1], e.clientY) - rect.top;
+      selectionBox = { x1, y1, x2, y2 };
+      draw();
+    }
+    return;
+  }
+
+  // No modifier: follow viewport mode (default is "rotate" = orbit)
+  if (viewportMode === "rotate") {
+    selectionBox = null;
+    yaw += dx * 0.008;
+    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.008));
+    draw();
+    saveSessionState();
+    return;
+  }
+
+  if (viewportMode === "pan") {
+    selectionBox = null;
+    pan[0] += dx;
+    pan[1] += dy;
+    draw();
+    saveSessionState();
+    return;
+  }
+
+  // viewportMode === "select"
+  if (totalDist >= 5) {
+    const rect = canvas.getBoundingClientRect();
+    const x1 = Math.min(pointerDownPos[0], e.clientX) - rect.left;
+    const y1 = Math.min(pointerDownPos[1], e.clientY) - rect.top;
+    const x2 = Math.max(pointerDownPos[0], e.clientX) - rect.left;
+    const y2 = Math.max(pointerDownPos[1], e.clientY) - rect.top;
+    selectionBox = { x1, y1, x2, y2 };
+    draw();
+  }
+}
+
+function handleCanvasPointerUp(e) {
+  if (e.button === 2 || pointerDownButton === 2) {
+    // Right-click release: do not alter selection or clear state
+    pointerDownButton = 0;
+    drag = null;
+    selectionBox = null;
+    return;
+  }
+  if (pointerDownPos && trial && trial.xyz && pointerDownButton === 0) {
+    const clickDist = Math.hypot(e.clientX - pointerDownPos[0], e.clientY - pointerDownPos[1]);
+    const rect = canvas.getBoundingClientRect();
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const pts = trial.xyz[frame] || [];
+
+    if (clickDist < 5) {
+      // Direct click on 3D canvas (not a drag)
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-      const pts = trial.xyz[frame];
-      const w = canvas.clientWidth, h = canvas.clientHeight;
       let closestIdx = -1, closestD = 16;
       for (let i = 0; i < pts.length; i++) {
         if (!valid(pts[i])) continue;
@@ -1950,14 +2316,214 @@ canvas.onpointerup = e => {
         }
       }
       if (closestIdx >= 0) {
-        selectActiveMarker(closestIdx);
+        if (e.shiftKey || e.altKey) {
+          toggleMarkerSelection(closestIdx);
+        } else {
+          setSingleSelectedMarker(closestIdx);
+        }
+      } else if (!e.shiftKey && !e.altKey) {
+        // Click in empty space clears group selection but preserves active marker
+        clearMarkerSelectionGroup();
+      }
+    } else if (selectionBox && !e.ctrlKey && !e.metaKey) {
+      // Marquee box selection ended (works seamlessly even if Alt was released just before pointerup)
+      const boxed = [];
+      for (let i = 0; i < pts.length; i++) {
+        if (!valid(pts[i])) continue;
+        const q = project(pts[i], w, h);
+        if (q[0] >= selectionBox.x1 && q[0] <= selectionBox.x2 && q[1] >= selectionBox.y1 && q[1] <= selectionBox.y2) {
+          boxed.push(i);
+        }
+      }
+      if (boxed.length > 0) {
+        if (e.shiftKey) {
+          for (const idx of boxed) selectedMarkerIndices.add(idx);
+          activeMarkerIndex = boxed[boxed.length - 1];
+          syncActiveMarkerUI();
+          syncPointsModal();
+          updateTable();
+          draw();
+          saveSessionState();
+        } else {
+          setSelectedMarkers(boxed, boxed[boxed.length - 1]);
+        }
+      } else {
+        clearMarkerSelectionGroup();
       }
     }
   }
+  selectionBox = null;
   drag = null;
   pointerDownPos = null;
+  pointerDownButton = 0;
+  draw();
+  saveSessionState();
+}
+
+function showCanvasContextMenu(clientX, clientY) {
+  const menu = $("canvas-context-menu");
+  if (!menu) return;
+  const count = selectedMarkerIndices.size;
+  const indices = Array.from(selectedMarkerIndices);
+  const labels = trial && trial.labels ? indices.map(i => trial.labels[i]).filter(Boolean) : [];
+
+  if ($("ctx-menu-header")) {
+    if (count === 0) {
+      $("ctx-menu-header").textContent = "Selected Points (0)";
+    } else if (count === 1) {
+      $("ctx-menu-header").textContent = `Point: ${labels[0] || "1 selected"}`;
+    } else if (count === 2) {
+      $("ctx-menu-header").textContent = `2 Points: ${labels.join(" ↔ ")}`;
+    } else {
+      $("ctx-menu-header").textContent = `${count} Points Selected (${labels.slice(0, 3).join(", ")}${labels.length > 3 ? "..." : ""})`;
+    }
+  }
+
+  // Segment action: enabled if count >= 2
+  if ($("ctx-action-create-segment")) {
+    $("ctx-action-create-segment").disabled = count < 2;
+    $("ctx-action-create-segment").style.opacity = count >= 2 ? "1" : "0.5";
+    if (count === 2 && labels.length === 2) {
+      $("ctx-action-create-segment").innerHTML = `<span>🦴</span> <span>Create Segment (${labels[0]} ↔ ${labels[1]}) (K)</span>`;
+    } else {
+      $("ctx-action-create-segment").innerHTML = `<span>🦴</span> <span>Create Segment / Bone (K)</span>`;
+    }
+  }
+
+  // LCS s1 action: enabled if count >= 3
+  if ($("ctx-action-create-lcs")) {
+    $("ctx-action-create-lcs").disabled = count < 3;
+    $("ctx-action-create-lcs").style.opacity = count >= 3 ? "1" : "0.5";
+    if (count >= 3 && labels.length >= 3) {
+      $("ctx-action-create-lcs").innerHTML = `<span>📐</span> <span>Define System / Plane s1 (${labels[0]}...)</span>`;
+    } else {
+      $("ctx-action-create-lcs").innerHTML = `<span>📐</span> <span>Define System / Plane s1 (3+ Pts)</span>`;
+    }
+  }
+
+  // LCS s2 action: enabled if count >= 3
+  if ($("ctx-action-create-lcs-s2")) {
+    $("ctx-action-create-lcs-s2").disabled = count < 3;
+    $("ctx-action-create-lcs-s2").style.opacity = count >= 3 ? "1" : "0.5";
+    if (count >= 3 && labels.length >= 3) {
+      $("ctx-action-create-lcs-s2").innerHTML = `<span>📐</span> <span>Define System / Plane s2 (${labels[0]}...)</span>`;
+    } else {
+      $("ctx-action-create-lcs-s2").innerHTML = `<span>📐</span> <span>Define System / Plane s2 (3+ Pts)</span>`;
+    }
+  }
+
+  // Compute Kinematics action: enabled if count >= 3
+  if ($("ctx-action-compute-kinematics")) {
+    $("ctx-action-compute-kinematics").disabled = count < 3;
+    $("ctx-action-compute-kinematics").style.opacity = count >= 3 ? "1" : "0.5";
+  }
+
+  // Measure angle: enabled if count >= 2
+  if ($("ctx-action-measure-angle")) {
+    $("ctx-action-measure-angle").disabled = count < 2;
+    $("ctx-action-measure-angle").style.opacity = count >= 2 ? "1" : "0.5";
+    if (count === 2) {
+      $("ctx-action-measure-angle").innerHTML = `<span>📐</span> <span>Measure Absolute Angle (SG)</span>`;
+    } else if (count === 3) {
+      $("ctx-action-measure-angle").innerHTML = `<span>📐</span> <span>Measure 3-Point Angle</span>`;
+    } else if (count >= 4) {
+      $("ctx-action-measure-angle").innerHTML = `<span>📐</span> <span>Measure 4-Point Angle</span>`;
+    } else {
+      $("ctx-action-measure-angle").innerHTML = `<span>📐</span> <span>Measure Angle (2+ Pts)</span>`;
+    }
+  }
+
+  // Pin / unpin: enabled if count >= 1
+  if ($("ctx-action-pin-points")) {
+    $("ctx-action-pin-points").disabled = count < 1;
+    $("ctx-action-pin-points").style.opacity = count >= 1 ? "1" : "0.5";
+    const allPinned = count > 0 && Array.from(selectedMarkerIndices).every(i => pinnedMarkerIndices.has(i));
+    $("ctx-action-pin-points").innerHTML = `<span>📌</span> <span>${allPinned ? "Unpin Selected Markers (M)" : "Pin Selected Markers (M)"}</span>`;
+  }
+
+  // Export CSV: enabled if count >= 1
+  if ($("ctx-action-export-csv")) {
+    $("ctx-action-export-csv").disabled = count < 1;
+    $("ctx-action-export-csv").style.opacity = count >= 1 ? "1" : "0.5";
+  }
+
+  // Clear selection: enabled if count >= 1
+  if ($("ctx-action-clear-selection")) {
+    $("ctx-action-clear-selection").disabled = count < 1;
+    $("ctx-action-clear-selection").style.opacity = count >= 1 ? "1" : "0.5";
+  }
+
+  menu.hidden = false;
+  menu.style.display = "block";
+  menu.style.left = "0px";
+  menu.style.top = "0px";
+  const menuW = menu.offsetWidth || 240;
+  const menuH = menu.offsetHeight || 260;
+  const posX = Math.min(clientX, window.innerWidth - menuW - 10);
+  const posY = Math.min(clientY, window.innerHeight - menuH - 10);
+  menu.style.left = `${Math.max(10, posX)}px`;
+  menu.style.top = `${Math.max(10, posY)}px`;
+}
+
+function hideCanvasContextMenu() {
+  const menu = $("canvas-context-menu");
+  if (menu) {
+    menu.hidden = true;
+    menu.style.display = "none";
+  }
+}
+
+canvas.onpointerdown = handleCanvasPointerDown;
+canvas.onpointermove = handleCanvasPointerMove;
+canvas.onpointerup = handleCanvasPointerUp;
+canvas.onpointercancel = () => { drag = null; pointerDownPos = null; pointerDownButton = 0; selectionBox = null; draw(); };
+canvas.oncontextmenu = e => {
+  e.preventDefault();
+  if (!trial || !trial.xyz) return;
+  const rect = canvas.getBoundingClientRect();
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const pts = trial.xyz[frame] || [];
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let closestIdx = -1, closestD = 18;
+  for (let i = 0; i < pts.length; i++) {
+    if (!valid(pts[i])) continue;
+    const q = project(pts[i], w, h);
+    const d = Math.hypot(q[0] - mx, q[1] - my);
+    if (d < closestD) {
+      closestD = d;
+      closestIdx = i;
+    }
+  }
+  if (closestIdx >= 0) {
+    if (!selectedMarkerIndices.has(closestIdx)) {
+      if (selectedMarkerIndices.size === 0) {
+        selectActiveMarker(closestIdx);
+      } else {
+        selectedMarkerIndices.add(closestIdx);
+        activeMarkerIndex = closestIdx;
+        syncActiveMarkerUI();
+        syncPointsModal();
+        updateTable();
+        draw();
+        saveSessionState();
+      }
+    }
+  } else if (selectedMarkerIndices.size === 0 && activeMarkerIndex >= 0) {
+    selectedMarkerIndices.add(activeMarkerIndex);
+    syncActiveMarkerUI();
+    syncPointsModal();
+    draw();
+  }
+
+  showCanvasContextMenu(e.clientX, e.clientY);
 };
-canvas.onpointercancel = () => { drag = null; pointerDownPos = null; };
+
+document.addEventListener("pointerdown", e => {
+  const menu = $("canvas-context-menu");
+  if (menu && !menu.hidden && !menu.contains(e.target) && e.button !== 2) {
+    hideCanvasContextMenu();
+  }
+});
 canvas.onwheel = e => {
   e.preventDefault();
   zoom = Math.max(0.1, Math.min(20, zoom * Math.exp(-e.deltaY * 0.001)));
@@ -2020,6 +2586,7 @@ if ($("up")) $("up").onchange = () => {
   recomputeTrialXYZ();
   updateLCSUI();
   refresh3DViewport();
+  syncSceneMenu();
   saveSessionState();
 };
 for (const id of ["labels", "trail", "grid", "bones", "loop"]) {
@@ -2078,6 +2645,7 @@ function setLayout(name) {
   const container = $("windows-container");
   container.className = `layout-${name}`;
   const splitter = $("vertical-splitter");
+  $("panel-plot1").hidden = name === "3d";
   if (name === "dual") {
     $("panel-plot2").hidden = false;
     $("panel-table").hidden = true;
@@ -2222,18 +2790,35 @@ if ($("file-skeleton-custom")) {
 }
 
 // Menu Bar Interactivity
+function closeMenus() {
+  document.querySelectorAll(".menu-item").forEach(item => {
+    item.classList.remove("open");
+    item.querySelector(".menu-btn").setAttribute("aria-expanded", "false");
+  });
+}
 document.querySelectorAll(".menu-item").forEach(item => {
   const btn = item.querySelector(".menu-btn");
+  btn.setAttribute("aria-expanded", "false");
   btn.onclick = e => {
     e.stopPropagation();
     const isOpen = item.classList.contains("open");
-    document.querySelectorAll(".menu-item").forEach(m => m.classList.remove("open"));
-    if (!isOpen) item.classList.add("open");
+    closeMenus();
+    if (!isOpen) {
+      item.classList.add("open");
+      btn.setAttribute("aria-expanded", "true");
+    }
   };
+  item.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeMenus(); btn.focus(); }
+  });
+  item.addEventListener("focusout", e => {
+    if (!item.contains(e.relatedTarget)) {
+      item.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+    }
+  });
 });
-document.addEventListener("click", () => {
-  document.querySelectorAll(".menu-item").forEach(m => m.classList.remove("open"));
-});
+document.addEventListener("click", closeMenus);
 
 // File Menu Actions
 if ($("action-open-file")) $("action-open-file").onclick = () => $("file").click();
@@ -2245,22 +2830,22 @@ if (boot.server && $("action-shutdown")) {
   $("shutdown-divider").hidden = false;
   $("action-shutdown").hidden = false;
   $("action-shutdown").onclick = async () => {
-    if (!window.confirm("Encerrar o mkvis3d?")) return;
+    if (!window.confirm("Shut down mkvis3d?")) return;
     try {
       const response = await fetch("/api/shutdown", {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
-      if (!response.ok) throw new Error("O aplicativo recusou o encerramento.");
-      document.title = "mkvis3d encerrado";
+      if (!response.ok) throw new Error("Application rejected shutdown request.");
+      document.title = "mkvis3d shut down";
       document.body.innerHTML = [
         '<main style="font:16px system-ui;max-width:560px;margin:15vh auto;padding:24px;">',
-        "<h1>mkvis3d encerrado</h1>",
-        "<p>Você já pode fechar esta aba do navegador.</p>",
+        "<h1>mkvis3d shut down</h1>",
+        "<p>You can now close this browser tab.</p>",
         "</main>"
       ].join("");
     } catch (error) {
-      status(`Não foi possível encerrar: ${error.message}`, true);
+      status(`Could not shut down: ${error.message}`, true);
     }
   };
 }
@@ -2323,12 +2908,36 @@ bindToggle("action-toggle-trails", "trail");
 bindToggle("action-toggle-bones", "bones");
 bindToggle("action-toggle-loop", "loop");
 
+function syncSceneMenu() {
+  $("action-toggle-axes").textContent = (showLabAxes ? "✓ " : "") + "Lab Coordinate Axes";
+  document.querySelectorAll("[data-up], [data-floor]").forEach(item => {
+    const selected = item.dataset.up ? item.dataset.up === $("up").value : item.dataset.floor === groundLevel;
+    item.textContent = (selected ? "✓ " : "") + item.textContent.replace(/^[✓\s]+/, "");
+    item.setAttribute("aria-pressed", String(selected));
+  });
+}
+$("action-toggle-axes").onclick = () => {
+  showLabAxes = !showLabAxes;
+  syncSceneMenu(); draw(); saveSessionState();
+};
+document.querySelectorAll("[data-up]").forEach(item => {
+  item.onclick = () => {
+    $("up").value = item.dataset.up;
+    $("up").dispatchEvent(new Event("change"));
+  };
+});
+document.querySelectorAll("[data-floor]").forEach(item => {
+  item.onclick = () => {
+    groundLevel = item.dataset.floor;
+    syncSceneMenu(); draw(); saveSessionState();
+  };
+});
+syncSceneMenu();
+
 // Theme toggles
 if ($("btn-toggle-theme")) $("btn-toggle-theme").onclick = toggleTheme;
 if ($("action-theme-dark")) $("action-theme-dark").onclick = () => setTheme("dark");
 if ($("action-theme-light")) $("action-theme-light").onclick = () => setTheme("light");
-if ($("action-opt-theme-dark")) $("action-opt-theme-dark").onclick = () => setTheme("dark");
-if ($("action-opt-theme-light")) $("action-opt-theme-light").onclick = () => setTheme("light");
 
 // Distance Measurement Toggle
 function setDistanceVisible(visible) {
@@ -2376,18 +2985,26 @@ function setAngleVisible(visible) {
 function setAngleMode(mode) {
   angleMode = mode;
   const is3pt = mode === "3pt";
+  const is4pt = mode === "4pt";
+  const isAbs = mode === "abs";
   if ($("btn-angle-mode-3pt")) {
     $("btn-angle-mode-3pt").classList.toggle("active", is3pt);
     $("btn-angle-mode-3pt").style.background = is3pt ? "var(--accent)" : "var(--bg-canvas)";
     $("btn-angle-mode-3pt").style.color = is3pt ? "#fff" : "var(--text-normal)";
   }
   if ($("btn-angle-mode-4pt")) {
-    $("btn-angle-mode-4pt").classList.toggle("active", !is3pt);
-    $("btn-angle-mode-4pt").style.background = !is3pt ? "var(--accent)" : "var(--bg-canvas)";
-    $("btn-angle-mode-4pt").style.color = !is3pt ? "#fff" : "var(--text-normal)";
+    $("btn-angle-mode-4pt").classList.toggle("active", is4pt);
+    $("btn-angle-mode-4pt").style.background = is4pt ? "var(--accent)" : "var(--bg-canvas)";
+    $("btn-angle-mode-4pt").style.color = is4pt ? "#fff" : "var(--text-normal)";
+  }
+  if ($("btn-angle-mode-abs")) {
+    $("btn-angle-mode-abs").classList.toggle("active", isAbs);
+    $("btn-angle-mode-abs").style.background = isAbs ? "var(--accent)" : "var(--bg-canvas)";
+    $("btn-angle-mode-abs").style.color = isAbs ? "#fff" : "var(--text-normal)";
   }
   if ($("angle-3pt-container")) $("angle-3pt-container").style.display = is3pt ? "block" : "none";
-  if ($("angle-4pt-container")) $("angle-4pt-container").style.display = !is3pt ? "block" : "none";
+  if ($("angle-4pt-container")) $("angle-4pt-container").style.display = is4pt ? "block" : "none";
+  if ($("angle-abs-container")) $("angle-abs-container").style.display = isAbs ? "block" : "none";
   measureAngle();
 }
 
@@ -2403,6 +3020,9 @@ if ($("btn-angle-mode-3pt")) {
 if ($("btn-angle-mode-4pt")) {
   $("btn-angle-mode-4pt").onclick = () => setAngleMode("4pt");
 }
+if ($("btn-angle-mode-abs")) {
+  $("btn-angle-mode-abs").onclick = () => setAngleMode("abs");
+}
 if ($("btn-plot-angle-curve")) {
   $("btn-plot-angle-curve").onclick = () => {
     if ($("plot1-mode")) {
@@ -2412,7 +3032,7 @@ if ($("btn-plot-angle-curve")) {
     }
   };
 }
-for (const id of ["angle-marker-a", "angle-marker-b", "angle-marker-c", "angle-v1-a", "angle-v1-b", "angle-v2-c", "angle-v2-d"]) {
+for (const id of ["angle-marker-a", "angle-marker-b", "angle-marker-c", "angle-v1-a", "angle-v1-b", "angle-v2-c", "angle-v2-d", "angle-abs-a", "angle-abs-b", "angle-abs-axis"]) {
   if ($(id)) $(id).onchange = measureAngle;
 }
 
@@ -2446,6 +3066,11 @@ function floatPane(paneId) {
     pane.style.top = `${80 + count * 35}px`;
     pane.style.left = `${340 + count * 35}px`;
   }
+
+  // Keep the title bar and dialog controls reachable on smaller workspaces.
+  const bounds = pane.getBoundingClientRect();
+  pane.style.left = `${Math.max(0, Math.min(bounds.left, window.innerWidth - bounds.width))}px`;
+  pane.style.top = `${Math.max(0, Math.min(bounds.top, window.innerHeight - bounds.height))}px`;
 
   const floatBtn = pane.querySelector(".btn-float");
   if (floatBtn) {
@@ -2680,7 +3305,7 @@ function popoutPane(paneId, placement = null) {
         <select id="pop-plot-mode" class="pop-select" title="Plot Mode">
           <option value="distance">Distance (Marker A to B)</option>
           <option value="active-z">Active Marker · Z Position (Height)</option>
-          <option value="active-xyz">Active Marker · X, Y, Z Coordinates</option>
+          <option value="active-xyz">Active Markers X, Y, Z</option>
           <option value="active-speed">Active Marker · 3D Velocity / Speed</option>
         </select>
       ` : ""}
@@ -2758,37 +3383,49 @@ function popoutPane(paneId, placement = null) {
     pop3d.style.cursor = "grab";
     container.appendChild(pop3d);
 
-    let isOrbit = false, isPan = false, pX = 0, pY = 0;
+    let popDrag = null;
+    let popDragButton = 0;
     pop3d.addEventListener("pointerdown", e => {
-      isOrbit = e.button === 0 && !e.shiftKey;
-      isPan = e.button === 1 || (e.button === 0 && e.shiftKey) || e.button === 2;
-      pX = e.clientX; pY = e.clientY;
-      pop3d.setPointerCapture(e.pointerId);
+      if (e.button !== 0 && e.button !== 1) return;
+      popDragButton = e.button;
+      popDrag = [e.clientX, e.clientY];
+      try { pop3d.setPointerCapture(e.pointerId); } catch (_) {}
       e.preventDefault();
     });
     pop3d.addEventListener("pointermove", e => {
-      if (!isOrbit && !isPan) return;
-      const dx = e.clientX - pX, dy = e.clientY - pY;
-      pX = e.clientX; pY = e.clientY;
-      if (isOrbit) {
+      if (!popDrag) return;
+      const dx = e.clientX - popDrag[0], dy = e.clientY - popDrag[1];
+      popDrag = [e.clientX, e.clientY];
+      if (popDragButton === 1) {
         yaw += dx * 0.008;
-        pitch = Math.max(-1.5, Math.min(1.5, pitch - dy * 0.008));
-      } else if (isPan) {
-        pan[0] += dx * 0.002 * span / zoom;
-        pan[1] -= dy * 0.002 * span / zoom;
+        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.008));
+      } else if (e.ctrlKey || e.metaKey) {
+        zoom = Math.max(0.1, Math.min(20, zoom * Math.exp(-dy * 0.01)));
+      } else if (e.shiftKey) {
+        pan[0] += dx;
+        pan[1] += dy;
+      } else if (e.altKey || viewportMode === "rotate") {
+        yaw += dx * 0.008;
+        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.008));
+      } else if (viewportMode === "pan") {
+        pan[0] += dx;
+        pan[1] += dy;
       }
       draw();
+      saveSessionState();
     });
     const stop3d = e => {
-      isOrbit = false; isPan = false;
+      popDrag = null;
+      popDragButton = 0;
       try { pop3d.releasePointerCapture(e.pointerId); } catch (_) {}
     };
     pop3d.addEventListener("pointerup", stop3d);
     pop3d.addEventListener("pointercancel", stop3d);
     pop3d.addEventListener("wheel", e => {
-      zoom = Math.max(0.1, Math.min(20, zoom * (e.deltaY > 0 ? 0.9 : 1.1)));
-      draw();
       e.preventDefault();
+      zoom = Math.max(0.1, Math.min(20, zoom * Math.exp(-e.deltaY * 0.001)));
+      draw();
+      saveSessionState();
     }, { passive: false });
   } else if (baseType === "panel-table") {
     const wrap = doc.createElement("div");
@@ -3580,6 +4217,528 @@ if ($("action-win-video")) $("action-win-video").onclick = () => {
   resize();
 };
 
+// Operations on Selected Markers (Context Menu & Modal)
+function togglePinSelectedMarkers() {
+  if (!trial || !trial.labels) return;
+  const indices = Array.from(selectedMarkerIndices);
+  if (indices.length === 0) {
+    status("No markers selected to pin/unpin.", true);
+    return;
+  }
+  const allPinned = indices.every(i => pinnedMarkerIndices.has(i));
+  if (allPinned) {
+    indices.forEach(i => pinnedMarkerIndices.delete(i));
+    status(`Unpinned ${indices.length} marker(s).`);
+  } else {
+    indices.forEach(i => pinnedMarkerIndices.add(i));
+    status(`Pinned ${indices.length} marker(s) with persistent halos and labels.`);
+  }
+  syncPointsModal();
+  draw();
+  saveSessionState();
+}
+
+function exportSelectedMarkersCsv() {
+  if (!trial) return;
+  const indices = Array.from(selectedMarkerIndices);
+  if (indices.length === 0) {
+    status("No markers selected to export.", true);
+    return;
+  }
+  const header = ["frame", "time_s"];
+  indices.forEach(i => {
+    const lbl = trial.labels[i] || `M${i + 1}`;
+    header.push(`${lbl}_x`, `${lbl}_y`, `${lbl}_z`);
+  });
+  const rows = [header.join(",")];
+  const rate = trial.rate_hz || 100.0;
+  trial.xyz.forEach((framePts, f) => {
+    const row = [f, (f / rate).toFixed(5)];
+    indices.forEach(i => {
+      const pt = framePts[i];
+      if (valid(pt)) row.push(pt[0], pt[1], pt[2]);
+      else row.push("", "", "");
+    });
+    rows.push(row.join(","));
+  });
+  download(rows.join("\n") + "\n", `${trial.name}_selected_markers.csv`, "text/csv");
+  status(`Exported ${indices.length} selected markers to CSV.`);
+}
+
+function promptName(message, defaultValue) {
+  if (typeof navigator !== "undefined" && navigator.webdriver) {
+    return defaultValue;
+  }
+  try {
+    return window.prompt(message, defaultValue);
+  } catch (_) {
+    return defaultValue;
+  }
+}
+
+function createSegmentFromSelected(customName = null) {
+  if (!trial || !trial.labels) return;
+  const indices = Array.from(selectedMarkerIndices);
+  if (indices.length < 2) {
+    status("Please select at least 2 markers (Alt + drag or click) to create a segment.", true);
+    return;
+  }
+  const iA = indices[0], iB = indices[1];
+  const lblA = trial.labels[iA];
+  const lblB = trial.labels[iB];
+  let segName = customName;
+  if (segName === null || segName === undefined) {
+    const suggested = `${lblA}_${lblB}`;
+    segName = promptName(`Enter a name for the new segment connecting "${lblA}" and "${lblB}":`, suggested);
+    if (segName === null) return; // User cancelled
+    segName = segName.trim() || suggested;
+  }
+  const exists = skeletonPairs.some(p => (p[0] === iA && p[1] === iB) || (p[0] === iB && p[1] === iA));
+  if (!exists) {
+    skeletonPairs.push([Math.min(iA, iB), Math.max(iA, iB)]);
+    customSegments.push([lblA, lblB, segName]);
+  }
+  if ($("bones")) $("bones").checked = true;
+  const badge = $("skeleton-status-badge");
+  if (badge) {
+    badge.textContent = `${skeletonPairs.length} connections`;
+    badge.style.color = "var(--accent)";
+  }
+  draw();
+  saveSessionState();
+  status(`Created segment "${segName}" between "${lblA}" and "${lblB}".`);
+}
+
+function createLCSFromSelected(customName = null, targetSystem = "s1") {
+  if (!trial || !trial.labels) return;
+  const indices = Array.from(selectedMarkerIndices);
+  if (indices.length < 3) {
+    status("Please select at least 3 markers to define a Local Reference System (LCS) plane.", true);
+    return;
+  }
+  const prefix = targetSystem === "s2" ? "s2" : "s1";
+  const lbl0 = trial.labels[indices[0]], lbl1 = trial.labels[indices[1]], lbl2 = trial.labels[indices[2]];
+  let sysName = customName;
+  if (sysName === null || sysName === undefined) {
+    const defaultName = `${lbl0}_plane`;
+    sysName = promptName(`Enter name for Local System ${targetSystem.toUpperCase()} (${lbl0}, ${lbl1}, ${lbl2}):`, $(`${prefix}-name`)?.value || defaultName);
+    if (sysName === null) return;
+    sysName = sysName.trim() || defaultName;
+  }
+  if ($(`${prefix}-name`)) $(`${prefix}-name`).value = sysName;
+  if ($(`${prefix}-origin`)) $(`${prefix}-origin`).value = String(indices[0]);
+  if ($(`${prefix}-primary-pt`)) $(`${prefix}-primary-pt`).value = String(indices[1]);
+  if ($(`${prefix}-plane-pt`)) $(`${prefix}-plane-pt`).value = String(indices[2]);
+  openKinematicsModal();
+  updateKinematicsBasisFeedback();
+  status(`Defined LCS plane "${sysName}" (${targetSystem.toUpperCase()}) from markers: ${lbl0}, ${lbl1}, ${lbl2}.`);
+}
+
+async function computeKinematicsFromSelected(customName = null, targetSystem = "s1") {
+  if (!trial || !trial.labels) return;
+  const indices = Array.from(selectedMarkerIndices);
+  if (indices.length < 3) {
+    status("Please select at least 3 markers to define a plane and compute kinematics.", true);
+    return;
+  }
+  const prefix = targetSystem === "s2" ? "s2" : "s1";
+  const lbl0 = trial.labels[indices[0]], lbl1 = trial.labels[indices[1]], lbl2 = trial.labels[indices[2]];
+  let sysName = customName;
+  if (sysName === null || sysName === undefined) {
+    const defaultName = `${lbl0}_LCS`;
+    sysName = promptName(`Enter name for Local System ${targetSystem.toUpperCase()} (${lbl0}, ${lbl1}, ${lbl2}):`, $(`${prefix}-name`)?.value || defaultName);
+    if (sysName === null) return;
+    sysName = sysName.trim() || defaultName;
+  }
+  if ($(`${prefix}-name`)) $(`${prefix}-name`).value = sysName;
+  if ($(`${prefix}-origin`)) $(`${prefix}-origin`).value = String(indices[0]);
+  if ($(`${prefix}-primary-pt`)) $(`${prefix}-primary-pt`).value = String(indices[1]);
+  if ($(`${prefix}-plane-pt`)) $(`${prefix}-plane-pt`).value = String(indices[2]);
+
+  kinematicsConfig.showTriads = true;
+  if ($("chk-show-kinematics-triads")) $("chk-show-kinematics-triads").checked = true;
+
+  openKinematicsModal();
+  updateKinematicsBasisFeedback();
+  await computeKinematics();
+  status(`Computed kinematics for "${sysName}" (Euler angles, MR, and Quaternions live).`);
+}
+
+function setAngleMeasurementFromSelected() {
+  if (!trial || !trial.labels) return;
+  const indices = Array.from(selectedMarkerIndices);
+  if (indices.length === 2) {
+    setAngleMode("abs");
+    if ($("angle-abs-a")) $("angle-abs-a").value = String(indices[0]);
+    if ($("angle-abs-b")) $("angle-abs-b").value = String(indices[1]);
+    setAngleVisible(true);
+    measureAngle();
+    status(`Measuring absolute angle for segment ${trial.labels[indices[0]]} → ${trial.labels[indices[1]]}.`);
+  } else if (indices.length === 3) {
+    setAngleMode("3pt");
+    if ($("angle-marker-a")) $("angle-marker-a").value = String(indices[0]);
+    if ($("angle-marker-b")) $("angle-marker-b").value = String(indices[1]);
+    if ($("angle-marker-c")) $("angle-marker-c").value = String(indices[2]);
+    setAngleVisible(true);
+    measureAngle();
+    status(`Measuring 3-point vertex angle at ${trial.labels[indices[1]]}.`);
+  } else if (indices.length >= 4) {
+    setAngleMode("4pt");
+    if ($("angle-v1-a")) $("angle-v1-a").value = String(indices[0]);
+    if ($("angle-v1-b")) $("angle-v1-b").value = String(indices[1]);
+    if ($("angle-v2-c")) $("angle-v2-c").value = String(indices[2]);
+    if ($("angle-v2-d")) $("angle-v2-d").value = String(indices[3]);
+    setAngleVisible(true);
+    measureAngle();
+    status("Measuring 4-point angle between V1 and V2.");
+  } else {
+    status("Please select 2 or more markers to measure angles.", true);
+  }
+}
+
+// Context Menu Action Listeners
+if ($("ctx-action-create-segment")) {
+  $("ctx-action-create-segment").onclick = () => { createSegmentFromSelected(); hideCanvasContextMenu(); };
+}
+if ($("ctx-action-create-lcs")) {
+  $("ctx-action-create-lcs").onclick = () => { createLCSFromSelected(null, "s1"); hideCanvasContextMenu(); };
+}
+if ($("ctx-action-create-lcs-s2")) {
+  $("ctx-action-create-lcs-s2").onclick = () => { createLCSFromSelected(null, "s2"); hideCanvasContextMenu(); };
+}
+if ($("ctx-action-compute-kinematics")) {
+  $("ctx-action-compute-kinematics").onclick = () => { computeKinematicsFromSelected(null, "s1"); hideCanvasContextMenu(); };
+}
+if ($("ctx-action-measure-angle")) {
+  $("ctx-action-measure-angle").onclick = () => { setAngleMeasurementFromSelected(); hideCanvasContextMenu(); };
+}
+if ($("ctx-action-pin-points")) {
+  $("ctx-action-pin-points").onclick = () => { togglePinSelectedMarkers(); hideCanvasContextMenu(); };
+}
+if ($("ctx-action-export-csv")) {
+  $("ctx-action-export-csv").onclick = () => { exportSelectedMarkersCsv(); hideCanvasContextMenu(); };
+}
+if ($("ctx-action-clear-selection")) {
+  $("ctx-action-clear-selection").onclick = () => { clearMarkerSelectionGroup(); hideCanvasContextMenu(); };
+}
+
+// Select Points Modal (WAI-ARIA APG Multi-Select Listbox)
+let pointsModalFocusedIndex = 0;
+let pointsModalAnchorIndex = 0;
+let pointsFilterQuery = "";
+let isPointsListDragging = false;
+
+function openPointsModal() {
+  const modal = $("modal-points");
+  if (!modal) return;
+  modal.hidden = false;
+  floatPane("modal-points");
+  syncPointsModal();
+  if ($("points-search-input")) {
+    $("points-search-input").focus();
+  }
+}
+
+function closePointsModal() {
+  const modal = $("modal-points");
+  if (!modal) return;
+  if (document.activeElement && document.activeElement.closest("#modal-points")) {
+    document.activeElement.blur();
+  }
+  dockPane("modal-points");
+  modal.hidden = true;
+}
+
+function getFilteredMarkerList() {
+  if (!trial || !trial.labels) return [];
+  const query = (pointsFilterQuery || "").trim().toLowerCase();
+  const list = [];
+  for (let i = 0; i < trial.labels.length; i++) {
+    const name = trial.labels[i] || `Marker ${i + 1}`;
+    if (!query || name.toLowerCase().includes(query)) {
+      list.push({ index: i, name });
+    }
+  }
+  return list;
+}
+
+function syncPointsModal() {
+  const listbox = $("points-listbox");
+  const countEl = $("points-selection-count");
+  if (!trial || !trial.labels) {
+    if (countEl) countEl.textContent = "0 of 0 selected";
+    if (listbox) listbox.innerHTML = '<div style="padding: 12px; color: var(--text-muted); font-size: 11px;">No trial loaded</div>';
+    return;
+  }
+
+  const total = trial.labels.length;
+  const selCount = selectedMarkerIndices.size;
+  if (countEl) {
+    countEl.textContent = `${selCount} of ${total} selected`;
+  }
+
+  const btnPin = $("btn-points-pin-selected");
+  if (btnPin) {
+    const allPinned = selCount > 0 && Array.from(selectedMarkerIndices).every(i => pinnedMarkerIndices.has(i));
+    btnPin.textContent = allPinned ? "Unpin Selected" : "📌 Pin Selected";
+    btnPin.disabled = selCount === 0;
+  }
+  const btnExportCsv = $("btn-points-export-csv");
+  if (btnExportCsv) {
+    btnExportCsv.disabled = selCount === 0;
+  }
+
+  if (!listbox) return;
+  const filtered = getFilteredMarkerList();
+
+  if (filtered.length === 0) {
+    listbox.innerHTML = '<div style="padding: 12px; color: var(--text-muted); font-size: 11px;">No matching markers</div>';
+    return;
+  }
+
+  const pts = (trial.xyz && trial.xyz[frame]) ? trial.xyz[frame] : null;
+
+  listbox.replaceChildren(...filtered.map((item, fIdx) => {
+    const i = item.index;
+    const isSelected = selectedMarkerIndices.has(i);
+    const isActive = i === activeMarkerIndex;
+    const isFocused = fIdx === pointsModalFocusedIndex;
+    const isCOM = item.name.startsWith("CenterOfMass_deLeva");
+    const isPinned = pinnedMarkerIndices.has(i);
+    const hasCoords = pts && valid(pts[i]);
+
+    const opt = document.createElement("div");
+    opt.id = `point-opt-${i}`;
+    opt.className = "point-option" +
+      (isSelected ? " selected" : "") +
+      (isActive ? " active-point" : "") +
+      (isFocused ? " focused" : "");
+    opt.setAttribute("role", "option");
+    opt.setAttribute("aria-selected", isSelected ? "true" : "false");
+    opt.setAttribute("tabindex", isFocused ? "0" : "-1");
+    opt.dataset.index = String(i);
+    opt.dataset.filteredIndex = String(fIdx);
+
+    const statusTag = isCOM ? '<span style="font-size: 9px; padding: 1px 4px; border-radius: 2px; color: #ec4899; font-weight: 600;">CoM</span>'
+      : (hasCoords ? '<span style="font-size: 9px; padding: 1px 4px; border-radius: 2px; color: var(--accent); font-weight: 600;">OK</span>'
+      : '<span style="font-size: 9px; padding: 1px 4px; border-radius: 2px; color: var(--text-muted);">Missing</span>');
+
+    opt.innerHTML = `
+      <input type="checkbox" class="point-checkbox" style="pointer-events: none; accent-color: var(--accent);" ${isSelected ? "checked" : ""}>
+      <span style="flex: 1; font-family: monospace;">${item.name}</span>
+      ${isPinned ? '<span style="font-size: 10px; margin-right: 3px;" title="Pinned">📌</span>' : ""}
+      ${isActive ? '<span style="font-size: 10px; color: var(--accent); font-weight: 700; margin-right: 4px;">★ Active</span>' : ""}
+      ${statusTag}
+    `;
+
+    let lastHandledTime = 0;
+    opt.onpointerdown = e => {
+      isPointsListDragging = true;
+      lastHandledTime = Date.now();
+      handlePointOptionSelect(i, fIdx, e);
+    };
+
+    opt.onclick = e => {
+      if (Date.now() - lastHandledTime > 300) {
+        handlePointOptionSelect(i, fIdx, e);
+      }
+    };
+
+    opt.onpointerenter = e => {
+      if (isPointsListDragging && e.buttons === 1) {
+        handlePointOptionDragRange(fIdx);
+      }
+    };
+
+    return opt;
+  }));
+
+  const focusedEl = listbox.querySelector(".point-option.focused");
+  if (focusedEl) {
+    focusedEl.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function handlePointOptionSelect(index, filteredIndex, e) {
+  const filtered = getFilteredMarkerList();
+  if (e.shiftKey) {
+    const start = Math.min(pointsModalAnchorIndex, filteredIndex);
+    const end = Math.max(pointsModalAnchorIndex, filteredIndex);
+    for (let k = start; k <= end; k++) {
+      if (filtered[k]) selectedMarkerIndices.add(filtered[k].index);
+    }
+    activeMarkerIndex = index;
+    pointsModalFocusedIndex = filteredIndex;
+  } else if (e.ctrlKey || e.metaKey) {
+    if (selectedMarkerIndices.has(index)) {
+      selectedMarkerIndices.delete(index);
+    } else {
+      selectedMarkerIndices.add(index);
+      activeMarkerIndex = index;
+    }
+    pointsModalAnchorIndex = filteredIndex;
+    pointsModalFocusedIndex = filteredIndex;
+  } else {
+    selectedMarkerIndices = new Set([index]);
+    activeMarkerIndex = index;
+    pointsModalAnchorIndex = filteredIndex;
+    pointsModalFocusedIndex = filteredIndex;
+  }
+  syncActiveMarkerUI();
+  syncPointsModal();
+  updateTable();
+  draw();
+  saveSessionState();
+}
+
+function handlePointOptionDragRange(filteredIndex) {
+  const filtered = getFilteredMarkerList();
+  const start = Math.min(pointsModalAnchorIndex, filteredIndex);
+  const end = Math.max(pointsModalAnchorIndex, filteredIndex);
+  for (let k = start; k <= end; k++) {
+    if (filtered[k]) selectedMarkerIndices.add(filtered[k].index);
+  }
+  pointsModalFocusedIndex = filteredIndex;
+  if (filtered[filteredIndex]) {
+    activeMarkerIndex = filtered[filteredIndex].index;
+  }
+  syncActiveMarkerUI();
+  syncPointsModal();
+  updateTable();
+  draw();
+  saveSessionState();
+}
+
+window.addEventListener("pointerup", () => {
+  isPointsListDragging = false;
+});
+
+function initPointsModal() {
+  const listbox = $("points-listbox");
+  const searchInput = $("points-search-input");
+  const btnSelectAll = $("btn-points-select-all");
+  const btnUnselectAll = $("btn-points-unselect-all");
+  const btnPin = $("btn-points-pin-selected");
+  const btnExportCsv = $("btn-points-export-csv");
+  const btnClose = $("btn-close-points");
+  const btnOpenSidebar = $("btn-open-select-points");
+  const btnOpenMenu = $("action-win-select-points");
+
+  if (btnOpenSidebar) btnOpenSidebar.onclick = openPointsModal;
+  if (btnOpenMenu) btnOpenMenu.onclick = openPointsModal;
+  if (btnClose) btnClose.onclick = closePointsModal;
+  if (btnSelectAll) btnSelectAll.onclick = selectAllMarkers;
+  if (btnUnselectAll) btnUnselectAll.onclick = unselectAllMarkers;
+  if (btnPin) btnPin.onclick = togglePinSelectedMarkers;
+  if (btnExportCsv) btnExportCsv.onclick = exportSelectedMarkersCsv;
+
+  if (searchInput) {
+    searchInput.addEventListener("input", e => {
+      pointsFilterQuery = e.target.value;
+      pointsModalFocusedIndex = 0;
+      pointsModalAnchorIndex = 0;
+      syncPointsModal();
+    });
+  }
+
+  if (listbox) {
+    listbox.addEventListener("keydown", e => {
+      const filtered = getFilteredMarkerList();
+      if (!filtered.length) return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        const nextIdx = Math.min(filtered.length - 1, pointsModalFocusedIndex + 1);
+        if (e.shiftKey) {
+          const start = Math.min(pointsModalAnchorIndex, nextIdx);
+          const end = Math.max(pointsModalAnchorIndex, nextIdx);
+          for (let k = start; k <= end; k++) {
+            selectedMarkerIndices.add(filtered[k].index);
+          }
+          activeMarkerIndex = filtered[nextIdx].index;
+        }
+        pointsModalFocusedIndex = nextIdx;
+        syncPointsModal();
+        draw();
+        saveSessionState();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        const prevIdx = Math.max(0, pointsModalFocusedIndex - 1);
+        if (e.shiftKey) {
+          const start = Math.min(pointsModalAnchorIndex, prevIdx);
+          const end = Math.max(pointsModalAnchorIndex, prevIdx);
+          for (let k = start; k <= end; k++) {
+            selectedMarkerIndices.add(filtered[k].index);
+          }
+          activeMarkerIndex = filtered[prevIdx].index;
+        }
+        pointsModalFocusedIndex = prevIdx;
+        syncPointsModal();
+        draw();
+        saveSessionState();
+      } else if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (filtered[pointsModalFocusedIndex]) {
+          const idx = filtered[pointsModalFocusedIndex].index;
+          toggleMarkerSelection(idx);
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        e.stopPropagation();
+        selectAllMarkers();
+      }
+    });
+  }
+}
+
+function initViewportModeControls() {
+  const btnSelect = $("btn-mode-select");
+  const btnRotate = $("btn-mode-rotate");
+  const btnPan = $("btn-mode-pan");
+
+  if (btnSelect) btnSelect.onclick = () => setViewportMode("select");
+  if (btnRotate) btnRotate.onclick = () => setViewportMode("rotate");
+  if (btnPan) btnPan.onclick = () => setViewportMode("pan");
+}
+
+function initSkeletonStyleControls() {
+  const swatchesContainer = $("skeleton-color-swatches");
+  const colorPicker = $("skeleton-color-custom");
+  const btnReset = $("btn-reset-skeleton-style");
+
+  if (btnReset) btnReset.onclick = resetSkeletonStyle;
+  if (colorPicker) {
+    colorPicker.oninput = e => setSkeletonColor(e.target.value, e.target.value);
+  }
+
+  if (swatchesContainer) {
+    swatchesContainer.innerHTML = "";
+    // Auto swatch (theme default)
+    const autoBtn = document.createElement("button");
+    autoBtn.type = "button";
+    autoBtn.className = "color-swatch-btn" + (skeletonColor === "auto" ? " selected" : "");
+    autoBtn.dataset.color = "auto";
+    autoBtn.title = "Default (Theme Color)";
+    autoBtn.style.background = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
+    autoBtn.onclick = () => setSkeletonColor("auto", "Default (Theme)");
+    swatchesContainer.appendChild(autoBtn);
+
+    for (const item of MARKER_PALETTE) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "color-swatch-btn" + (skeletonColor === item.hex ? " selected" : "");
+      btn.dataset.color = item.hex;
+      btn.title = item.name;
+      btn.style.background = item.hex;
+      btn.onclick = () => setSkeletonColor(item.hex, item.name);
+      swatchesContainer.appendChild(btn);
+    }
+  }
+}
+
 // Help & Shortcuts Modals
 function openShortcutsModal() {
   const m = $("modal-shortcuts");
@@ -3696,7 +4855,6 @@ if (manualSearchInput) {
   });
 }
 
-if ($("action-view-shortcuts")) $("action-view-shortcuts").onclick = openShortcutsModal;
 if ($("action-help-shortcuts")) $("action-help-shortcuts").onclick = openShortcutsModal;
 if ($("btn-close-shortcuts")) $("btn-close-shortcuts").onclick = closeShortcutsModal;
 
@@ -3709,18 +4867,25 @@ if (shortcutsModalEl) {
 
 if ($("action-help-about")) {
   $("action-help-about").onclick = () => {
-    alert("mkvis3d · OpenBiomech\nModern biomechanical motion viewer & analysis suite\nCompatible with Vicon, Qualisys, C3D, CSV, and .3d formats.");
+    alert("OpenBiomech · vailá Multimodal Toolbox (mkvis3d)\nGitHub: https://github.com/paulopreto/mkvis3d\nModern biomechanical motion viewer & analysis suite\nCompatible with Vicon, Qualisys, C3D, CSV, and .3d formats.");
+  };
+}
+if ($("action-help-github")) {
+  $("action-help-github").onclick = () => {
+    window.open("https://github.com/paulopreto/mkvis3d", "_blank", "noopener,noreferrer");
   };
 }
 
 // Keyboard shortcuts
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
+    hideCanvasContextMenu();
     document.querySelectorAll(".modal-backdrop.open").forEach(m => m.classList.remove("open"));
     if (!$("modal-filter").hidden) closeFilterModal();
     if (!$("modal-lcs").hidden) closeLCSModal();
     if ($("modal-kinematics") && !$("modal-kinematics").hidden) closeKinematicsModal();
     if ($("modal-manual") && !$("modal-manual").hidden) closeManualModal();
+    if ($("modal-points") && !$("modal-points").hidden) closePointsModal();
     return;
   }
   if (e.altKey && (e.key === "k" || e.key === "K")) {
@@ -3746,10 +4911,19 @@ document.addEventListener("keydown", e => {
       return;
     }
   }
-  if (["INPUT", "SELECT", "BUTTON", "TEXTAREA"].includes(document.activeElement.tagName)) return;
-  if (e.code === "Space") { e.preventDefault(); $("play").click(); }
-  if (e.code === "ArrowLeft") step(-1);
-  if (e.code === "ArrowRight") step(1);
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+  if (document.activeElement && (document.activeElement.id === "points-listbox" || document.activeElement.closest("#modal-points"))) return;
+  if (document.activeElement && document.activeElement.tagName === "BUTTON" && (e.code === "Space" || e.key === " ")) return;
+  if (e.code === "Space") {
+    if (e.repeat) return;
+    e.preventDefault();
+    $("play").click();
+    return;
+  }
+  if (e.code === "ArrowLeft") { e.preventDefault(); step(-1); return; }
+  if (e.code === "ArrowRight") { e.preventDefault(); step(1); return; }
+  if (e.code === "ArrowDown") { e.preventDefault(); step(-60); return; }
+  if (e.code === "ArrowUp") { e.preventDefault(); step(60); return; }
   if (e.code === "Home") { e.preventDefault(); if ($("first")) $("first").click(); }
   if (e.code === "End") { e.preventDefault(); if ($("last")) $("last").click(); }
   if (e.key === "r" || e.key === "R") fit();
@@ -3782,6 +4956,39 @@ document.addEventListener("keydown", e => {
   }
   if (e.key === "d" || e.key === "D") {
     setDistanceVisible(!showDistance);
+  }
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    if (e.key === "a" || e.key === "A") {
+      e.preventDefault();
+      setAngleVisible(!showAngle);
+      return;
+    }
+    if (e.key === "p" || e.key === "P") {
+      e.preventDefault();
+      if ($("modal-points") && !$("modal-points").hidden) closePointsModal();
+      else openPointsModal();
+      return;
+    }
+    if (e.key === "m" || e.key === "M") {
+      e.preventDefault();
+      togglePinSelectedMarkers();
+      return;
+    }
+    if (e.key === "s" || e.key === "S") {
+      e.preventDefault();
+      applyQuickSmoothFilter();
+      return;
+    }
+    if (e.key === "k" || e.key === "K") {
+      e.preventDefault();
+      createSegmentFromSelected();
+      return;
+    }
+    if (e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      exportSelectedMarkersCsv();
+      return;
+    }
   }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "+" || e.key === "=")) {
     e.preventDefault();
@@ -4057,8 +5264,8 @@ function loadVailaProject(project) {
     $("orientation-status-badge").style.color = "var(--accent)";
   }
   const restorable = { ...state, trialName: trial.name };
-  sessionStorage.setItem("mkvis3d_session", JSON.stringify(restorable));
-  restoreSessionState(trial);
+  restoreSessionState(trial, restorable);
+  saveSessionState();
   recomputeTrialXYZ();
   updateLCSUI();
   updateFilterUI();
@@ -4080,6 +5287,7 @@ function saveStandaloneHtmlSnapshot() {
   root.setAttribute("data-theme", currentTheme);
   root.setAttribute("data-marker-size", String(markerSize));
   root.setAttribute("data-marker-color", markerColor);
+  root.setAttribute("data-skeleton-color", skeletonColor);
   root.querySelector("#trial-data").textContent = JSON.stringify({ server: false, trial }).replace(/</g, "\\u003c");
   download("<!doctype html>\n" + root.outerHTML, "movement.html", "text/html");
 }
@@ -4232,7 +5440,7 @@ function initMarkerControls() {
     }
   }
 
-  // Options menu items
+  // View menu items
   if ($("action-cycle-marker-color")) $("action-cycle-marker-color").onclick = cycleMarkerColor;
   if ($("action-inc-marker-size")) $("action-inc-marker-size").onclick = () => setMarkerSize(markerSize + 0.5);
   if ($("action-dec-marker-size")) $("action-dec-marker-size").onclick = () => setMarkerSize(markerSize - 0.5);
@@ -5127,6 +6335,7 @@ function updateLCSUI() {
       else if (zKey === "+Z") $("up").value = "z";
     }
   }
+  syncSceneMenu();
 }
 
 function updateFilterUI() {
@@ -5327,7 +6536,7 @@ function updateFilterPreview() {
   }
 
   const config = getModalFilterConfig();
-  const mode = $("plot1-mode") ? $("plot1-mode").value : "active-z";
+  const mode = $("plot1-mode") ? $("plot1-mode").value : "active-xyz";
 
   let rawValues = null;
   if (mode === "active-z") {
@@ -5407,32 +6616,51 @@ function revertFilter() {
   status("Reverted trial trajectories to raw unfiltered data.");
 }
 
+function applyQuickSmoothFilter(cutoffVal) {
+  if (typeof cutoffVal === "number" && cutoffVal > 0) {
+    quickFilterCutoff = cutoffVal;
+  } else if ($("quick-filter-cutoff")) {
+    const parsed = parseFloat($("quick-filter-cutoff").value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      quickFilterCutoff = parsed;
+    }
+  }
+  if ($("quick-filter-cutoff")) {
+    $("quick-filter-cutoff").value = String(quickFilterCutoff);
+  }
+  activeFilterConfig = {
+    hampel: false,
+    interp: "linear",
+    maxGap: 10,
+    smooth: "butterworth",
+    cutoff: quickFilterCutoff,
+    windowSize: 5,
+    scope: "all"
+  };
+  recomputeTrialXYZ();
+  updateFilterUI();
+  refresh3DViewport();
+  status(`Applied Quick Smooth: Zero-phase ${quickFilterCutoff} Hz Butterworth filter & linear gap-fill.`);
+}
+
 function initLCSAndFilterControls() {
   // Sidebar buttons
-  if ($("btn-open-lcs")) $("btn-open-lcs").onclick = openLCSModal;
   if ($("btn-open-filter")) $("btn-open-filter").onclick = openFilterModal;
-  if ($("btn-quick-filter")) $("btn-quick-filter").onclick = () => {
-    activeFilterConfig = {
-      hampel: false,
-      interp: "linear",
-      maxGap: 10,
-      smooth: "butterworth",
-      cutoff: 6.0,
-      windowSize: 5,
-      scope: "all"
+  if ($("btn-quick-filter")) $("btn-quick-filter").onclick = () => applyQuickSmoothFilter();
+  if ($("quick-filter-cutoff")) {
+    $("quick-filter-cutoff").onchange = (e) => {
+      const val = parseFloat(e.target.value);
+      if (Number.isFinite(val) && val > 0) {
+        quickFilterCutoff = val;
+        saveSessionState();
+      }
     };
-    recomputeTrialXYZ();
-    updateFilterUI();
-    refresh3DViewport();
-    status("Applied Quick Smooth: Zero-phase 6 Hz Butterworth filter & linear gap-fill.");
-  };
+  }
   if ($("btn-revert-filter")) $("btn-revert-filter").onclick = revertFilter;
 
-  // View & Options menu items
+  // Analysis menu items
   if ($("action-view-lcs")) $("action-view-lcs").onclick = openLCSModal;
   if ($("action-view-filter")) $("action-view-filter").onclick = openFilterModal;
-  if ($("action-opt-lcs")) $("action-opt-lcs").onclick = openLCSModal;
-  if ($("action-opt-filter")) $("action-opt-filter").onclick = openFilterModal;
 
   // Reference System (LCS) Dialog
   if ($("btn-close-lcs")) $("btn-close-lcs").onclick = closeLCSModal;
@@ -6929,6 +8157,7 @@ function drawVectorAngle3D(targetCtx, w, h) {
   const isLight = currentTheme === "light";
   const framePts = trial.xyz[frame];
   const is3pt = angleMode === "3pt";
+  const isAbs = angleMode === "abs";
 
   const colorU = isLight ? "#0284c7" : "#38bdf8"; // Cyan
   const colorV = isLight ? "#d97706" : "#fbbf24"; // Amber/Gold
@@ -7005,6 +8234,93 @@ function drawVectorAngle3D(targetCtx, w, h) {
       if (midPt2D) {
         targetCtx.font = "bold 11px system-ui, sans-serif";
         const labelText = `θ = ${thetaDeg.toFixed(1)}°`;
+        const textWidth = targetCtx.measureText(labelText).width;
+        targetCtx.fillStyle = isLight ? "rgba(255, 255, 255, 0.88)" : "rgba(15, 23, 42, 0.88)";
+        targetCtx.fillRect(midPt2D[0] + 6, midPt2D[1] - 12, textWidth + 8, 16);
+        targetCtx.strokeStyle = colorArc;
+        targetCtx.lineWidth = 1;
+        targetCtx.strokeRect(midPt2D[0] + 6, midPt2D[1] - 12, textWidth + 8, 16);
+        targetCtx.fillStyle = colorText;
+        targetCtx.fillText(labelText, midPt2D[0] + 10, midPt2D[1]);
+      }
+    }
+  } else if (isAbs) {
+    const absA = Number($("angle-abs-a") ? $("angle-abs-a").value : 0);
+    const absB = Number($("angle-abs-b") ? $("angle-abs-b").value : 1);
+    const absAxis = $("angle-abs-axis") ? $("angle-abs-axis").value : "+Z";
+    const pa = framePts[absA], pb = framePts[absB];
+    if (!valid(pa) || !valid(pb)) return;
+
+    // Segment vector u from pa to pb
+    const rawU = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+    const axisData = getGlobalAxisVector(absAxis, rawU);
+    const u = axisData.uVec;
+    const v = axisData.refVec;
+    const normU = Math.hypot(u[0], u[1], u[2]);
+    const normV = Math.hypot(v[0], v[1], v[2]);
+    if (normU <= 1e-9 || normV <= 1e-9) return;
+
+    // Draw Segment Vector Line: pa -> pb
+    line(pa, pb, colorU, 2.5, targetCtx, w, h);
+
+    // Draw Reference Axis Ray starting at Origin pa
+    const refLen = Math.max(0.12, normU * 0.75);
+    const pRefEnd = [pa[0] + v[0] * refLen, pa[1] + v[1] * refLen, pa[2] + v[2] * refLen];
+    const colorRef = "#10b981"; // Emerald Green for SG global reference axis
+    line(pa, pRefEnd, colorRef, 2.5, targetCtx, w, h);
+
+    // Highlight Origin pa with a ring
+    const pOrigin = project(pa, w, h);
+    targetCtx.beginPath();
+    targetCtx.arc(pOrigin[0], pOrigin[1], markerSize * 1.8, 0, Math.PI * 2);
+    targetCtx.strokeStyle = colorArc;
+    targetCtx.lineWidth = 2;
+    targetCtx.stroke();
+
+    // Compute angle theta
+    const dot = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    const cosVal = Math.max(-1.0, Math.min(1.0, dot / (normU * normV)));
+    const thetaRad = Math.acos(cosVal);
+    const thetaDeg = thetaRad * (180.0 / Math.PI);
+
+    // Draw 3D Circular Arc around vertex pa in plane of (u, v)
+    const e1 = [u[0] / normU, u[1] / normU, u[2] / normU];
+    const vDotE1 = v[0] * e1[0] + v[1] * e1[1] + v[2] * e1[2];
+    let e2 = [v[0] - vDotE1 * e1[0], v[1] - vDotE1 * e1[1], v[2] - vDotE1 * e1[2]];
+    const normE2 = Math.hypot(e2[0], e2[1], e2[2]);
+    if (normE2 > 1e-9) {
+      e2 = [e2[0] / normE2, e2[1] / normE2, e2[2] / normE2];
+      const arcRadius = Math.min(Math.max(0.04, normU * 0.35), 0.25);
+      const steps = 16;
+      let midPt2D = null;
+
+      targetCtx.beginPath();
+      targetCtx.strokeStyle = colorArc;
+      targetCtx.lineWidth = 2;
+
+      for (let s = 0; s <= steps; s++) {
+        const phi = (s / steps) * thetaRad;
+        const pt3D = [
+          pa[0] + arcRadius * (Math.cos(phi) * e1[0] + Math.sin(phi) * e2[0]),
+          pa[1] + arcRadius * (Math.cos(phi) * e1[1] + Math.sin(phi) * e2[1]),
+          pa[2] + arcRadius * (Math.cos(phi) * e1[2] + Math.sin(phi) * e2[2]),
+        ];
+        const pt2D = project(pt3D, w, h);
+        if (s === 0) {
+          targetCtx.moveTo(pt2D[0], pt2D[1]);
+        } else {
+          targetCtx.lineTo(pt2D[0], pt2D[1]);
+        }
+        if (s === Math.floor(steps / 2)) {
+          midPt2D = pt2D;
+        }
+      }
+      targetCtx.stroke();
+
+      // Draw angle text billboard near midpoint of the arc
+      if (midPt2D) {
+        targetCtx.font = "bold 11px system-ui, sans-serif";
+        const labelText = `θ = ${thetaDeg.toFixed(1)}° (${absAxis})`;
         const textWidth = targetCtx.measureText(labelText).width;
         targetCtx.fillStyle = isLight ? "rgba(255, 255, 255, 0.88)" : "rgba(15, 23, 42, 0.88)";
         targetCtx.fillRect(midPt2D[0] + 6, midPt2D[1] - 12, textWidth + 8, 16);
@@ -7305,18 +8621,12 @@ function initKinematicsControls() {
     }
   };
 
-  if ($("btn-open-kinematics")) $("btn-open-kinematics").onclick = () => openKinematicsTab("bases");
   if ($("btn-win-header-kinematics")) $("btn-win-header-kinematics").onclick = () => openKinematicsTab("bases");
-  if ($("btn-plot-kinematics")) $("btn-plot-kinematics").onclick = () => openKinematicsTab("live");
-  if ($("btn-sidebar-vp-quick")) $("btn-sidebar-vp-quick").onclick = () => openKinematicsTab("virtual");
+  if ($("btn-plot-kinematics")) $("btn-plot-kinematics").onclick = () => openKinematicsTab("kinematics");
 
-  if ($("action-win-kinematics")) $("action-win-kinematics").onclick = () => openKinematicsTab("bases");
-  if ($("action-opt-kinematics")) $("action-opt-kinematics").onclick = () => openKinematicsTab("bases");
-  if ($("action-view-kinematics")) $("action-view-kinematics").onclick = () => openKinematicsTab("bases");
   if ($("action-kinematics-modal")) $("action-kinematics-modal").onclick = () => openKinematicsTab("bases");
-  if ($("action-kinematics-virtual-pts")) $("action-kinematics-virtual-pts").onclick = () => openKinematicsTab("virtual");
-  if ($("action-kinematics-bases-tab")) $("action-kinematics-bases-tab").onclick = () => openKinematicsTab("bases");
-  if ($("action-kinematics-live-tab")) $("action-kinematics-live-tab").onclick = () => openKinematicsTab("live");
+  if ($("action-kinematics-virtual-pts")) $("action-kinematics-virtual-pts").onclick = () => openKinematicsTab("points");
+  if ($("action-kinematics-live-tab")) $("action-kinematics-live-tab").onclick = () => openKinematicsTab("kinematics");
 
   const plotEulerOnTimeline = () => {
     if (!kinematicsConfig.computed) {
@@ -7333,15 +8643,12 @@ function initKinematicsControls() {
         $("plot1-mode").appendChild(opt);
       }
       $("plot1-mode").value = "kinematics-euler";
-      drawSinglePlot("graph", $("plot1-mode").value);
+      draw();
       status("Plot 1 now displaying Relative Kinematics Euler angles.");
     }
   };
 
-  if ($("btn-sidebar-plot-euler")) $("btn-sidebar-plot-euler").onclick = plotEulerOnTimeline;
   if ($("action-kinematics-plot-euler")) $("action-kinematics-plot-euler").onclick = plotEulerOnTimeline;
-  if ($("action-kinematics-export-csv")) $("action-kinematics-export-csv").onclick = exportKinematicsCSV;
-  if ($("action-kinematics-export-py")) $("action-kinematics-export-py").onclick = () => openKinematicsTab("export");
   if ($("action-export-kinematics-csv")) $("action-export-kinematics-csv").onclick = exportKinematicsCSV;
   if ($("action-export-kinematics-py")) $("action-export-kinematics-py").onclick = () => openKinematicsTab("export");
 
@@ -7771,8 +9078,12 @@ initInterpolationAndPlotControls();
 initKinematicsControls();
 initVerticalSplitter();
 initHorizontalSplitter();
+initViewportModeControls();
+initSkeletonStyleControls();
+initPointsModal();
 resize();
 setTheme(currentTheme);
 setMarkerSize(markerSize);
 setMarkerColor(markerColor);
+setSkeletonColor(skeletonColor);
 if (boot && boot.server) checkCompanionVideos();

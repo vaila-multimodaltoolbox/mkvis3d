@@ -141,6 +141,8 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
   top: 100%;
   left: 0;
   min-width: 230px;
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -150,6 +152,12 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
 }
 .menu-item.open > .dropdown-menu { display: block; }
 .dropdown-item {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -160,7 +168,7 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
   text-decoration: none;
   white-space: nowrap;
 }
-.dropdown-item:hover { background: var(--accent-subtle); color: var(--accent); }
+.dropdown-item:hover, .dropdown-item:focus-visible { background: var(--accent-subtle); color: var(--accent); }
 .dropdown-divider { height: 1px; background: var(--border-color); margin: 5px 0; }
 .dropdown-header { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); padding: 5px 14px 2px; }
 .shortcut-hint { font-size: 11px; color: var(--text-muted); margin-left: 14px; }
@@ -206,12 +214,27 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
 /* Sidebar */
 #sidebar {
   width: 280px;
+  flex: 0 0 280px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   user-select: none;
+}
+#sidebar[hidden] { display: none; }
+#sidebar-toggle-rail {
+  flex: 0 0 28px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-color);
+}
+#btn-toggle-sidebar {
+  width: 100%;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 22px;
 }
 .sidebar-section {
   padding: 14px 16px;
@@ -314,8 +337,13 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 #windows-container.layout-default #panel-plot1 { grid-row: 3; grid-column: 1; }
 
 #windows-container.layout-dual {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-rows: 1fr 6px var(--plot-height, 170px);
+}
+@media (max-width: 1100px) {
+  #windows-container.layout-dual {
+    grid-template-rows: 1fr 6px max(220px, var(--plot-height, 170px));
+  }
 }
 #windows-container.layout-dual #panel-3d { grid-row: 1; grid-column: 1 / 3; }
 #windows-container.layout-dual #vertical-splitter { grid-row: 2; grid-column: 1 / 3; }
@@ -323,7 +351,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 #windows-container.layout-dual #panel-plot2 { grid-row: 3; grid-column: 2; }
 
 #windows-container.layout-full {
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   grid-template-rows: 1fr 6px var(--plot-height, 170px);
 }
 #windows-container.layout-full #panel-3d { grid-row: 1; grid-column: 1; }
@@ -338,7 +366,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 #windows-container.layout-3d #vertical-splitter { display: none !important; }
 
 #windows-container.layout-video {
-  grid-template-columns: 1fr 6px var(--video-col-width, 420px);
+  grid-template-columns: minmax(0, 1fr) 6px var(--video-col-width, 420px);
   grid-template-rows: 1fr 6px var(--plot-height, 170px);
 }
 #windows-container.layout-video #panel-3d { grid-row: 1; grid-column: 1; }
@@ -360,20 +388,23 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   position: relative;
 }
 .pane-header {
-  height: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 4px;
   background: var(--bg-panel-alt);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: 4px 8px;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   user-select: none;
 }
-.pane-title { display: flex; align-items: center; gap: 8px; color: var(--text-bright); }
-.pane-tools { display: flex; align-items: center; gap: 6px; }
+.pane-title { min-width: 0; flex-wrap: wrap; display: flex; align-items: center; gap: 8px; color: var(--text-bright); }
+.pane-tools { flex-wrap: wrap; display: flex; align-items: center; gap: 6px; }
 .btn-pane-tool {
   background: transparent;
   border: 1px solid var(--border-color);
@@ -392,6 +423,12 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   background: var(--bg-surface);
   color: var(--accent);
   border-color: var(--accent);
+}
+.btn-pane-tool.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
 }
 .window-pane.floating-pane {
   position: fixed !important;
@@ -416,7 +453,78 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   height: 720px;
   max-height: 92vh;
 }
+#modal-points.floating-pane {
+  width: 400px;
+  height: 520px;
+  max-height: 88vh;
+}
 #modal-lcs .pane-body, #modal-filter .pane-body, #modal-kinematics .pane-body, #modal-manual .pane-body { overflow-y: auto; }
+#modal-points .pane-body { overflow: hidden; display: flex; flex-direction: column; }
+.point-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-normal);
+}
+.point-option:hover {
+  background: var(--bg-hover);
+}
+.point-option.selected {
+  background: rgba(15, 118, 110, 0.22);
+  color: var(--text-bright);
+}
+[data-theme="light"] .point-option.selected {
+  background: rgba(15, 118, 110, 0.15);
+}
+.point-option.active-point {
+  font-weight: 700;
+}
+.point-option.focused {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.marker-table tr.active-marker td:first-child {
+  border-left: 3px solid var(--accent);
+  font-weight: bold;
+}
+.context-menu-popup {
+  position: fixed;
+  z-index: 10000;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  padding: 4px;
+  min-width: 220px;
+  font-size: 12px;
+}
+.ctx-menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  color: var(--text-normal);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.ctx-menu-item:hover:not(:disabled) {
+  background: var(--bg-panel-alt);
+  color: var(--accent);
+}
+.ctx-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .manual-layout {
   display: flex;
@@ -967,6 +1075,8 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   border-color: rgba(239, 68, 68, 0.4) !important;
 }
 .pane-select-tool {
+  width: auto;
+  max-width: 100%;
   background: var(--input-bg);
   color: var(--accent);
   border: 1px solid var(--border-color);
@@ -983,41 +1093,43 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 <body>
 
 <!-- Menu Bar -->
-<nav class="menubar" role="menubar">
+<nav class="menubar" aria-label="Application menu">
   <div class="brand-badge">
     <img src="/favicon.ico" alt="" style="width: 18px; height: 18px; vertical-align: middle; margin-right: 4px; border-radius: 3px;" onerror="this.style.display='none'">
     mkvis<span>3d</span>
-    <span class="brand-sub">OpenBiomech</span>
+    <span class="brand-sub">OpenBiomech · vailá Multimodal Toolbox</span>
   </div>
 
   <!-- File Menu -->
   <div class="menu-item" id="menu-file">
     <button class="menu-btn" aria-haspopup="true">File ▾</button>
     <div class="dropdown-menu">
-      <div class="dropdown-item" id="action-open-file">Open File... <span class="shortcut-hint">Ctrl+O</span></div>
-      <div class="dropdown-item" id="action-load-video">🎬 Load Reference Video (mp4/mov/mkv/avi)...</div>
+      <button type="button" class="dropdown-item" id="action-open-file">Open File... <span class="shortcut-hint">Ctrl+O</span></button>
+      <button type="button" class="dropdown-item" id="action-load-video">🎬 Load Reference Video (mp4/mov/mkv/avi)...</button>
       <input type="file" id="video-file-input" accept=".mp4,.mov,.mkv,.avi,.webm,.m4v,video/*" multiple hidden>
+      <button type="button" class="dropdown-item" id="btn-attach-analysis">Attach Analysis JSON/CSV...</button>
+      <input id="file-analysis" type="file" accept=".json,.csv" hidden>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Sample Trials in data/</div>
-      <div class="dropdown-item" data-example="pilot0102_squat03.c3d">Vicon Squat (pilot0102_squat03.c3d)</div>
-      <div class="dropdown-item" data-example="rec3d_20260826_121305_m.c3d">Full Body Gait C3D (rec3d..._m.c3d)</div>
-      <div class="dropdown-item" data-example="rec3d_20260826_121305.csv">Wide CSV Trial (rec3d....csv)</div>
-      <div class="dropdown-item" data-example="rec3d_20260826_121305.3d">Wide 3D Trial (rec3d....3d)</div>
+      <button type="button" class="dropdown-item" data-example="pilot0102_squat03.c3d">Vicon Squat (pilot0102_squat03.c3d)</button>
+      <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305_m.c3d">Full Body Gait C3D (rec3d..._m.c3d)</button>
+      <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305.csv">Wide CSV Trial (rec3d....csv)</button>
+      <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305.3d">Wide 3D Trial (rec3d....3d)</button>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Export & 3D Interchange</div>
-      <div class="dropdown-item" id="action-save-vaila">Save Complete Project (.vaila)...</div>
-      <div class="dropdown-item" id="action-export-c3d">Save Edited Trial (C3D)...</div>
-      <div class="dropdown-item" id="action-export-plot">Export Distance / Plot CSV...</div>
-      <div class="dropdown-item" id="action-export-all-csv">Export All Trajectories (CSV)...</div>
-      <div class="dropdown-item" id="action-export-active-marker-csv">Export Active Marker (CSV)...</div>
-      <div class="dropdown-item" id="action-import-replace-marker-csv">Import / Replace Marker Trajectory (CSV)...</div>
-      <div class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</div>
-      <div class="dropdown-item" id="action-export-bvh">Export Biovision Hierarchy (.bvh)...</div>
-      <div class="dropdown-item" id="action-export-html">Save Standalone HTML Viewer...</div>
-      <div class="dropdown-item" id="action-export-kinematics-csv">Export Kinematics CSV (Bases, MR, Euler, Quat)...</div>
-      <div class="dropdown-item" id="action-export-kinematics-py">Export Kinematics Python Pipeline (.py)...</div>
+      <button type="button" class="dropdown-item" id="action-save-vaila">Save Complete Project (.vaila)...</button>
+      <button type="button" class="dropdown-item" id="action-export-c3d">Save Edited Trial (C3D)...</button>
+      <button type="button" class="dropdown-item" id="action-export-plot">Export Distance / Plot CSV...</button>
+      <button type="button" class="dropdown-item" id="action-export-all-csv">Export All Trajectories (CSV)...</button>
+      <button type="button" class="dropdown-item" id="action-export-active-marker-csv">Export Active Marker (CSV)...</button>
+      <button type="button" class="dropdown-item" id="action-import-replace-marker-csv">Import / Replace Marker Trajectory (CSV)...</button>
+      <button type="button" class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</button>
+      <button type="button" class="dropdown-item" id="action-export-bvh">Export Biovision Hierarchy (.bvh)...</button>
+      <button type="button" class="dropdown-item" id="action-export-html">Save Standalone HTML Viewer...</button>
+      <button type="button" class="dropdown-item" id="action-export-kinematics-csv">Export Kinematics CSV (Bases, MR, Euler, Quat)...</button>
+      <button type="button" class="dropdown-item" id="action-export-kinematics-py">Export Kinematics Python Pipeline (.py)...</button>
       <div class="dropdown-divider" id="shutdown-divider" hidden></div>
-      <div class="dropdown-item" id="action-shutdown" hidden>Encerrar mkvis3d</div>
+      <button type="button" class="dropdown-item" id="action-shutdown" hidden>Shut Down mkvis3d</button>
       <button id="export" hidden style="display:none" aria-hidden="true"></button>
       <button id="snapshot" hidden style="display:none" aria-hidden="true"></button>
     </div>
@@ -1027,28 +1139,55 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   <div class="menu-item" id="menu-view">
     <button class="menu-btn" aria-haspopup="true">View ▾</button>
     <div class="dropdown-menu">
-      <div class="dropdown-item" id="action-view-front">Front View (Coronal)</div>
-      <div class="dropdown-item" id="action-view-side">Side View (Sagittal)</div>
-      <div class="dropdown-item" id="action-view-top">Top View (Transverse)</div>
-      <div class="dropdown-item" id="action-view-reset">Reset Camera <span class="shortcut-hint">Home / R</span></div>
+      <button type="button" class="dropdown-item" id="action-view-front">Front View (Coronal)</button>
+      <button type="button" class="dropdown-item" id="action-view-side">Side View (Sagittal)</button>
+      <button type="button" class="dropdown-item" id="action-view-top">Top View (Transverse)</button>
+      <button type="button" class="dropdown-item" id="action-view-reset">Reset Camera <span class="shortcut-hint">Home / R</span></button>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-item" id="action-toggle-grid">✓ Ground Plane Grid <span class="shortcut-hint">G</span></div>
-      <div class="dropdown-item" id="action-toggle-axes">✓ Lab Coordinate Axes</div>
-      <div class="dropdown-item" id="action-toggle-labels">✓ Marker Labels <span class="shortcut-hint">L</span></div>
-      <div class="dropdown-item" id="action-toggle-trails">✓ Trajectory Trails <span class="shortcut-hint">T</span></div>
-      <div class="dropdown-item" id="action-toggle-bones">✓ Skeleton Bones <span class="shortcut-hint">B</span></div>
-      <div class="dropdown-item" id="action-toggle-distance">✓ Distance Line (A–B) <span class="shortcut-hint">D</span></div>
+      <button type="button" class="dropdown-item" id="action-toggle-grid">✓ Ground Plane Grid <span class="shortcut-hint">G</span></button>
+      <button type="button" class="dropdown-item" id="action-toggle-axes">✓ Lab Coordinate Axes</button>
+      <button type="button" class="dropdown-item" id="action-toggle-labels">✓ Marker Labels <span class="shortcut-hint">L</span></button>
+      <button type="button" class="dropdown-item" id="action-toggle-trails">✓ Trajectory Trails <span class="shortcut-hint">T</span></button>
+      <button type="button" class="dropdown-item" id="action-toggle-bones">✓ Skeleton Bones <span class="shortcut-hint">B</span></button>
+      <button type="button" class="dropdown-item" id="action-toggle-distance">✓ Distance Line (A–B) <span class="shortcut-hint">D</span></button>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Color Theme</div>
-      <div class="dropdown-item" id="action-theme-dark">✓ Dark Mode (Escuro)</div>
-      <div class="dropdown-item" id="action-theme-light">  Light Mode (Claro)</div>
+      <button type="button" class="dropdown-item" id="action-theme-dark">✓ Dark Mode (Escuro)</button>
+      <button type="button" class="dropdown-item" id="action-theme-light">  Light Mode (Claro)</button>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Reference System & Kinematics</div>
-      <div class="dropdown-item" id="action-view-kinematics">📐 Segment Bases & Kinematics... <span class="shortcut-hint">Alt+K</span></div>
-      <div class="dropdown-item" id="action-view-lcs">📐 Reference System & Origin... <span class="shortcut-hint">Alt+L</span></div>
-      <div class="dropdown-item" id="action-view-filter">🌊 Smooth, Filter & Gap Fill... <span class="shortcut-hint">Alt+F</span></div>
+      <div class="dropdown-header">Lab Vertical Up-Axis</div>
+      <button type="button" class="dropdown-item" data-up="z">✓ Z-Up (ISB / Vicon standard)</button>
+      <button type="button" class="dropdown-item" data-up="y">Y-Up</button>
+      <button type="button" class="dropdown-item" data-up="x">X-Up</button>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-item" id="action-view-shortcuts">Keyboard & Mouse Controls <span class="shortcut-hint">F1 / ?</span></div>
+      <div class="dropdown-header">Ground Plane Level</div>
+      <button type="button" class="dropdown-item" data-floor="auto">✓ Auto (Floor at lowest marker)</button>
+      <button type="button" class="dropdown-item" data-floor="origin">Origin (Z = 0)</button>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Marker Appearance</div>
+      <button type="button" class="dropdown-item" id="action-cycle-marker-color">Cycle Marker Color <span class="shortcut-hint">C</span></button>
+      <button type="button" class="dropdown-item" id="action-inc-marker-size">Increase Marker Size <span class="shortcut-hint">+</span></button>
+      <button type="button" class="dropdown-item" id="action-dec-marker-size">Decrease Marker Size <span class="shortcut-hint">-</span></button>
+      <button type="button" class="dropdown-item" id="action-reset-marker-style">Reset Marker Style</button>
+      <div class="dropdown-divider"></div>
+      <button type="button" class="dropdown-item" id="action-toggle-loop">✓ Loop Playback</button>
+    </div>
+  </div>
+
+  <!-- Analysis Menu -->
+  <div class="menu-item" id="menu-analysis">
+    <button class="menu-btn" aria-haspopup="true">Analysis ▾</button>
+    <div class="dropdown-menu">
+      <div class="dropdown-header">Segment Reference Systems & Motion</div>
+      <button type="button" class="dropdown-item" id="action-kinematics-modal">📐 Segment Bases (s1, s2, sg) & Kinematics... <span class="shortcut-hint">Alt+K</span></button>
+      <button type="button" class="dropdown-item" id="action-view-lcs">Reference System & Origin... <span class="shortcut-hint">Alt+L</span></button>
+      <button type="button" class="dropdown-item" id="action-view-filter">Smooth, Filter & Gap Fill... <span class="shortcut-hint">Alt+F</span></button>
+      <button type="button" class="dropdown-item" id="action-kinematics-virtual-pts">✨ Create Virtual Points & CSV Trajectories...</button>
+      <button type="button" class="dropdown-item" id="action-clean-marker-frames">✂️ Clean / Blank Marker Frames (NaN Gaps)...</button>
+      <button type="button" class="dropdown-item" id="action-kinematics-live-tab">📊 Live Relative Kinematics (MR, Euler, Quat)...</button>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-header">Timeline Curves</div>
+      <button type="button" class="dropdown-item" id="action-kinematics-plot-euler">📈 Plot Kinematics Curves on Timeline</button>
     </div>
   </div>
 
@@ -1056,87 +1195,36 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   <div class="menu-item" id="menu-windows">
     <button class="menu-btn" aria-haspopup="true">Windows ▾</button>
     <div class="dropdown-menu">
-      <div class="dropdown-item" id="action-win-3d">✓ 3D Viewport</div>
-      <div class="dropdown-item" id="action-win-plot1">✓ Plot Window 1</div>
-      <div class="dropdown-item" id="action-win-plot2">Plot Window 2</div>
-      <div class="dropdown-item" id="action-win-table">Marker Inspector Table</div>
-      <div class="dropdown-item" id="action-win-video">Reference Video</div>
+      <button type="button" class="dropdown-item" id="action-win-sidebar" aria-expanded="true" aria-controls="sidebar">✓ Sidebar</button>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-item" id="action-win-kinematics" style="font-weight: 600; color: var(--accent);">📐 Segment Bases (s1, s2, sg) & Kinematics... <span class="shortcut-hint">Alt+K</span></div>
+      <button type="button" class="dropdown-item" id="action-win-3d">✓ 3D Viewport</button>
+      <button type="button" class="dropdown-item" id="action-win-plot1">✓ Plot Window 1</button>
+      <button type="button" class="dropdown-item" id="action-win-plot2">Plot Window 2</button>
+      <button type="button" class="dropdown-item" id="action-win-table">Marker Inspector Table</button>
+      <button type="button" class="dropdown-item" id="action-win-select-points">Select Points…</button>
+      <button type="button" class="dropdown-item" id="action-win-video">Reference Video</button>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Subwindow Pop-out & Float — pick what a new window shows</div>
-      <div class="dropdown-item" id="action-float-plot1">↗ Float Plot Window 1</div>
-      <div class="dropdown-item" id="action-popout-plot1">⧉ Pop Out Plot 1 to New Window</div>
-      <div class="dropdown-item" id="action-float-plot2">↗ Float Plot Window 2</div>
-      <div class="dropdown-item" id="action-popout-plot2">⧉ Pop Out Plot 2 to New Window</div>
-      <div class="dropdown-item" id="action-float-table">↗ Float Marker Inspector</div>
-      <div class="dropdown-item" id="action-popout-table">⧉ Pop Out Marker Inspector to New Window</div>
-      <div class="dropdown-item" id="action-float-video">↗ Float Reference Video</div>
-      <div class="dropdown-item" id="action-popout-video">⧉ Pop Out Reference Video to New Window</div>
-      <div class="dropdown-item" id="action-dock-all">↙ Redock All Windows</div>
+      <div class="dropdown-header">Floating & Pop-out Windows</div>
+      <button type="button" class="dropdown-item" id="action-float-plot1">↗ Float Plot Window 1</button>
+      <button type="button" class="dropdown-item" id="action-popout-plot1">⧉ Pop Out Plot 1 to New Window</button>
+      <button type="button" class="dropdown-item" id="action-float-plot2">↗ Float Plot Window 2</button>
+      <button type="button" class="dropdown-item" id="action-popout-plot2">⧉ Pop Out Plot 2 to New Window</button>
+      <button type="button" class="dropdown-item" id="action-float-table">↗ Float Marker Inspector</button>
+      <button type="button" class="dropdown-item" id="action-popout-table">⧉ Pop Out Marker Inspector to New Window</button>
+      <button type="button" class="dropdown-item" id="action-float-video">↗ Float Reference Video</button>
+      <button type="button" class="dropdown-item" id="action-popout-video">⧉ Pop Out Reference Video to New Window</button>
+      <button type="button" class="dropdown-item" id="action-dock-all">↙ Redock All Windows</button>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Multi-Window Mosaic (3D View)</div>
-      <div class="dropdown-item" id="action-mosaic-2">⬛⬛ 2-Window Mosaic (side by side)</div>
-      <div class="dropdown-item" id="action-mosaic-4">⬜⬜ 4-Window Mosaic (2×2 grid)</div>
+      <button type="button" class="dropdown-item" id="action-mosaic-2">⬛⬛ 2-Window Mosaic (side by side)</button>
+      <button type="button" class="dropdown-item" id="action-mosaic-4">⬜⬜ 4-Window Mosaic (2×2 grid)</button>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Layout Presets</div>
-      <div class="dropdown-item" id="preset-default">Default (3D + Plot)</div>
-      <div class="dropdown-item" id="preset-dual">Dual Plot (3D + 2 Plots)</div>
-      <div class="dropdown-item" id="preset-full">Full Analysis (3D + Plot + Table)</div>
-      <div class="dropdown-item" id="preset-video">3D + Video (Split)</div>
-      <div class="dropdown-item" id="preset-3d">3D Maximized (Focus)</div>
-    </div>
-  </div>
-
-  <!-- Kinematics Menu -->
-  <div class="menu-item" id="menu-kinematics">
-    <button class="menu-btn" aria-haspopup="true" style="color: var(--accent); font-weight: 700;">📐 Kinematics ▾</button>
-    <div class="dropdown-menu">
-      <div class="dropdown-header">Segment Reference Systems & Motion</div>
-      <div class="dropdown-item" id="action-kinematics-modal" style="font-weight: 600;">📐 Segment Bases (s1, s2, sg) & Kinematics... <span class="shortcut-hint">Alt+K</span></div>
-      <div class="dropdown-item" id="action-kinematics-virtual-pts">✨ Create Virtual Points & CSV Trajectories...</div>
-      <div class="dropdown-item" id="action-clean-marker-frames">✂️ Clean / Blank Marker Frames (NaN Gaps)...</div>
-      <div class="dropdown-item" id="action-kinematics-bases-tab">⚙️ Configure Cartesian Bases (s1, s2, sg)...</div>
-      <div class="dropdown-item" id="action-kinematics-live-tab">📊 Live Relative Kinematics (MR, Euler, Quat)...</div>
-      <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Timeline Curves & Export</div>
-      <div class="dropdown-item" id="action-kinematics-plot-euler">📈 Plot Kinematics Curves on Timeline</div>
-      <div class="dropdown-item" id="action-kinematics-export-csv">📄 Export Kinematics CSV...</div>
-      <div class="dropdown-item" id="action-kinematics-export-py">🐍 Export Python Pipeline Script (.py)...</div>
-    </div>
-  </div>
-
-  <!-- Options Menu -->
-  <div class="menu-item" id="menu-options">
-    <button class="menu-btn" aria-haspopup="true">Options ▾</button>
-    <div class="dropdown-menu">
-      <div class="dropdown-header">Lab Vertical Up-Axis</div>
-      <div class="dropdown-item" data-up="z">✓ Z-Up (ISB / Vicon standard)</div>
-      <div class="dropdown-item" data-up="y">Y-Up</div>
-      <div class="dropdown-item" data-up="x">X-Up</div>
-      <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Ground Plane Level</div>
-      <div class="dropdown-item" data-floor="auto">✓ Auto (Floor at lowest marker)</div>
-      <div class="dropdown-item" data-floor="origin">Origin (Z = 0)</div>
-      <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Color Theme</div>
-      <div class="dropdown-item" id="action-opt-theme-dark">✓ Dark Mode (Escuro)</div>
-      <div class="dropdown-item" id="action-opt-theme-light">  Light Mode (Claro)</div>
-      <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Markers Appearance (viewc3d)</div>
-      <div class="dropdown-item" id="action-cycle-marker-color">Cycle Marker Color <span class="shortcut-hint">C</span></div>
-      <div class="dropdown-item" id="action-inc-marker-size">Increase Marker Size <span class="shortcut-hint">+</span></div>
-      <div class="dropdown-item" id="action-dec-marker-size">Decrease Marker Size <span class="shortcut-hint">-</span></div>
-      <div class="dropdown-item" id="action-reset-marker-style">Reset Marker Style</div>
-      <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Kinematics & Reference System</div>
-      <div class="dropdown-item" id="action-opt-kinematics">📐 Segment Bases & Kinematics... <span class="shortcut-hint">Alt+K</span></div>
-      <div class="dropdown-item" id="action-opt-lcs">📐 Reference System & Origin... <span class="shortcut-hint">Alt+L</span></div>
-      <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Signal Conditioning</div>
-      <div class="dropdown-item" id="action-opt-filter">🌊 Smooth, Filter & Gap Fill...</div>
-      <div class="dropdown-divider"></div>
-      <div class="dropdown-item" id="action-toggle-loop">✓ Loop Playback</div>
+      <button type="button" class="dropdown-item" id="preset-default">Default (3D + Plot)</button>
+      <button type="button" class="dropdown-item" id="preset-dual">Dual Plot (3D + 2 Plots)</button>
+      <button type="button" class="dropdown-item" id="preset-full">Full Analysis (3D + Plot + Table)</button>
+      <button type="button" class="dropdown-item" id="preset-video">3D + Video (Split)</button>
+      <button type="button" class="dropdown-item" id="preset-3d">3D Maximized (Focus)</button>
     </div>
   </div>
 
@@ -1144,13 +1232,15 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
   <div class="menu-item" id="menu-help">
     <button class="menu-btn" aria-haspopup="true">Help ▾</button>
     <div class="dropdown-menu">
-      <div class="dropdown-item" id="action-help-manual" style="font-weight: 600; color: var(--accent);">📖 User Manual & Biomechanics Guide... <span class="shortcut-hint">F1</span></div>
-      <div class="dropdown-item" id="action-help-theory">📐 Biomechanics Theory & Mathematics...</div>
+      <button type="button" class="dropdown-item" id="action-help-manual">📖 User Manual & Biomechanics Guide... <span class="shortcut-hint">F1</span></button>
+      <button type="button" class="dropdown-item" id="action-help-theory">📐 Biomechanics Theory & Mathematics...</button>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-item" id="action-help-shortcuts">Keyboard & Mouse Controls <span class="shortcut-hint">?</span></div>
-      <div class="dropdown-item" id="action-help-about">About mkvis3d</div>
+      <button type="button" class="dropdown-item" id="action-help-shortcuts">Keyboard & Mouse Controls <span class="shortcut-hint">?</span></button>
+      <button type="button" class="dropdown-item" id="action-help-about">About mkvis3d</button>
+      <button type="button" class="dropdown-item" id="action-help-github">GitHub Repository (mkvis3d) <span class="shortcut-hint">↗</span></button>
     </div>
   </div>
+
 
   <div class="theme-toggle-wrap" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
     <button id="btn-open-manual" class="menu-btn" title="Open User Manual & Biomechanics Guide (F1)" style="display: flex; align-items: center; gap: 5px; font-weight: 600; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 8px; color: var(--text-normal); cursor: pointer;">
@@ -1165,7 +1255,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 
 <div id="app-container">
   <!-- Sidebar -->
-  <aside id="sidebar">
+  <aside id="sidebar" aria-label="Trial controls">
     <!-- File Section -->
     <section id="open-panel" class="sidebar-section">
       <div class="sidebar-header">Load Motion File</div>
@@ -1200,6 +1290,9 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <label for="marker-select">Active Marker</label>
       <select id="marker-select" aria-label="Active Marker Selection"></select>
       <div style="display: flex; gap: 4px; margin-top: 4px; margin-bottom: 6px;">
+        <button type="button" id="btn-open-select-points" style="flex: 1; font-size: 10px; padding: 4px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; color: var(--accent); font-weight: 700;" title="Open Select Points Window (Multi-selection & Search)">Select Points…</button>
+      </div>
+      <div style="display: flex; gap: 4px; margin-top: 2px; margin-bottom: 6px;">
         <button type="button" id="btn-sidebar-export-csv" style="flex: 1; font-size: 10px; padding: 3px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; color: var(--text-normal);" title="Export active marker trajectory to CSV">📥 Export CSV</button>
         <button type="button" id="btn-sidebar-blank-frame" style="flex: 1; font-size: 10px; padding: 3px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; color: #ef4444;" title="Blank active marker at current frame (insert NaN gap)">✂ Blank Frame</button>
         <button type="button" id="btn-sidebar-open-trajectory" style="font-size: 10px; padding: 3px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; color: var(--accent);" title="Open Trajectory & Virtual Points Editor">⚙️</button>
@@ -1233,15 +1326,16 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div class="sidebar-header">
           <span>Angle (Dot Product)</span>
           <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; text-transform: none; font-weight: normal; margin: 0;">
-            <input type="checkbox" id="chk-show-angle" checked>
-            <span id="txt-show-angle" style="color: var(--accent);">Shown</span>
+            <input type="checkbox" id="chk-show-angle">
+            <span id="txt-show-angle" style="color: var(--text-muted);">Hidden</span>
           </label>
         </div>
 
-        <!-- Mode Toggle: 3 Markers (Vertex) vs 4 Markers (Two Vectors) -->
+        <!-- Mode Toggle: 3 Markers (Vertex) vs 4 Markers (Two Vectors) vs Absolute Angle (SG) -->
         <div style="display: flex; gap: 4px; margin-bottom: 6px;">
-          <button type="button" id="btn-angle-mode-3pt" class="btn-vp-tab active" style="flex: 1; font-size: 10px; padding: 3px 6px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--accent); color: #fff; cursor: pointer;">3 Markers (Vertex)</button>
-          <button type="button" id="btn-angle-mode-4pt" class="btn-vp-tab" style="flex: 1; font-size: 10px; padding: 3px 6px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg-canvas); color: var(--text-normal); cursor: pointer;">4 Markers (2 Vectors)</button>
+          <button type="button" id="btn-angle-mode-3pt" class="btn-vp-tab active" style="flex: 1; font-size: 10px; padding: 3px 4px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--accent); color: #fff; cursor: pointer;" title="Relative: 3 Markers (Vertex)">3-Pt Vertex</button>
+          <button type="button" id="btn-angle-mode-4pt" class="btn-vp-tab" style="flex: 1; font-size: 10px; padding: 3px 4px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg-canvas); color: var(--text-normal); cursor: pointer;" title="Relative: 4 Markers (2 Vectors / Segments)">2 Vectors</button>
+          <button type="button" id="btn-angle-mode-abs" class="btn-vp-tab" style="flex: 1; font-size: 10px; padding: 3px 4px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg-canvas); color: var(--text-normal); cursor: pointer;" title="Absolute Angle: Relative to Global SG (X, Y, Z)">Absolute (SG)</button>
         </div>
 
         <!-- 3-marker selectors -->
@@ -1257,7 +1351,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <!-- 4-marker selectors -->
         <div id="angle-4pt-container" style="display: none;">
           <div style="font-size: 10px; font-weight: 700; color: var(--accent); margin-bottom: 2px;">Vector 1 (u = B - A)</div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 4px;">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; margin-bottom: 4px;">
             <div>
               <label for="angle-v1-a" style="font-size: 10px;">Origin A</label>
               <select id="angle-v1-a" aria-label="Vector 1 Origin"></select>
@@ -1268,7 +1362,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             </div>
           </div>
           <div style="font-size: 10px; font-weight: 700; color: #f59e0b; margin-bottom: 2px;">Vector 2 (v = D - C)</div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 4px;">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; margin-bottom: 4px;">
             <div>
               <label for="angle-v2-c" style="font-size: 10px;">Origin C</label>
               <select id="angle-v2-c" aria-label="Vector 2 Origin"></select>
@@ -1280,11 +1374,40 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           </div>
         </div>
 
+        <!-- Absolute Angle selectors (Segment vs Global Axis) -->
+        <div id="angle-abs-container" style="display: none;">
+          <div style="font-size: 10px; font-weight: 700; color: var(--accent); margin-bottom: 2px;">Segment Vector (u = B - A)</div>
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; margin-bottom: 4px;">
+            <div>
+              <label for="angle-abs-a" style="font-size: 10px;">Origin A</label>
+              <select id="angle-abs-a" aria-label="Segment Origin A"></select>
+            </div>
+            <div>
+              <label for="angle-abs-b" style="font-size: 10px;">Target B</label>
+              <select id="angle-abs-b" aria-label="Segment Target B"></select>
+            </div>
+          </div>
+          <div style="margin-top: 4px;">
+            <label for="angle-abs-axis" style="font-size: 10px;">Global System Axis (SG)</label>
+            <select id="angle-abs-axis" aria-label="Global Reference Axis">
+              <option value="+Z" selected>+Z (Global Vertical / Up)</option>
+              <option value="-Z">-Z (Global Down)</option>
+              <option value="+Y">+Y (Global Anteroposterior / Forward)</option>
+              <option value="-Y">-Y (Global Backward)</option>
+              <option value="+X">+X (Global Mediolateral / Lateral)</option>
+              <option value="-X">-X (Global Medial)</option>
+              <option value="sagittal">Sagittal Plane Projection (YZ)</option>
+              <option value="frontal">Frontal Plane Projection (XZ)</option>
+              <option value="transverse">Transverse Plane Projection (XY)</option>
+            </select>
+          </div>
+        </div>
+
         <!-- Metric Card -->
         <div class="metric-card" id="card-angle-metric">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
             <label style="margin: 0 0 2px;">Angle θ</label>
-            <button id="btn-toggle-angle" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Disable</button>
+            <button id="btn-toggle-angle" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Enable</button>
           </div>
           <div id="angle-metric-val" class="metric-val">— °</div>
           <div id="angle-details-val" style="font-size: 10px; color: var(--text-muted); margin-top: 3px; font-family: monospace;">u·v: — | ||u||: — | ||v||: —</div>
@@ -1294,29 +1417,6 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           <span>📈</span> <span>Plot Angle Curve on Timeline</span>
         </button>
       </div>
-    </section>
-
-    <!-- Segment Bases & Kinematics (Prominent at top of Sidebar) -->
-    <section class="sidebar-section" style="border-left: 3px solid var(--accent); background: rgba(56, 189, 248, 0.04);">
-      <div class="sidebar-header">
-        <span style="font-weight: 700;">Segment Kinematics</span>
-        <span id="kinematics-status-badge" style="font-size: 10px; color: var(--accent); font-weight: 600;">Not configured</span>
-      </div>
-      <button id="btn-open-kinematics" type="button" class="btn-sidebar-main" style="width: 100%; margin-top: 4px; padding: 8px 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
-        <span style="font-size: 14px;">📐</span> <span>Segment Bases & Kinematics</span>
-      </button>
-      <div style="display: flex; gap: 4px; margin-top: 6px;">
-        <button id="btn-sidebar-vp-quick" type="button" style="flex: 1; font-size: 11px; padding: 4px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); color: var(--text-normal); border-radius: 4px; cursor: pointer;" title="Create new virtual point">
-          ✨ New Point
-        </button>
-        <button id="btn-sidebar-plot-euler" type="button" style="flex: 1; font-size: 11px; padding: 4px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); color: var(--text-normal); border-radius: 4px; cursor: pointer;" title="Plot Euler curves on timeline">
-          📈 Plot Curves
-        </button>
-      </div>
-      <input id="file-analysis" type="file" accept=".json,.csv" hidden>
-      <button id="btn-attach-analysis" type="button" style="width: 100%; margin-top: 6px; font-size: 10px; padding: 3px 6px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 4px; cursor: pointer;">
-        Attach Analysis JSON/CSV
-      </button>
     </section>
 
     <!-- Marker Appearance & Style (like viewc3d.py) -->
@@ -1381,6 +1481,18 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <div class="btn-group" style="margin-top: 8px;">
         <button id="btn-load-skeleton" class="primary" style="font-weight: 700;">Load Skeleton</button>
         <button id="btn-clear-skeleton">Clear</button>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+        <label style="margin: 0;">Skeleton Color</label>
+        <span id="skeleton-color-name-badge" style="font-size: 10px; color: var(--accent);">Default</span>
+      </div>
+      <div id="skeleton-color-swatches" class="color-swatches-grid" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 6px;">
+        <!-- Filled in viewer.js -->
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;">
+        <input type="color" id="skeleton-color-custom" value="#3b82f6" title="Custom skeleton color" style="width: 28px; height: 24px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; background: transparent;">
+        <span style="font-size: 11px; color: var(--text-muted);">Custom Color</span>
+        <button id="btn-reset-skeleton-style" type="button" style="margin-left: auto; font-size: 10px; padding: 1px 6px;">Reset</button>
       </div>
       <div style="margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--border-color);">
         <label for="com-sex">Whole-Body Center of Mass (de Leva 1996)</label>
@@ -1464,9 +1576,6 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <button id="reset" style="margin-top: 12px; width: 100%;">Reset Camera View</button>
 
       <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-color);">
-        <button id="btn-open-lcs" type="button" style="width: 100%; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <span>📐 Reference System & Origin...</span>
-        </button>
         <div id="lcs-active-badge" style="font-size: 10px; color: var(--text-muted); margin-top: 4px; text-align: center;">
           Ref System: Default (Z-Up)
         </div>
@@ -1483,15 +1592,22 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <button id="btn-open-filter" type="button" style="width: 100%; font-size: 11px;">
           <span>🌊 Filter & Gap Fill...</span>
         </button>
-        <button id="btn-quick-filter" type="button" style="width: 100%; font-size: 11px;" title="Quick Butterworth 6Hz lowpass and linear interpolation">
-          ⚡ Quick Smooth (6 Hz)
-        </button>
+        <div style="display: flex; gap: 4px; align-items: center;">
+          <input id="quick-filter-cutoff" type="number" min="0.5" max="100" step="0.5" value="6" style="width: 44px; font-size: 11px; padding: 3px 2px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-canvas); color: var(--text-bright);" title="Cutoff Frequency in Hz (Standard: 6 Hz)">
+          <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Hz</span>
+          <button id="btn-quick-filter" type="button" style="flex: 1; font-size: 11px; padding: 3px 6px;" title="Apply Butterworth lowpass filter with specified cutoff frequency (Hotkey: S)">
+            ⚡ Quick Smooth (<span id="quick-filter-cutoff-label">6</span> Hz)
+          </button>
+        </div>
         <button id="btn-revert-filter" type="button" style="width: 100%; font-size: 11px;" disabled>
           ↺ Revert to Raw Trial
         </button>
       </div>
     </section>
   </aside>
+  <div id="sidebar-toggle-rail">
+    <button id="btn-toggle-sidebar" type="button" aria-label="Hide sidebar" title="Hide sidebar" aria-expanded="true" aria-controls="sidebar">‹</button>
+  </div>
 
   <!-- Workspace -->
   <main id="workspace">
@@ -1512,16 +1628,21 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             <span>● 3D Viewport</span>
           </div>
           <div class="pane-tools">
+            <div class="btn-group-segmented" id="viewport-mode-group" role="group" aria-label="Viewport interaction mode">
+              <button type="button" class="btn-pane-tool active" id="btn-mode-rotate" aria-pressed="true" title="Orbit Mode (drag or middle click to rotate 3D view)">Orbit</button>
+              <button type="button" class="btn-pane-tool" id="btn-mode-select" aria-pressed="false" title="Select Mode (drag box or Alt+drag to select markers)">Select</button>
+              <button type="button" class="btn-pane-tool" id="btn-mode-pan" aria-pressed="false" title="Pan Mode (drag to translate 3D view)">Pan</button>
+            </div>
             <button type="button" class="btn-pane-tool primary" id="btn-win-header-kinematics" title="Segment Bases (s1, s2, sg) & Kinematics (Alt+K)" style="background: var(--accent); color: #fff; font-weight: 700; padding: 2px 10px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2);">
               <span>📐</span><span>Bases & Kinematics (s1, s2, sg)</span>
             </button>
-            <span style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Orbit: Drag | Pan: Shift+Drag | Zoom: Wheel</span>
+            <span id="viewport-hint" style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Drag / Middle: Orbit | Alt+Drag: Select | Ctrl+Drag: Zoom | Shift: Pan</span>
             <button type="button" class="btn-pane-tool" id="btn-refresh-3d" title="Fast 3D Viewport Refresh (re-sync canvas, layout reflow, and camera fit)">↻ Refresh 3D</button>
             <button class="btn-pane-tool btn-popout" data-pane="panel-3d" title="Pop Out 3D View to New Window (Multi-Monitor)">⧉</button>
           </div>
         </div>
         <div class="pane-body">
-          <canvas id="scene" aria-label="3D marker cloud visualization"></canvas>
+          <canvas id="scene" tabindex="0" aria-label="3D marker cloud visualization"></canvas>
           <div id="welcome">
             <div class="drop-zone-hint">
               <h2>Drop motion file here</h2>
@@ -1544,7 +1665,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             <select id="plot1-mode" class="pane-select-tool">
               <option value="distance">Distance (Marker A to B)</option>
               <option value="angle-dot-product">Angle (Dot Product °)</option>
-              <option value="active-xyz">Active Marker · Coordinates (X, Y, Z)</option>
+              <option value="active-xyz" selected>Active Markers X, Y, Z</option>
               <option value="active-x">Active Marker · X Position</option>
               <option value="active-y">Active Marker · Y Position</option>
               <option value="active-z">Active Marker · Z Position (Height)</option>
@@ -1589,7 +1710,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <option value="active-z" selected>Active Marker · Z Position (Height)</option>
               <option value="active-x">Active Marker · X Position</option>
               <option value="active-y">Active Marker · Y Position</option>
-              <option value="active-xyz">Active Marker · Coordinates (X, Y, Z)</option>
+              <option value="active-xyz">Active Markers X, Y, Z</option>
               <option value="active-speed">Active Marker · 3D Velocity / Speed</option>
               <option value="distance">Distance (Marker A to B)</option>
               <option value="angle-dot-product">Angle (Dot Product °)</option>
@@ -1741,16 +1862,26 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <div class="key-grid">
         <div><span class="key-cap">Space</span></div><div>Play / Pause motion playback</div>
         <div><span class="key-cap">←</span> / <span class="key-cap">→</span></div><div>Step one frame backward / forward</div>
+        <div><span class="key-cap">↓</span> / <span class="key-cap">↑</span></div><div>Step 60 frames backward / forward</div>
         <div><span class="key-cap">Home</span> / <span class="key-cap">End</span></div><div>Jump to start / end of trial</div>
-        <div><span class="key-cap">Drag</span></div><div>Orbit camera view (yaw and pitch)</div>
+        <div><span class="key-cap">Drag / Middle</span></div><div>Orbit camera view (yaw and pitch)</div>
+        <div><span class="key-cap">Alt + Drag</span></div><div>Select markers by marquee box (or in Select mode)</div>
+        <div><span class="key-cap">Ctrl + Drag</span></div><div>Zoom camera in / out (smooth)</div>
         <div><span class="key-cap">Shift + Drag</span></div><div>Pan camera across scene</div>
-        <div><span class="key-cap">Wheel</span></div><div>Zoom camera in / out</div>
+        <div><span class="key-cap">Right-Click</span></div><div>Context Menu (Create Segment, LCS, Angle, Pin, Export)</div>
+        <div><span class="key-cap">Wheel / Pinch</span></div><div>Zoom camera in / out</div>
         <div><span class="key-cap">R</span></div><div>Reset camera and center on subject</div>
         <div><span class="key-cap">G</span></div><div>Toggle ground plane grid</div>
         <div><span class="key-cap">L</span></div><div>Toggle marker label tags</div>
         <div><span class="key-cap">T</span></div><div>Toggle active marker trail</div>
         <div><span class="key-cap">B</span></div><div>Toggle skeleton / stick figure bones</div>
         <div><span class="key-cap">D</span></div><div>Toggle distance measurement line (Marker A–B)</div>
+        <div><span class="key-cap">A</span></div><div>Toggle angle measurement display</div>
+        <div><span class="key-cap">P</span></div><div>Open / Close Select Points window</div>
+        <div><span class="key-cap">M</span></div><div>Toggle Pin / Mark on selected markers</div>
+        <div><span class="key-cap">S</span></div><div>Apply Quick Smooth filter (at configured Hz)</div>
+        <div><span class="key-cap">K</span></div><div>Link 2 selected markers as Segment / Bone</div>
+        <div><span class="key-cap">E</span></div><div>Export selected markers to CSV</div>
         <div><span class="key-cap">C</span></div><div>Cycle marker color (11 colors from viewc3d)</div>
         <div><span class="key-cap">+</span> / <span class="key-cap">-</span></div><div>Increase / decrease marker size</div>
         <div><span class="key-cap">Alt + T</span></div><div>Toggle Light / Dark theme mode</div>
@@ -1758,11 +1889,45 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div><span class="key-cap">Alt + L</span></div><div>Open Reference System & Origin dialog</div>
         <div><span class="key-cap">Alt + F</span></div><div>Open Signal Filtering & Gap Fill dialog</div>
         <div><span class="key-cap">F1</span> / <span class="key-cap">?</span></div><div>Open User Manual & Biomechanics Guide</div>
-        <div><span class="key-cap">Esc</span></div><div>Close open dialog / modal window</div>
+        <div><span class="key-cap">Esc</span></div><div>Close open dialog / modal window / context menu</div>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Select Points Modal (WAI-ARIA APG Multi-Select Listbox) -->
+<section id="modal-points" class="window-pane" hidden role="dialog" aria-modal="true" aria-labelledby="modal-points-title">
+  <div class="pane-header">
+    <div class="pane-title"><h3 id="modal-points-title">Select Points</h3></div>
+    <div class="pane-tools">
+      <button class="modal-close" id="btn-close-points" aria-label="Close">✕</button>
+    </div>
+  </div>
+  <div class="pane-body">
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 8px; height: 100%; box-sizing: border-box; padding: 12px;">
+      <div style="position: relative;">
+        <input type="search" id="points-search-input" placeholder="Filter markers by name..." style="width: 100%; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-canvas); color: var(--text-bright); box-sizing: border-box;" aria-label="Filter markers by name">
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="points-selection-count" style="font-size: 11px; color: var(--accent); font-weight: 600;">0 of 0 selected</span>
+        <div style="display: flex; gap: 6px;">
+          <button type="button" class="btn-pane-tool" id="btn-points-select-all" style="font-size: 10px; padding: 2px 8px;">Select All</button>
+          <button type="button" class="btn-pane-tool" id="btn-points-unselect-all" style="font-size: 10px; padding: 2px 8px;">Unselect All</button>
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px; align-items: center; border-top: 1px solid var(--border-color); padding-top: 4px;">
+        <button type="button" id="btn-points-pin-selected" class="btn-pane-tool" style="flex: 1; font-size: 11px; padding: 4px 8px; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Keep selected points pinned/marked in 3D animation (Hotkey: M)">
+          <span id="btn-points-pin-icon">📌</span> <span id="btn-points-pin-text">Pin / Mark Selected</span>
+        </button>
+        <button type="button" id="btn-points-export-csv" class="btn-pane-tool" style="flex: 1; font-size: 11px; padding: 4px 8px; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Export selected points trajectories to CSV (Hotkey: E)">
+          <span>📥</span> <span>Export CSV</span>
+        </button>
+      </div>
+      <div id="points-listbox" role="listbox" aria-multiselectable="true" aria-label="Marker points selection list" tabindex="0" style="flex: 1; min-height: 260px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-panel-alt); outline: none;">
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- Reference System & Origin Modal -->
 <section id="modal-lcs" class="window-pane" hidden role="dialog" aria-modal="true" aria-labelledby="modal-lcs-title">
@@ -1908,7 +2073,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           <input type="checkbox" id="flt-hampel-enable">
           <span style="font-weight: 600; color: var(--text-bright);">Enable Hampel Outlier Detection (MAD)</span>
         </label>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px;">
           <div>
             <label for="flt-hampel-window">Window Size (frames):</label>
             <input type="number" id="flt-hampel-window" value="7" min="3" max="31" step="2">
@@ -1923,7 +2088,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <!-- Step 2: Gap Fill / Interpolation -->
       <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;">
         <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">2. Missing Frames Gap Filling (Interpolation)</legend>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px;">
           <div>
             <label for="flt-interp-method">Interpolation Method:</label>
             <select id="flt-interp-method">
@@ -1944,7 +2109,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <!-- Step 3: Smoothing Filter -->
       <fieldset style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;">
         <legend style="font-size: 11px; font-weight: 700; color: var(--accent); padding: 0 4px;">3. Signal Smoothing Filter</legend>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px;">
           <div>
             <label for="flt-smooth-method">Filter Algorithm:</label>
             <select id="flt-smooth-method">
@@ -2026,7 +2191,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 <!-- Cartesian Bases (s1, s2, sg) & Relative Kinematics Modal -->
 <section id="modal-kinematics" class="window-pane" hidden role="dialog" aria-modal="true" aria-labelledby="modal-kinematics-title">
   <div class="pane-header">
-    <div class="pane-title"><h3 id="modal-kinematics-title">📐 Segment Bases (s1, s2, sg) & Kinematics</h3></div>
+    <div class="pane-title"><h3 id="modal-kinematics-title">📐 Segment Bases (s1, s2, sg) & Kinematics</h3><span id="kinematics-status-badge" aria-live="polite">Not configured</span></div>
     <div class="pane-tools">
       <button class="modal-close" id="btn-close-kinematics" aria-label="Close">✕</button>
     </div>
@@ -2288,7 +2453,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <select id="s1-plane-pt" style="font-size: 11px;"></select>
             </div>
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-bottom: 6px;">
             <div>
               <label for="s1-primary-axis" style="font-size: 10px;">Primary Axis Alignment</label>
               <select id="s1-primary-axis" style="font-size: 11px;">
@@ -2336,7 +2501,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <select id="s2-plane-pt" style="font-size: 11px;"></select>
             </div>
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-bottom: 6px;">
             <div>
               <label for="s2-primary-axis" style="font-size: 10px;">Primary Axis Alignment</label>
               <select id="s2-primary-axis" style="font-size: 11px;">
@@ -2478,7 +2643,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           Export all computed segment bases, relative rotation matrices, Euler angles, and Quaternions to CSV for external analysis, or generate a standalone reusable Python pipeline script.
         </p>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px;">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 14px;">
           <!-- CSV Export Card -->
           <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
@@ -2593,6 +2758,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           <ul>
             <li><strong>Fast 3D Viewport Refresh (↻):</strong> Re-instantiates WebGL/Canvas rendering context, cleans GPU compositor surfaces, and recalculates scene bounding boxes. Use this whenever coordinate frames are transformed.</li>
             <li><strong>Multi-Monitor Popout (⧉):</strong> Detach the 3D viewport into an independent OS window for multi-screen biomechanics setups.</li>
+            <li><strong>Sidebar:</strong> Use the arrow beside the workspace or Windows → Sidebar to show or hide trial controls. Visibility is remembered on this device.</li>
             <li><strong>Marker Customization:</strong> Adjust marker sphere radius via the sidebar slider, select color presets or choose custom hex values. Press <span class="key-cap">C</span> to cycle colors.</li>
             <li><strong>Labels Toggle:</strong> Press <span class="key-cap">L</span> to toggle on-screen text labels above markers.</li>
             <li><strong>Floor Grid:</strong> Press <span class="key-cap">G</span> to toggle the calibrated 1-meter floor grid.</li>
@@ -2690,6 +2856,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <!-- Chapter 7 -->
         <section id="m-ch-7" class="manual-modal-chapter">
           <h2>7. Relative Joint Kinematics (MR, Cardan/Euler & Quaternions)</h2>
+          <p>Use Analysis for segment bases, reference system and origin, virtual points, filtering, and timeline curves. Attach analysis JSON/CSV and export results from File.</p>
           <p>
             The relative joint rotation matrix expressing distal segment s2 in proximal segment s1, transformed through the laboratory reference frame sg, is calculated live at every frame:
           </p>
@@ -2918,6 +3085,35 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
     </div>
   </div>
 </section>
+<!-- 3D Canvas Context Menu for Selected Points -->
+<div id="canvas-context-menu" class="context-menu-popup" hidden>
+  <div id="ctx-menu-header" style="font-size: 10px; font-weight: 700; color: var(--accent); padding: 4px 8px; text-transform: uppercase; border-bottom: 1px solid var(--border-color); margin-bottom: 3px;">Selected Points (0)</div>
+  <button type="button" id="ctx-action-create-segment" class="ctx-menu-item">
+    <span>🦴</span> <span>Create Segment / Bone (K)</span>
+  </button>
+  <button type="button" id="ctx-action-create-lcs" class="ctx-menu-item">
+    <span>📐</span> <span>Define System / Plane s1 (3+ Pts)</span>
+  </button>
+  <button type="button" id="ctx-action-create-lcs-s2" class="ctx-menu-item">
+    <span>📐</span> <span>Define System / Plane s2 (3+ Pts)</span>
+  </button>
+  <button type="button" id="ctx-action-compute-kinematics" class="ctx-menu-item">
+    <span>⚡</span> <span>Compute Kinematics (Euler, MR, Quat)</span>
+  </button>
+  <button type="button" id="ctx-action-measure-angle" class="ctx-menu-item">
+    <span>📐</span> <span>Measure Angle (2+ Pts)</span>
+  </button>
+  <button type="button" id="ctx-action-pin-points" class="ctx-menu-item">
+    <span>📌</span> <span>Pin / Unpin Selected Markers (M)</span>
+  </button>
+  <button type="button" id="ctx-action-export-csv" class="ctx-menu-item">
+    <span>📥</span> <span>Export Selected to CSV (E)</span>
+  </button>
+  <div style="border-top: 1px solid var(--border-color); margin: 3px 0;"></div>
+  <button type="button" id="ctx-action-clear-selection" class="ctx-menu-item" style="color: var(--text-muted);">
+    Clear Selection
+  </button>
+</div>
 
 <script type="application/json" id="trial-data">__TRIAL_DATA__</script>
 <script type="application/json" id="skeleton-templates-data">__SKELETON_TEMPLATES__</script>

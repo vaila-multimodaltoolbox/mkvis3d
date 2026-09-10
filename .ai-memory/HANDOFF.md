@@ -1,37 +1,38 @@
-# Session Handoff: macOS Gatekeeper & Quarantine Setup & Documentation
+# Session Handoff: Right-Click Context Menu, Named Segments, Planes/LCS (s1, s2), Kinematics & 100% English UI
 
 - **Status:** Completed
 - **Current State:**
-  - Integrated comprehensive macOS Gatekeeper and quarantine instructions across documentation, GitHub Release workflows, build pipelines, installation scripts, and the CLI.
-  - **Delivered Items:**
-    1. **Project Documentation (`README.md` & `docs/cli.md`):**
-       - Added dedicated subsection `### 🍎 macOS portable application (.app)` under `## Building Standalone Executables` in `README.md` containing the exact `[!IMPORTANT]` alert box, explanation of Apple Gatekeeper quarantine, and steps for first-time execution via Finder (right-click -> Open) or Terminal (`xattr -cr mkvis3d.app`).
-       - Updated `### Double-click launchers` in `README.md` explaining that `./mkvis3d.command` automatically handles Gatekeeper quarantine on `dist/mkvis3d.app`.
-       - Added `## install` command documentation in `docs/cli.md`.
-    2. **GitHub Releases Workflow (`.github/workflows/build_executables.yml`):**
-       - Updated triggers and conditions to accept `rp*` tags alongside `v*` tags (enabling releases like `rp9set2026`).
-       - Added release `body` markdown template containing download links for Linux, Windows, and macOS (`mkvis3d-macos-app.zip`), with the full Gatekeeper quarantine notice prominently displayed for any newly published GitHub Release.
-    3. **Build Scripts (`scripts/build_app.py` & `scripts/build_macos.sh`):**
-       - Automatically creates `dist/mkvis3d-macos-app.zip` containing `mkvis3d.app` whenever running a macOS build.
-       - Prints the exact Gatekeeper notice and release instruction box directly to stdout upon build completion.
-    4. **Installation & Launcher Scripts (`scripts/install_macos.sh`, `install_macos.command`, `scripts/install_desktop_launcher.sh`, `mkvis3d.command`, `scripts/mkvis3d_macos.command`):**
-       - Created `scripts/install_macos.sh` and double-clickable `install_macos.command` in the repository root. Removes quarantine (`xattr -cr`) on `mkvis3d.app`, optionally copies to `/Applications` if requested (`--applications`), and displays the instructions.
-       - Updated `scripts/install_desktop_launcher.sh` to detect macOS (`Darwin`) and seamlessly delegate to `scripts/install_macos.sh`.
-       - Updated `mkvis3d.command` and `scripts/mkvis3d_macos.command` to automatically remove quarantine from `dist/mkvis3d.app` before calling `open`.
-    5. **Python CLI Command (`openbiomech/cli.py` & `mkvis3d.py`):**
-       - Registered `mkvis3d install` / `openbiomech install` subcommand with optional `--applications` flag. On macOS, removes quarantine from detected `mkvis3d.app` bundles and displays the instructions.
-    6. **Tests & Verification:**
-       - Added `test_install_command_prints_gatekeeper_instructions` in `tests/test_cli.py`.
-       - Verified full pytest test suite (237 passed, 3 skipped, 4 deselected).
-       - Verified ruff linter and formatting clean on all 87 files.
-       - Verified execution of `uv run mkvis3d install`, `./scripts/install_macos.sh`, `./scripts/install_desktop_launcher.sh`, and `uv run python scripts/build_app.py`.
-
-- **What Worked:**
-  - Packaging `dist/mkvis3d-macos-app.zip` during build automation makes macOS releases ready for direct drag-and-drop or GitHub Actions upload.
-  - Automatically running `xattr -cr` in launchers (`mkvis3d.command`) while also explaining the manual steps ensures both convenience and clear user guidance.
-
-- **Failed Approaches:**
-  - N/A.
-
-- **Git Status Reminder:**
-  - In accordance with user rules, NO `git add`, `git commit`, or `git push` commands were executed. Version control operations are reserved exclusively for the user.
+  - **Right-Click Context Menu (`#canvas-context-menu`)**:
+    - Right mouse click (`button === 2`) on the 3D animation canvas reliably opens the context menu at `(e.clientX, e.clientY)`.
+    - Right-click release (`pointerup` with `button === 2` or `pointerDownButton === 2`) is isolated and prevented from clearing selected markers or triggering canvas drag state.
+    - Clicking on an unselected marker automatically adds it to the active selection group before displaying the menu.
+    - Right-clicking empty space keeps the existing selection intact and displays actions appropriate for the current point count.
+    - Document `pointerdown` listener respects `button !== 2` so menu is not dismissed prematurely during right-clicks; dismissed on outside left click or `Escape` key.
+  - **Named Segments from 2 Points (`K`)**:
+    - When 2 markers are selected, context menu enables **"🦴 Create Segment / Bone (K)"** (displaying marker names e.g. `Create Segment (R_KNEE ↔ R_ANKLE)`).
+    - Prompts user with `promptName(...)` (respecting `navigator.webdriver` to avoid hangs in automated headless environments).
+    - Adds the connection to `skeletonPairs` and stores `[lblA, lblB, segName]` into `customSegments`, automatically enabling the `#bones` checkbox, updating the connections badge, redrawing the scene, and saving session state.
+  - **Planes & Local Coordinate Systems from 3+ Points**:
+    - When 3 or more markers are selected, context menu enables:
+      - **"📐 Define System / Plane s1 (3+ Pts)"**: Sets Point 1 as Origin, Point 2 as Primary Axis, Point 3 as Plane Point, prompts for system name, and opens the Kinematics dialog with `s1` configured.
+      - **"📐 Define System / Plane s2 (3+ Pts)"**: Sets Point 1 as Origin, Point 2 as Primary Axis, Point 3 as Plane Point, prompts for system name, and opens the Kinematics dialog with `s2` configured.
+      - **"⚡ Compute Kinematics (Euler, MR, Quat)"**: Directly assigns `s1`, enables 3D triad visualization (`kinematicsConfig.showTriads = true`), computes orthonormal bases, relative rotation matrix $MR$, Euler angles ($\alpha, \beta, \gamma$), and Quaternions ($w, x, y, z$) relative to `s2` or the Global reference system (`sg` / Lab frame), opens the Live Kinematics telemetry tab, and renders the 3D RGB triad axes on the canvas animation.
+  - **Angle Measurements (2, 3, or 4+ Points)**:
+    - Automatically routes to Absolute Angle (2 pts, relative to SG axis), 3-Point vertex angle, or 4-Point dihedral angle based on selected point count.
+  - **100% English UI Consistency**:
+    - Eliminated all residual Portuguese strings:
+      - Viewport hint: `"Drag / Middle: Orbit | Alt+Drag: Select | Ctrl+Drag: Zoom | Shift: Pan"`.
+      - Help shortcuts table: `"Drag / Middle: Orbit camera view (yaw and pitch)"`.
+      - File menu: `"Shut Down mkvis3d"`.
+      - Shutdown confirmations and alerts translated to English in `openbiomech/viewer.js` and `openbiomech/viewer.py`.
+  - **Version Control (Git)**:
+    - Strictly adhered to rule: NEVER execute `git add`, `git commit`, or `git push`. All git staging and commits remain exclusively for the user.
+- **Verification & Testing:**
+  - `node --check openbiomech/viewer.js` and `node --check tests/browser_smoke.mjs`: passed with code 0.
+  - `uv run ruff check .` and `uv run ruff format --check .`: all checks passed, 87 files clean.
+  - `uv run pytest tests/test_application.py -vv`: 15 passed in 11.71s (including automated Chrome CDP browser smoke tests exercising right-click context menu, named segment creation, and kinematics calculation).
+  - `uv run pytest tests/test_cross_browser.py -vv`: 3 passed across Google Chrome, Chromium, and Firefox in 40.34s.
+  - `uv run pytest -q -k 'not test_install_command_prints_gatekeeper_instructions'`: 242 passed, 1 skipped, 1 deselected in 58.36s.
+- **Open Questions & Next Steps:**
+  - All requested features and fixes completed and verified.
+  - Commit and push can be performed manually by the user.
