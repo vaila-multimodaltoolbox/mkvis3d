@@ -9,6 +9,7 @@
        - Updated `### Double-click launchers` in `README.md` explaining that `./mkvis3d.command` automatically handles Gatekeeper quarantine on `dist/mkvis3d.app`.
        - Added `## install` command documentation in `docs/cli.md`.
     2. **GitHub Releases Workflow (`.github/workflows/build_executables.yml`):**
+       - Updated triggers and conditions to accept `rp*` tags alongside `v*` tags (enabling releases like `rp9set2026`).
        - Added release `body` markdown template containing download links for Linux, Windows, and macOS (`mkvis3d-macos-app.zip`), with the full Gatekeeper quarantine notice prominently displayed for any newly published GitHub Release.
     3. **Build Scripts (`scripts/build_app.py` & `scripts/build_macos.sh`):**
        - Automatically creates `dist/mkvis3d-macos-app.zip` containing `mkvis3d.app` whenever running a macOS build.
