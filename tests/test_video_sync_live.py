@@ -13,6 +13,7 @@ from openbiomech.trial_io import load_trial
 from openbiomech.viewer import create_server, trial_payload
 
 
+@pytest.mark.browser
 def test_video_sync_and_multicamera_live(tmp_path):
     node = shutil.which("node")
     chrome = shutil.which("google-chrome") or "/opt/google/chrome/chrome"

@@ -22,8 +22,11 @@ from .c3d_io import c3d_bytes
 from .kinematic_analysis import (
     TAIT_BRYAN_SEQUENCES,
     add_virtual_points_to_trial,
+    blank_marker_frames,
     build_orthonormal_basis,
     evaluate_virtual_point_expression,
+    export_marker_trajectory_csv,
+    load_marker_trajectory_csv,
     marker_frame_orientations,
     relative_segment_kinematics,
 )
@@ -437,6 +440,9 @@ def create_server(
                 "/api/analyze/orientation",
                 "/api/analyze/kinematics_bases",
                 "/api/analyze/evaluate_point",
+                "/api/analyze/import_trajectory_csv",
+                "/api/analyze/export_trajectory_csv",
+                "/api/analyze/blank_frames",
                 "/api/analyze/dynamics",
                 "/api/shutdown",
             ):
@@ -582,6 +588,57 @@ def create_server(
                     self.send_bytes(
                         200,
                         json.dumps(json_compatible(out), allow_nan=False).encode(),
+                        "application/json",
+                    )
+                    return
+                if req_path == "/api/analyze/import_trajectory_csv":
+                    request = json.loads(self.rfile.read(length))
+                    csv_text = str(request["csv_text"])
+                    expected_frames = int(request.get("expected_frames", 0)) or None
+                    coords = load_marker_trajectory_csv(csv_text, expected_frames=expected_frames)
+                    self.send_bytes(
+                        200,
+                        json.dumps(
+                            {
+                                "coords": json_compatible(coords),
+                                "frames": int(coords.shape[0]),
+                            },
+                            allow_nan=False,
+                        ).encode(),
+                        "application/json",
+                    )
+                    return
+                if req_path == "/api/analyze/export_trajectory_csv":
+                    request = json.loads(self.rfile.read(length))
+                    trial = trial_from_payload(request["trial"])
+                    marker_name = str(request["marker"])
+                    csv_str = export_marker_trajectory_csv(trial, marker_name)
+                    self.send_bytes(200, csv_str.encode("utf-8"), "text/csv")
+                    return
+                if req_path == "/api/analyze/blank_frames":
+                    request = json.loads(self.rfile.read(length))
+                    trial = trial_from_payload(request["trial"])
+                    marker_name = str(request["marker"])
+                    frames = request.get("frames")
+                    frame_range = (
+                        tuple(request["frame_range"])
+                        if "frame_range" in request and request["frame_range"]
+                        else None
+                    )
+                    csv_frames = request.get("csv_frames")
+                    trial = blank_marker_frames(
+                        trial,
+                        marker_name,
+                        frames=frames,
+                        frame_range=frame_range,
+                        csv_frames_source=csv_frames,
+                    )
+                    self.send_bytes(
+                        200,
+                        json.dumps(
+                            {"xyz": json_compatible(trial.xyz)},
+                            allow_nan=False,
+                        ).encode(),
                         "application/json",
                     )
                     return

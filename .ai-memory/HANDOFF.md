@@ -1,39 +1,61 @@
-# Session Handoff: Manual Coordinates Virtual Points & Vector Dot Product Angles
+# Session Handoff: CSV Trajectory Matrix Import, In-Place Replacement & Frame Blanking
 
 - **Status:** Completed
 - **Current State:**
-  - Implemented manual numerical coordinate virtual point creation ($X, Y, Z$) and vector spatial angle measurement via dot product in `openbiomech`.
+  - Implemented external CSV coordinate matrix loading (rows=frames, cols=X,Y,Z), in-place marker trajectory replacement, frame gap blanking/cleaning (single frame, sequence range, and CSV frame list file), individual marker CSV export, and 1-click non-destructive raw data restoration in `mkvis3d` / `openbiomech`.
   - **Features Delivered:**
-    1. **Manual Coordinate Point Creation (`openbiomech/kinematic_analysis.py`, `openbiomech/viewer.html`, `openbiomech/viewer.js`):**
-       - Mode switcher in `#modal-kinematics` Tab 1: `[📐 NumPy Formula]` and `[📍 Manual Coordinates (X, Y, Z)]`.
-       - Manual 3D coordinate inputs ($X, Y, Z$ in meters) with step controls, `[📋 Copy from Active Marker @ Frame]`, and `Reset (0, 0, 0)`.
-       - Virtual points table displays badge `📍 Manual [X, Y, Z] m` and provides Python export script preserving fixed coordinate arrays (`np.tile(np.array([X, Y, Z]), (len(trial.xyz), 1))`).
-       - Backend `evaluate_virtual_point_expression` supports numeric list/array expressions `[x, y, z]`.
-    2. **Vector Angle Measurement via Dot Product (`openbiomech/kinematic_analysis.py`, `openbiomech/viewer.html`, `openbiomech/viewer.js`):**
-       - Exact mathematical formula:
-         $$\mathbf{u} \cdot \mathbf{v} = \|\mathbf{u}\| \|\mathbf{v}\| \cos(\theta) \implies \theta = \arccos\left(\text{clamp}\left(\frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\| \|\mathbf{v}\|}, -1.0, 1.0\right)\right) \times \frac{180^\circ}{\pi}$$
-       - Clamping strictly enforced to prevent `NaN` from floating point overshoot beyond $[-1.0, 1.0]$.
-       - Python functions: `compute_vector_dot_product_angle(u, v, degrees=True)`, `compute_marker_angle(trial, a, b, c, degrees=True)`, `compute_two_vector_angle(trial, v1_a, v1_b, v2_c, v2_d, degrees=True)`.
-       - Left Sidebar Panel: "ANGLE (DOT PRODUCT)" with 3-marker (vertex $\mathbf{u}=\mathbf{A}-\mathbf{B}, \mathbf{v}=\mathbf{C}-\mathbf{B}$) and 4-marker ($\mathbf{u}=\mathbf{B}-\mathbf{A}, \mathbf{v}=\mathbf{D}-\mathbf{C}$) modes.
-       - Live numerical display: angle in degrees, $\mathbf{u}\cdot\mathbf{v}$, $\|\mathbf{u}\|$, $\|\mathbf{v}\|$, and `[📈 Plot Angle Curve on Timeline]` button.
-       - 3D Viewport Visualization: colored vector lines (Cyan `#0284c7`, Amber `#d97706`), vertex highlight ring, circular arc, and billboard text label (`θ = XX.X°`).
-       - Timeline multi-plot integration: `<option value="angle-dot-product">Angle (Dot Product °)</option>` on Plot 1 and Plot 2 with real-time curve rendering and NaN gap shading.
-       - Longitudinal Axes Included Angle card added to Tab 3 of `#modal-kinematics` calculating $\arccos(\mathbf{e}_{z1} \cdot \mathbf{e}_{z2}) \times 180^\circ / \pi$.
-    3. **Documentation:**
-       - Updated Chapter 5 (3D Distance & Vector Angle Measurement) and Chapter 8 (Virtual Points & Secondary Landmark Creator) across `openbiomech/viewer.html` (`#modal-manual`), `docs/manual.html`, and `docs/MANUAL.md`.
-  - **Standalone Linux Binary Rebuilt:** Updated `dist/mkvis3d` via `scripts/build_app.py`.
+    1. **Python Backend Trajectory Editing (`openbiomech/kinematic_analysis.py`):**
+       - `load_marker_trajectory_csv(source, expected_frames=None)`: parses 3-column (`X, Y, Z`), 4-column (`frame/time, X, Y, Z`), and 5-column (`frame, time, X, Y, Z`) CSV/text matrices with automatic delimiter detection (`,`, `;`, `\t`, whitespace) and header detection (`x`, `y`, `z`, `frame`, `time`). Handles empty cells and `NaN`/`null` as `np.nan` coordinate gaps. Supports frame padding and truncation.
+       - `parse_frame_list_csv(source)`: parses frame numbers from CSV/text containing numbers, commas, spaces, newlines, or range intervals (e.g. `10-25`).
+       - `export_marker_trajectory_csv(trial, marker_name, filepath=None)`: exports single marker trajectory to RFC 4180 CSV with columns `frame,time_s,x,y,z`.
+       - `replace_marker_trajectory(trial, marker_name, new_xyz)`: updates `trial.xyz` and `trial.residuals` in-place.
+       - `add_marker_trajectory(trial, marker_name, new_xyz, residual=0.0)`: appends new marker/point trajectory.
+       - `blank_marker_frames(trial, marker_name, frames=None, frame_range=None, csv_frames_source=None)`: blanks target frame coordinates to `np.nan`.
+    2. **Python Server API (`openbiomech/viewer.py`):**
+       - Registered and validated POST endpoints: `/api/analyze/import_trajectory_csv`, `/api/analyze/export_trajectory_csv`, and `/api/analyze/blank_frames`.
+    3. **Frontend UI & Workflows (`openbiomech/viewer.html`, `openbiomech/viewer.js`):**
+       - **Top Menu (`File ▾`):**
+         - Added `Export Active Marker (CSV)...`
+         - Added `Import / Replace Marker Trajectory (CSV)...`
+       - **Top Menu (`Kinematics ▾`):**
+         - Added `✂️ Clean / Blank Marker Frames (NaN Gaps)...` (opens directly to Tab 1 cleaning controls).
+       - **Sidebar Action Bar (Under Active Marker):**
+         - `[📥 Export CSV]`: One-click download of selected marker trajectory to CSV.
+         - `[✂ Blank Frame]`: Sets $(X, Y, Z)$ of selected marker to `null` (`NaN` gap) at the current paused playback frame.
+         - `[⚙️]`: Opens Kinematics Modal Tab 1.
+       - **Kinematics Modal Tab 1 Mode Switcher:**
+         - Added 3rd mode button: `[📊 CSV Trajectory]`.
+         - Container C provides destination options:
+           - Radio: `Create as New Point` (with point label input) vs `↻ Replace Existing Marker` (with target marker selector).
+           - File selector `#vp-csv-file-input` with automatic delimiter detection and coordinate validation.
+           - Preview badge `#vp-csv-status-badge`.
+       - **Kinematics Modal Tab 1 Fieldset (`✂️ Marker Trajectory Cleaning & Gap Blanking`):**
+         - Marker selector with dynamic sync to active marker.
+         - Scope radios: `Current frame (f = X)`, `Sequence range (From ... To ...)`, `CSV frame list file`, `All frames`.
+         - `[❌ Blank Selected Frames]`: Blanks coordinates in real-time, immediately clearing 3D marker, timeline curves, and kinematics.
+         - `[↩ Restore Marker Raw Data]`: Non-destructive 1-click restore to original raw coordinates from session memory.
+         - `[📥 Export Marker (.csv)]`: Standalone marker export.
+         - Defined points list: download icon `📥` per point row and `[📥 Export All Trajectories (.csv)]` bottom pipeline bar.
+    4. **Documentation:**
+       - Updated Section 4 in `docs/MANUAL.md` with complete documentation of CSV trajectory matrices, in-place replacement, gap blanking methods, and the external roundtrip workflow.
+       - Updated Chapter 8 in `docs/manual.html` and `#modal-manual` in `openbiomech/viewer.html`.
+    5. **Artifacts & Distribution:**
+       - Re-generated standalone HTML viewer: `outputs/rec3d_viewer.html`.
+       - Rebuilt Linux binary: `dist/mkvis3d`.
   - **Verification:**
-    - Test suite: 232 passed, 3 deselected in 19.44s (`uv run pytest -m "not browser"`).
-    - Ruff check & format: 0 errors across all 86 files (`uv run ruff check . && uv run ruff format --check .`).
-    - Chrome CDP E2E tests: verified angle readout (`55.74°`), 4pt mode switch (`49.42°`), Plot 1 curve generation, manual coordinate virtual point creation, and Tab 3 longitudinal axes angle (`124.92°`).
-    - Visual screenshots verified: `outputs/screenshot_angle_sidebar_plot.png` and `outputs/screenshot_manual_point_kinematics.png`.
+    - Python unit tests (`tests/test_marker_trajectory_editing.py`): 8 passed in 0.60s.
+    - Full test suite (`uv run pytest -m "not browser"`): 239 passed, 4 deselected in 17.17s.
+    - Live sync test (`uv run pytest tests/test_video_sync_live.py`): 1 passed in 3.84s.
+    - Linting & Formatting: `uv run ruff check .` passed with zero warnings; `uv run ruff format --check .` passed on all 87 files.
+    - End-to-end browser automation (`scratch/run_point_csv_test.sh`): verified sidebar action buttons, current frame blanking, sequence range blanking, 1-click restore, CSV trajectory new point creation, and in-place marker replacement. Screenshot saved at `outputs/screenshot_point_csv_cleaning.png`.
+    - Binary verified: `./dist/mkvis3d --help` returns zero exit code.
 
 - **What Worked:**
-  - Clamping the dot product quotient prior to $\arccos$ ensures robust numerical stability across degenerate, near-parallel, and anti-parallel configurations in both Python backend and JS client.
-  - Exposing `window.trial = data;` ensures smooth integration with external automation, CDP tests, and browser inspector workflows.
+  - Synchronizing `rawLoadedXYZ` alongside `trial.xyz` ensures that filtering or LCS transformations do not overwrite newly replaced trajectories or lose track of raw data needed for `[↩ Restore Marker Raw Data]`.
+  - Flexible matrix parsing (supporting 3, 4, or 5 columns and various delimiters) accommodates outputs from Qualisys, Vicon, OptiTrack, OpenSim, Python/NumPy, and MATLAB.
 
 - **Failed Approaches:**
   - N/A.
 
-- **Open Questions & Next Steps:**
-  - All requested features, tests, builds, and documentation are complete.
+- **Git Status Reminder:**
+  - In accordance with user rules, NO `git add`, `git commit`, or `git push` commands were executed. Version control operations are reserved exclusively for the user.

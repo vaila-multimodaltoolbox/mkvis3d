@@ -25,11 +25,14 @@
   - [3.3 Tait-Bryan Sequences & Clinical Meaning](#33-tait-bryan-sequences--clinical-meaning)
   - [3.4 Gimbal Lock Singularities & Precautions](#34-gimbal-lock-singularities--precautions)
   - [3.5 Unit Quaternions (Scalar-First Convention)](#35-unit-quaternions-scalar-first-convention)
-- [4. Virtual Points & Secondary Landmark Creator](#4-virtual-points--secondary-landmark-creator)
+- [4. Virtual Points, CSV Trajectories & Trajectory Editing](#4-virtual-points-csv-trajectories--trajectory-editing)
   - [4.1 Why Virtual Points Matter in Biomechanics](#41-why-virtual-points-matter-in-biomechanics)
-  - [4.2 NumPy Vector Expression Syntax](#42-numpy-vector-expression-syntax)
-  - [4.3 Common Formula Templates](#43-common-formula-templates)
-  - [4.4 Reusable Pipelines & Script Generation](#44-reusable-pipelines--script-generation)
+  - [4.2 Creation Modes: Formula, Manual Coordinates & CSV Matrix](#42-creation-modes-formula-manual-coordinates--csv-matrix)
+  - [4.3 NumPy Vector Expression Syntax & Templates](#43-numpy-vector-expression-syntax--templates)
+  - [4.4 CSV Trajectory Matrix Import & Marker Replacement](#44-csv-trajectory-matrix-import--marker-replacement)
+  - [4.5 Marker Trajectory Cleaning & Gap Blanking (Single, Range, CSV)](#45-marker-trajectory-cleaning--gap-blanking-single-range-csv)
+  - [4.6 External Processing Roundtrip & Non-Destructive Restore](#46-external-processing-roundtrip--non-destructive-restore)
+  - [4.7 Reusable Pipelines & Script Generation](#47-reusable-pipelines--script-generation)
 - [5. Signal Conditioning: Filtering & Gap Interpolation](#5-signal-conditioning-filtering--gap-interpolation)
   - [5.1 Butterworth Dual-Pass Digital Filter](#51-butterworth-dual-pass-digital-filter)
   - [5.2 Visual3D-Grade Trajectory Gap Inspection](#52-visual3d-grade-trajectory-gap-inspection)
@@ -284,7 +287,7 @@ $$\theta = \arccos\left(\text{clamp}\left(\frac{\mathbf{u} \cdot \mathbf{v}}{\|\
 
 ---
 
-## 4. Virtual Points & Secondary Landmark Creator
+## 4. Virtual Points, CSV Trajectories & Trajectory Editing
 
 ### 4.1 Why Virtual Points Matter in Biomechanics
 Skin-mounted retroreflective markers cannot be placed inside anatomical joint centers. Classical biomechanical models (e.g. Davis, Helen Hayes, Harrington, Plug-in Gait) rely on **virtual landmarks** calculated geometrically from external bony prominences:
@@ -293,8 +296,8 @@ Skin-mounted retroreflective markers cannot be placed inside anatomical joint ce
 - **Ankle Joint Center (AJC):** Midpoint between Lateral and Medial Malleoli.
 - **Pelvic Midpoint:** Center of the pelvic brim $(RASI + LASI) / 2$.
 
-### 4.2 Creation Modes: Formula vs. Manual Coordinates
-mkvis3d provides two distinct modes for virtual point generation:
+### 4.2 Creation Modes: Formula, Manual Coordinates & CSV Matrix
+mkvis3d provides three distinct modes for virtual point generation and trajectory management:
 1. **NumPy Formula Mode (Dynamic Trajectories):**
    - Evaluates a vectorized mathematical expression across all frames.
    - Accesses trial marker arrays via `p['MARKER_NAME']` (shape $N \times 3$).
@@ -303,13 +306,14 @@ mkvis3d provides two distinct modes for virtual point generation:
    - Convenience button **📋 Copy from Active Marker @ Frame** copies the instantaneous 3D position of the active marker into the $X, Y, Z$ inputs.
    - Creates a constant $(N, 3)$ coordinate array across all frames.
    - Standalone Python pipeline exports cleanly as `p['NAME'] = np.tile(np.array([X, Y, Z]), (len(trial.frames), 1))`.
+3. **CSV Trajectory Matrix Mode (Import & Replace):**
+   - Loads an external time-series coordinate matrix where rows represent frames and columns represent $(X, Y, Z)$ positions in meters.
+   - Supports creating a brand new point or replacing an existing marker trajectory in-place.
 
-### 4.3 NumPy Vector Expression Syntax
+### 4.3 NumPy Vector Expression Syntax & Templates
 mkvis3d features an interactive **Virtual Point Creator** where users can write formulas in standard NumPy syntax. The system exposes the marker dictionary `p`:
 - `p['MARKER_NAME']`: Accesses the $[N \times 3]$ coordinates of marker across all frames.
 - `np`: Standard NumPy library functions (`np.cross`, `np.linalg.norm`, `np.dot`, `np.sqrt`).
-
-### 4.3 Common Formula Templates
 
 #### 1. Midpoint of Two Markers:
 $$\mathbf{r}_{\text{mid}} = \frac{\mathbf{r}_A + \mathbf{r}_B}{2}$$
@@ -337,9 +341,38 @@ Calculates joint center at a distance $d$ along the normal to the pelvic plane:
 )
 ```
 
-### 4.4 Reusable Pipelines & Script Generation
+### 4.4 CSV Trajectory Matrix Import & Marker Replacement
+External trajectory data can be ingested directly into mkvis3d:
+- **Matrix Layout:**
+  - Rows represent discrete time frames ($t_0, t_1, \dots, t_{N-1}$).
+  - Columns contain coordinates in meters:
+    - 3-column: `X, Y, Z`
+    - 4-column: `frame, X, Y, Z` or `time, X, Y, Z`
+    - 5-column: `frame, time, X, Y, Z`
+  - Flexible delimiters (comma `,`, semicolon `;`, tab `\t`, or space) with automatic header detection (`x`, `y`, `z`, `frame`, `time`).
+  - Blank entries or strings like `nan`, `NaN`, `null` are correctly parsed as `np.nan` coordinate gaps.
+- **Import Actions:**
+  - **Create as New Point:** Assigns the loaded matrix to a new point identifier (e.g. `P_FILTERED`). The point is immediately integrated into 3D animations, timeline plots, and can be used in LCS definitions and angle calculations.
+  - **↻ Replace Existing Marker:** Overwrites an existing physical marker in-place. The new trajectory immediately updates the 3D skeleton, timeline curves, and kinematics models while keeping the original trajectory safe in non-destructive cache.
+
+### 4.5 Marker Trajectory Cleaning & Gap Blanking (Single, Range, CSV)
+Physical optical mocap trials frequently contain tracking artifacts, reflections, or mislabeled markers that must be blanked or removed before interpolation and filtering:
+- **Blank Current Playback Frame:** Sets $(X, Y, Z)$ of the selected marker to `NaN` at the paused frame $f$.
+- **Blank Frame Range (`From ... To ...`):** Blanks an inclusive window of frames (e.g. frames $150$ to $210$).
+- **Blank via CSV Frame List File:** Upload a CSV or text file specifying frame numbers to blank. Supports comma-separated integers (`10, 11, 12`), space/newline-separated lists, and range syntax (`10-25`).
+- **Blank All Frames:** Resets the entire marker trajectory to `NaN`.
+
+### 4.6 External Processing Roundtrip & Non-Destructive Restore
+mkvis3d is designed for seamless interoperability with external analysis workflows (Python, MATLAB, R, Excel):
+1. **Export Marker Trajectory:** Click **📥 Export CSV** in the active marker sidebar or **File ▾ -> Export Active Marker (CSV)...** to produce an RFC 4180 CSV file with columns `frame,time_s,x,y,z`.
+2. **Process Outside:** Clean outliers, apply custom spline smoothers, or compute model-based reconstructions in your scientific environment of choice.
+3. **Re-Import & Replace:** Use **File ▾ -> Import / Replace Marker Trajectory (CSV)...** or Tab 1 **[📊 CSV Trajectory] -> ↻ Replace Existing Marker** to re-inject the trajectory back into mkvis3d.
+4. **Instant Restore:** If an external edit or blanking step was erroneous, click **↩ Restore Marker Raw Data** to instantaneously recover original raw coordinates from session memory.
+
+### 4.7 Reusable Pipelines & Script Generation
 - **Save/Load Pipeline (.json):** Saves all defined virtual points, their formulas, and dependencies to a JSON file for 1-click batch application to subsequent trials.
 - **Export Standalone Python Script (.py):** Generates an executable, self-contained Python script implementing the exact virtual points and Cartesian bases, complete with NumPy imports and C3D writer.
+- **Export All Trajectories (.csv):** Exports all trial markers and virtual points into clean per-marker CSV files.
 
 ---
 

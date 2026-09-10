@@ -280,7 +280,7 @@
       <a href="#ch5" class="toc-item">5. Distance & Point Tools</a>
       <a href="#ch6" class="toc-item">6. Coordinate Systems & Bases</a>
       <a href="#ch7" class="toc-item">7. Relative Kinematics (MR, Euler)</a>
-      <a href="#ch8" class="toc-item">8. Virtual Points (NumPy)</a>
+      <a href="#ch8" class="toc-item">8. Virtual Points & CSV Trajectories</a>
       <a href="#ch9" class="toc-item">9. Filtering & Gap Filling</a>
       <a href="#ch10" class="toc-item">10. Center of Mass (de Leva)</a>
       <a href="#ch11" class="toc-item">11. Force Platforms & Kinetics</a>
@@ -477,9 +477,9 @@
 
       <!-- Chapter 8 -->
       <section id="ch8" class="manual-section">
-        <h2>8. Virtual Points & Secondary Landmark Creator</h2>
+        <h2>8. Virtual Points, CSV Trajectories & Trajectory Editing</h2>
         <p>
-          Joint centers (e.g. Hip Joint Center, Knee Joint Center) and calibration offsets cannot always be measured directly by physical skin markers. mkvis3d provides two flexible creation modes:
+          Joint centers (e.g. Hip Joint Center, Knee Joint Center), calibration offsets, and externally filtered/reconstructed trajectories can be seamlessly integrated into mkvis3d. The platform provides three specialized creation and editing workflows:
         </p>
 
         <h3>8.1 NumPy Formula Mode</h3>
@@ -505,7 +505,38 @@
           <li>Press <strong>+ Create Point</strong> to instantiate the point across all frames. In the defined points list, it appears as <code>📍 Manual [X, Y, Z] m</code>.</li>
         </ul>
 
-        <h3>8.3 Pipeline Script Export (.py)</h3>
+        <h3>8.3 CSV Trajectory Matrix Mode (Import & Replace)</h3>
+        <p>
+          Import external time-series coordinate matrices from CSV/text files (rows = time frames, columns = coordinates in meters):
+        </p>
+        <ul>
+          <li><strong>Supported Column Structures:</strong> 3 columns (<code>X, Y, Z</code>), 4 columns (<code>frame, X, Y, Z</code> or <code>time, X, Y, Z</code>), or 5 columns (<code>frame, time, X, Y, Z</code>). Automatic separator detection (<code>,</code>, <code>;</code>, <code>\t</code>, space) and header recognition.</li>
+          <li><strong>Destination Action:</strong>
+            <ul>
+              <li><strong>Create as New Point:</strong> Registers the imported trajectory as a new marker/point (e.g., <code>P_FILTERED</code>). It immediately appears in the 3D scene, timeline plots, and kinematics calculators.</li>
+              <li><strong>↻ Replace Existing Marker:</strong> Replaces the trajectory of an existing physical marker in-place. The 3D animation, coordinate system segments, and curves instantly update while caching original raw data.</li>
+            </ul>
+          </li>
+        </ul>
+
+        <h3>8.4 Marker Trajectory Cleaning & Gap Blanking</h3>
+        <p>
+          Remove erroneous frames or marker reflection artifacts by setting them to <code>NaN</code> gaps before running filters or interpolations:
+        </p>
+        <ul>
+          <li><strong>Current Playback Frame:</strong> Instantly blanks the selected marker's coordinates at the current paused frame.</li>
+          <li><strong>Frame Range (From ... To ...):</strong> Blanks a contiguous sequence of frames (e.g., frames 120 to 180).</li>
+          <li><strong>CSV Frame List File:</strong> Upload a CSV or text file containing frame indices or intervals (e.g. <code>12, 13, 20-35</code>) to blank in batch.</li>
+          <li><strong>Blank All Frames:</strong> Clears the entire trajectory to <code>NaN</code>.</li>
+          <li><strong>↩ Restore Marker Raw Data:</strong> Non-destructive 1-click recovery that resets any replaced or blanked marker back to its raw imported state.</li>
+        </ul>
+
+        <h3>8.5 External Roundtrip Workflow</h3>
+        <p>
+          Export marker trajectories (<code>File ▾ -> Export Active Marker (CSV)...</code> or <code>[📥 Export CSV]</code>), process them in Python, MATLAB, or R, and reload them via <code>File ▾ -> Import / Replace Marker Trajectory (CSV)...</code>.
+        </p>
+
+        <h3>8.6 Pipeline Script Export (.py)</h3>
         <p>
           Click <strong>💾 Save Points Pipeline (.py)</strong> to export all defined points as clean, standalone Python code using <code>np.tile(...)</code> for manual coordinates and vectorized NumPy expressions for dynamic points.
         </p>

@@ -804,6 +804,9 @@ function draw() {
   const totalTime = ((trial.xyz.length - 1) / trial.rate_hz).toFixed(3);
   $("frame").textContent = `${frame + 1} / ${trial.xyz.length} · ${curTime} s / ${totalTime} s`;
   $("timeline").value = String(frame);
+  if ($("clean-curr-frame-label")) {
+    $("clean-curr-frame-label").textContent = `f=${frame}`;
+  }
 
   // Update distance readout
   const d = distances[frame];
@@ -1389,6 +1392,7 @@ function pause() {
 function selectActiveMarker(idx) {
   activeMarkerIndex = idx;
   if ($("marker-select")) $("marker-select").value = String(idx);
+  if ($("clean-marker-select")) $("clean-marker-select").value = String(idx);
   draw();
   saveSessionState();
 }
@@ -1625,7 +1629,8 @@ function refreshMarkerSelectors() {
     "s2-origin", "s2-primary-pt", "s2-plane-pt",
     "sg-origin", "sg-primary-pt", "sg-plane-pt",
     "angle-marker-a", "angle-marker-b", "angle-marker-c",
-    "angle-v1-a", "angle-v1-b", "angle-v2-c", "angle-v2-d"
+    "angle-v1-a", "angle-v1-b", "angle-v2-c", "angle-v2-d",
+    "vp-csv-replace-marker", "clean-marker-select"
   ]) {
     if (!$(key)) continue;
     const isUserSet = $(key).dataset.userSelected === "true";
@@ -6098,7 +6103,7 @@ function evaluateExpressionJS(expr, trialData) {
   return coords;
 }
 
-async function addVirtualPoint(name, expr) {
+async function addVirtualPoint(name, expr, precomputedCoords = null) {
   if (!trial) return;
   const cleanName = name.trim();
   const cleanExpr = expr.trim();
@@ -6120,8 +6125,8 @@ async function addVirtualPoint(name, expr) {
     return;
   }
 
-  let coords = null;
-  if (boot.server) {
+  let coords = precomputedCoords;
+  if (!coords && boot.server) {
     try {
       const resp = await fetch("/api/analyze/evaluate_point", {
         method: "POST",
@@ -6155,6 +6160,11 @@ async function addVirtualPoint(name, expr) {
   trial.labels.push(cleanName);
   for (let f = 0; f < trial.xyz.length; f++) {
     trial.xyz[f].push(coords[f] || [NaN, NaN, NaN]);
+  }
+  if (rawLoadedXYZ) {
+    for (let f = 0; f < rawLoadedXYZ.length; f++) {
+      rawLoadedXYZ[f].push(coords[f] ? [...coords[f]] : null);
+    }
   }
 
   virtualPoints.push({
@@ -6203,7 +6213,8 @@ function renderVirtualPointsTable() {
     tdExpr.style.padding = "4px";
     tdExpr.style.fontFamily = "monospace";
     const isManual = vp.expression.trim().startsWith("[");
-    tdExpr.textContent = isManual ? `📍 Manual ${vp.expression} m` : vp.expression;
+    const isCsv = vp.expression.startsWith("CSV [");
+    tdExpr.textContent = isManual ? `📍 Manual ${vp.expression} m` : (isCsv ? `📊 ${vp.expression}` : vp.expression);
 
     const tdStatus = document.createElement("td");
     tdStatus.style.padding = "4px";
@@ -6214,12 +6225,24 @@ function renderVirtualPointsTable() {
     const tdAct = document.createElement("td");
     tdAct.style.padding = "4px";
     tdAct.style.textAlign = "right";
+
+    const btnExp = document.createElement("button");
+    btnExp.type = "button";
+    btnExp.textContent = "📥";
+    btnExp.title = "Export trajectory to CSV";
+    btnExp.style.padding = "2px 6px";
+    btnExp.style.fontSize = "11px";
+    btnExp.style.marginRight = "4px";
+    btnExp.onclick = () => exportSingleMarkerCSV(vp.name);
+
     const btnDel = document.createElement("button");
     btnDel.type = "button";
     btnDel.textContent = "🗑";
     btnDel.style.padding = "2px 6px";
     btnDel.style.fontSize = "11px";
     btnDel.onclick = () => removeVirtualPoint(idx);
+
+    tdAct.appendChild(btnExp);
     tdAct.appendChild(btnDel);
 
     tr.appendChild(tdName);
@@ -6238,6 +6261,11 @@ function removeVirtualPoint(index) {
     trial.labels.splice(lIdx, 1);
     for (let f = 0; f < trial.xyz.length; f++) {
       trial.xyz[f].splice(lIdx, 1);
+    }
+    if (rawLoadedXYZ) {
+      for (let f = 0; f < rawLoadedXYZ.length; f++) {
+        rawLoadedXYZ[f].splice(lIdx, 1);
+      }
     }
   }
   refreshMarkerSelectors();
@@ -6292,6 +6320,216 @@ async function loadVirtualPointsPipeline(file) {
     status("Failed to load pipeline: " + e.message, true);
   }
 }
+
+function parseTrajectoryCSV(text, expectedFrames) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+  if (!lines.length) throw new Error("CSV file is empty.");
+
+  const first = lines[0];
+  let delim = ",";
+  if (first.includes(";") && (first.match(/;/g) || []).length >= 2) delim = ";";
+  else if (first.includes("\t")) delim = "\t";
+  else if (!first.includes(",") && /\s{2,}/.test(first)) delim = /\s+/;
+
+  const rawRows = lines.map(l => typeof delim === "string" ? l.split(delim).map(s => s.trim()) : l.split(delim).map(s => s.trim()));
+  if (!rawRows.length) throw new Error("No data rows found in CSV.");
+
+  const headerCandidate = rawRows[0];
+  let hasHeader = false;
+  for (const cell of headerCandidate) {
+    if (isNaN(parseFloat(cell))) {
+      hasHeader = true;
+      break;
+    }
+  }
+
+  let xIdx = 0, yIdx = 1, zIdx = 2;
+  let dataRows = rawRows;
+  if (hasHeader) {
+    dataRows = rawRows.slice(1);
+    const colNames = headerCandidate.map(c => c.toLowerCase());
+    const mX = colNames.findIndex(c => /\b(x|pos_x|coord_x|x_m)\b/.test(c) || c === "x");
+    const mY = colNames.findIndex(c => /\b(y|pos_y|coord_y|y_m)\b/.test(c) || c === "y");
+    const mZ = colNames.findIndex(c => /\b(z|pos_z|coord_z|z_m)\b/.test(c) || c === "z");
+    if (mX >= 0 && mY >= 0 && mZ >= 0) {
+      xIdx = mX; yIdx = mY; zIdx = mZ;
+    } else {
+      const nCols = headerCandidate.length;
+      if (nCols === 4) { xIdx = 1; yIdx = 2; zIdx = 3; }
+      else if (nCols >= 5) { xIdx = 2; yIdx = 3; zIdx = 4; }
+    }
+  } else {
+    const nCols = headerCandidate.length;
+    if (nCols === 4) { xIdx = 1; yIdx = 2; zIdx = 3; }
+    else if (nCols >= 5) { xIdx = 2; yIdx = 3; zIdx = 4; }
+  }
+
+  const nanStrings = new Set(["", "nan", "none", "null", "-", "na", "n/a"]);
+  const coords = [];
+  for (const row of dataRows) {
+    const parseCol = idx => {
+      if (idx >= row.length) return NaN;
+      const s = row[idx].toLowerCase();
+      if (nanStrings.has(s)) return NaN;
+      const val = parseFloat(s);
+      return Number.isFinite(val) ? val : NaN;
+    };
+    const x = parseCol(xIdx), y = parseCol(yIdx), z = parseCol(zIdx);
+    coords.push([x, y, z]);
+  }
+
+  if (expectedFrames && expectedFrames > 0) {
+    while (coords.length < expectedFrames) {
+      coords.push([NaN, NaN, NaN]);
+    }
+    if (coords.length > expectedFrames) {
+      coords.length = expectedFrames;
+    }
+  }
+
+  return coords;
+}
+
+function parseFrameListText(text) {
+  const frames = new Set();
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+  for (const line of lines) {
+    const tokens = line.split(/[,;\s]+/);
+    for (let token of tokens) {
+      token = token.trim();
+      if (!token || ["frame", "frames", "index", "f", "id"].includes(token.toLowerCase())) continue;
+      const rangeMatch = token.match(/^(\d+)(?:-|\.\.)(\d+)$/);
+      if (rangeMatch) {
+        let s = parseInt(rangeMatch[1], 10);
+        let e = parseInt(rangeMatch[2], 10);
+        if (s > e) [s, e] = [e, s];
+        for (let i = s; i <= e; i++) frames.add(i);
+        continue;
+      }
+      const val = parseInt(token, 10);
+      if (Number.isFinite(val) && val >= 0) frames.add(val);
+    }
+  }
+  return Array.from(frames).sort((a, b) => a - b);
+}
+
+function exportSingleMarkerCSV(markerNameOrIdx) {
+  if (!trial) {
+    status("Load a trial before exporting marker CSV.", true);
+    return;
+  }
+  let idx = -1;
+  let name = "";
+  if (typeof markerNameOrIdx === "number") {
+    idx = markerNameOrIdx;
+    name = trial.labels[idx] || `marker_${idx + 1}`;
+  } else {
+    name = String(markerNameOrIdx);
+    idx = trial.labels.indexOf(name);
+  }
+  if (idx < 0 || idx >= trial.labels.length) {
+    status(`Marker "${name}" not found in trial.`, true);
+    return;
+  }
+
+  const rate = trial.rate_hz > 0 ? trial.rate_hz : 100.0;
+  const lines = ["frame,time_s,x,y,z"];
+  for (let f = 0; f < trial.xyz.length; f++) {
+    const t = (f / rate).toFixed(5);
+    const pt = trial.xyz[f][idx];
+    if (valid(pt)) {
+      lines.push(`${f},${t},${pt[0].toFixed(6)},${pt[1].toFixed(6)},${pt[2].toFixed(6)}`);
+    } else {
+      lines.push(`${f},${t},,,`);
+    }
+  }
+  const trialStem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  download(lines.join("\n") + "\n", `${trialStem}_${name}_trajectory.csv`, "text/csv");
+  status(`Exported CSV trajectory for "${name}" (${trial.xyz.length} frames).`);
+}
+
+function replaceMarkerTrajectory(targetMarkerIdx, coords, sourceDesc = "CSV") {
+  if (!trial || targetMarkerIdx < 0 || targetMarkerIdx >= trial.labels.length) return;
+  const markerName = trial.labels[targetMarkerIdx];
+
+  // Backup original before first modification
+  if (!interpolatedMarkers[targetMarkerIdx] && rawLoadedXYZ) {
+    interpolatedMarkers[targetMarkerIdx] = rawLoadedXYZ.map(f => (f[targetMarkerIdx] ? [...f[targetMarkerIdx]] : null));
+  }
+
+  for (let f = 0; f < trial.xyz.length; f++) {
+    const pt = coords[f];
+    const isV = pt && Number.isFinite(pt[0]) && Number.isFinite(pt[1]) && Number.isFinite(pt[2]);
+    const val = isV ? [pt[0], pt[1], pt[2]] : [NaN, NaN, NaN];
+    trial.xyz[f][targetMarkerIdx] = val;
+    if (rawLoadedXYZ && rawLoadedXYZ[f]) {
+      rawLoadedXYZ[f][targetMarkerIdx] = isV ? [pt[0], pt[1], pt[2]] : null;
+    }
+  }
+
+  recomputeTrialXYZ();
+  refresh3DViewport();
+  updateTable();
+  status(`Replaced trajectory for marker "${markerName}" (${coords.length} frames from ${sourceDesc}).`);
+}
+
+function blankMarkerFrames(targetMarkerIdx, frameList) {
+  if (!trial || targetMarkerIdx < 0 || targetMarkerIdx >= trial.labels.length) return;
+  const markerName = trial.labels[targetMarkerIdx];
+
+  if (!interpolatedMarkers[targetMarkerIdx] && rawLoadedXYZ) {
+    interpolatedMarkers[targetMarkerIdx] = rawLoadedXYZ.map(f => (f[targetMarkerIdx] ? [...f[targetMarkerIdx]] : null));
+  }
+
+  let count = 0;
+  frameList.forEach(f => {
+    if (f >= 0 && f < trial.xyz.length) {
+      trial.xyz[f][targetMarkerIdx] = [NaN, NaN, NaN];
+      if (rawLoadedXYZ && rawLoadedXYZ[f]) {
+        rawLoadedXYZ[f][targetMarkerIdx] = null;
+      }
+      count++;
+    }
+  });
+
+  recomputeTrialXYZ();
+  refresh3DViewport();
+  updateTable();
+  status(`Blanked ${count} frames for marker "${markerName}" (NaN gaps created).`);
+}
+
+function restoreMarkerTrajectory(targetMarkerIdx) {
+  if (!trial || targetMarkerIdx < 0 || targetMarkerIdx >= trial.labels.length) return;
+  const markerName = trial.labels[targetMarkerIdx];
+
+  if (interpolatedMarkers[targetMarkerIdx]) {
+    const backup = interpolatedMarkers[targetMarkerIdx];
+    for (let f = 0; f < trial.xyz.length; f++) {
+      const pt = backup[f];
+      trial.xyz[f][targetMarkerIdx] = pt ? [...pt] : [NaN, NaN, NaN];
+      if (rawLoadedXYZ && rawLoadedXYZ[f]) {
+        rawLoadedXYZ[f][targetMarkerIdx] = pt ? [...pt] : null;
+      }
+    }
+    delete interpolatedMarkers[targetMarkerIdx];
+  } else {
+    status(`No modifications found to restore for marker "${markerName}".`);
+    return;
+  }
+
+  recomputeTrialXYZ();
+  refresh3DViewport();
+  updateTable();
+  status(`Restored original trajectory for marker "${markerName}".`);
+}
+
+window.parseTrajectoryCSV = parseTrajectoryCSV;
+window.parseFrameListText = parseFrameListText;
+window.exportSingleMarkerCSV = exportSingleMarkerCSV;
+window.replaceMarkerTrajectory = replaceMarkerTrajectory;
+window.blankMarkerFrames = blankMarkerFrames;
+window.restoreMarkerTrajectory = restoreMarkerTrajectory;
+window.addVirtualPoint = addVirtualPoint;
 
 function updateKinematicsBasisFeedback() {
   if (!trial || !trial.labels.length) return;
@@ -7135,30 +7373,91 @@ function initKinematicsControls() {
   });
 
   let vpCreationMode = "formula";
-  if ($("btn-vp-mode-formula")) {
-    $("btn-vp-mode-formula").onclick = () => {
-      vpCreationMode = "formula";
-      $("btn-vp-mode-formula").classList.add("active");
-      $("btn-vp-mode-formula").style.background = "var(--accent)";
-      $("btn-vp-mode-formula").style.color = "#fff";
-      $("btn-vp-mode-manual").classList.remove("active");
-      $("btn-vp-mode-manual").style.background = "var(--bg-canvas)";
-      $("btn-vp-mode-manual").style.color = "var(--text-normal)";
-      if ($("vp-container-formula")) $("vp-container-formula").style.display = "block";
-      if ($("vp-container-manual")) $("vp-container-manual").style.display = "none";
+  let parsedCsvTrajectory = null;
+  let parsedCsvFilename = "";
+  let parsedCleanCsvFrames = [];
+
+  const updateVpModeUI = mode => {
+    vpCreationMode = mode;
+    for (const m of ["formula", "manual", "csv"]) {
+      const btn = $(`btn-vp-mode-${m}`);
+      const container = $(`vp-container-${m}`);
+      if (btn) {
+        if (m === mode) {
+          btn.classList.add("active");
+          btn.style.background = "var(--accent)";
+          btn.style.color = "#fff";
+        } else {
+          btn.classList.remove("active");
+          btn.style.background = "var(--bg-canvas)";
+          btn.style.color = "var(--text-normal)";
+        }
+      }
+      if (container) container.style.display = (m === mode) ? "block" : "none";
+    }
+    const isReplace = mode === "csv" && $("vp-csv-dest-replace") && $("vp-csv-dest-replace").checked;
+    if ($("vp-name-row")) $("vp-name-row").style.display = isReplace ? "none" : "grid";
+    if ($("btn-add-virtual-point")) {
+      $("btn-add-virtual-point").textContent = isReplace ? "↻ Replace Marker Trajectory" : "+ Create Point";
+    }
+  };
+
+  if ($("btn-vp-mode-formula")) $("btn-vp-mode-formula").onclick = () => updateVpModeUI("formula");
+  if ($("btn-vp-mode-manual")) $("btn-vp-mode-manual").onclick = () => updateVpModeUI("manual");
+  if ($("btn-vp-mode-csv")) $("btn-vp-mode-csv").onclick = () => updateVpModeUI("csv");
+
+  if ($("vp-csv-dest-new")) {
+    $("vp-csv-dest-new").onchange = () => {
+      if ($("vp-csv-replace-row")) $("vp-csv-replace-row").style.display = "none";
+      if ($("vp-name-row")) $("vp-name-row").style.display = "grid";
+      if ($("btn-add-virtual-point")) $("btn-add-virtual-point").textContent = "+ Create Point";
     };
   }
-  if ($("btn-vp-mode-manual")) {
-    $("btn-vp-mode-manual").onclick = () => {
-      vpCreationMode = "manual";
-      $("btn-vp-mode-manual").classList.add("active");
-      $("btn-vp-mode-manual").style.background = "var(--accent)";
-      $("btn-vp-mode-manual").style.color = "#fff";
-      $("btn-vp-mode-formula").classList.remove("active");
-      $("btn-vp-mode-formula").style.background = "var(--bg-canvas)";
-      $("btn-vp-mode-formula").style.color = "var(--text-normal)";
-      if ($("vp-container-manual")) $("vp-container-manual").style.display = "block";
-      if ($("vp-container-formula")) $("vp-container-formula").style.display = "none";
+  if ($("vp-csv-dest-replace")) {
+    $("vp-csv-dest-replace").onchange = () => {
+      if ($("vp-csv-replace-row")) $("vp-csv-replace-row").style.display = "grid";
+      if ($("vp-name-row")) $("vp-name-row").style.display = "none";
+      if ($("btn-add-virtual-point")) $("btn-add-virtual-point").textContent = "↻ Replace Marker Trajectory";
+    };
+  }
+
+  if ($("vp-csv-file-input")) {
+    $("vp-csv-file-input").onchange = async () => {
+      const file = $("vp-csv-file-input").files[0];
+      if (!file) return;
+      parsedCsvFilename = file.name;
+      const badge = $("vp-csv-status-badge");
+      try {
+        const text = await file.text();
+        const expected = trial ? trial.xyz.length : 0;
+        parsedCsvTrajectory = parseTrajectoryCSV(text, expected);
+        if (badge) {
+          badge.style.color = "#22c55e";
+          badge.textContent = `✓ Loaded "${file.name}": ${parsedCsvTrajectory.length} frames (trial: ${expected} frames).`;
+        }
+        if ($("vp-name") && !$("vp-name").value) {
+          $("vp-name").value = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_").toUpperCase();
+        }
+        status(`Parsed ${parsedCsvTrajectory.length} frames from CSV "${file.name}".`);
+      } catch (err) {
+        parsedCsvTrajectory = null;
+        if (badge) {
+          badge.style.color = "#ef4444";
+          badge.textContent = `Error reading CSV: ${err.message}`;
+        }
+      }
+    };
+  }
+  if ($("btn-vp-clear-csv")) {
+    $("btn-vp-clear-csv").onclick = () => {
+      if ($("vp-csv-file-input")) $("vp-csv-file-input").value = "";
+      parsedCsvTrajectory = null;
+      parsedCsvFilename = "";
+      const badge = $("vp-csv-status-badge");
+      if (badge) {
+        badge.style.color = "var(--text-muted)";
+        badge.textContent = "ℹ️ Select a CSV file with rows for frames and columns for (X, Y, Z) in meters.";
+      }
     };
   }
 
@@ -7190,6 +7489,31 @@ function initKinematicsControls() {
 
   if ($("btn-add-virtual-point")) {
     $("btn-add-virtual-point").onclick = async () => {
+      const errEl = $("vp-error");
+      if (errEl) errEl.style.display = "none";
+
+      if (vpCreationMode === "csv") {
+        const activeTrajectory = window.parsedCsvTrajectory || parsedCsvTrajectory;
+        const activeFilename = window.parsedCsvFilename || parsedCsvFilename;
+        if (!activeTrajectory) {
+          if (errEl) { errEl.textContent = "Please select a valid CSV trajectory file first."; errEl.style.display = "block"; }
+          return;
+        }
+        const isReplace = $("vp-csv-dest-replace") && $("vp-csv-dest-replace").checked;
+        if (isReplace) {
+          const targetIdx = parseInt($("vp-csv-replace-marker") ? $("vp-csv-replace-marker").value : "0", 10);
+          replaceMarkerTrajectory(targetIdx, activeTrajectory, activeFilename || "CSV");
+        } else {
+          const name = $("vp-name") ? $("vp-name").value.trim() : "";
+          if (!name) {
+            if (errEl) { errEl.textContent = "Please enter a point name."; errEl.style.display = "block"; }
+            return;
+          }
+          await addVirtualPoint(name, `CSV [${activeFilename || "imported.csv"}]`, activeTrajectory);
+        }
+        return;
+      }
+
       const name = $("vp-name") ? $("vp-name").value.trim() : "";
       let expr = "";
       if (vpCreationMode === "manual") {
@@ -7197,9 +7521,9 @@ function initKinematicsControls() {
         const y = parseFloat($("vp-manual-y") ? $("vp-manual-y").value : "0");
         const z = parseFloat($("vp-manual-z") ? $("vp-manual-z").value : "0");
         if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-          if ($("vp-error")) {
-            $("vp-error").textContent = "Please enter valid numerical coordinates for X, Y, and Z.";
-            $("vp-error").style.display = "block";
+          if (errEl) {
+            errEl.textContent = "Please enter valid numerical coordinates for X, Y, and Z.";
+            errEl.style.display = "block";
           }
           return;
         }
@@ -7208,14 +7532,146 @@ function initKinematicsControls() {
         expr = $("vp-expr") ? $("vp-expr").value.trim() : "";
       }
       if (!name) {
-        if ($("vp-error")) { $("vp-error").textContent = "Please enter a point name."; $("vp-error").style.display = "block"; }
+        if (errEl) { errEl.textContent = "Please enter a point name."; errEl.style.display = "block"; }
         return;
       }
       if (!expr) {
-        if ($("vp-error")) { $("vp-error").textContent = "Please enter a formula or coordinates."; $("vp-error").style.display = "block"; }
+        if (errEl) { errEl.textContent = "Please enter a formula or coordinates."; errEl.style.display = "block"; }
         return;
       }
       await addVirtualPoint(name, expr);
+    };
+  }
+
+  // Marker Cleaning & Frame Blanking controls
+  const updateCleanScopeUI = () => {
+    const scope = document.querySelector('input[name="clean-scope"]:checked')?.value || "current";
+    if ($("clean-range-controls")) $("clean-range-controls").style.display = (scope === "range") ? "grid" : "none";
+    if ($("clean-csv-controls")) $("clean-csv-controls").style.display = (scope === "csv") ? "block" : "none";
+  };
+  document.querySelectorAll('input[name="clean-scope"]').forEach(r => {
+    r.onchange = updateCleanScopeUI;
+  });
+
+  if ($("btn-clean-set-start-curr")) {
+    $("btn-clean-set-start-curr").onclick = () => {
+      if ($("clean-range-start")) $("clean-range-start").value = String(frame);
+    };
+  }
+  if ($("btn-clean-set-end-curr")) {
+    $("btn-clean-set-end-curr").onclick = () => {
+      if ($("clean-range-end")) $("clean-range-end").value = String(frame);
+    };
+  }
+
+  if ($("clean-csv-file-input")) {
+    $("clean-csv-file-input").onchange = async () => {
+      const file = $("clean-csv-file-input").files[0];
+      if (!file) return;
+      const badge = $("clean-csv-badge");
+      try {
+        const text = await file.text();
+        parsedCleanCsvFrames = parseFrameListText(text);
+        if (badge) {
+          badge.style.color = "#22c55e";
+          badge.textContent = `✓ ${parsedCleanCsvFrames.length} frames loaded from "${file.name}".`;
+        }
+      } catch (err) {
+        parsedCleanCsvFrames = [];
+        if (badge) {
+          badge.style.color = "#ef4444";
+          badge.textContent = `Error: ${err.message}`;
+        }
+      }
+    };
+  }
+
+  if ($("btn-clean-export-csv")) {
+    $("btn-clean-export-csv").onclick = () => {
+      const targetIdx = parseInt($("clean-marker-select") ? $("clean-marker-select").value : "0", 10);
+      exportSingleMarkerCSV(targetIdx);
+    };
+  }
+
+  if ($("btn-clean-blank-action")) {
+    $("btn-clean-blank-action").onclick = () => {
+      if (!trial) return;
+      const targetIdx = parseInt($("clean-marker-select") ? $("clean-marker-select").value : "0", 10);
+      const scope = document.querySelector('input[name="clean-scope"]:checked')?.value || "current";
+      let framesToBlank = [];
+      if (scope === "current") {
+        framesToBlank = [frame];
+      } else if (scope === "range") {
+        let s = parseInt($("clean-range-start") ? $("clean-range-start").value : "0", 10);
+        let e = parseInt($("clean-range-end") ? $("clean-range-end").value : "0", 10);
+        if (s > e) [s, e] = [e, s];
+        for (let i = s; i <= e; i++) framesToBlank.push(i);
+      } else if (scope === "csv") {
+        if (!parsedCleanCsvFrames.length) {
+          status("Please choose a CSV file containing frame indices first.", true);
+          return;
+        }
+        framesToBlank = parsedCleanCsvFrames;
+      } else if (scope === "all") {
+        for (let i = 0; i < trial.xyz.length; i++) framesToBlank.push(i);
+      }
+
+      blankMarkerFrames(targetIdx, framesToBlank);
+      const fb = $("clean-feedback");
+      if (fb) {
+        fb.style.display = "block";
+        fb.style.color = "#ef4444";
+        fb.textContent = `✓ Blanked ${framesToBlank.length} frames for marker "${trial.labels[targetIdx]}".`;
+        setTimeout(() => { if (fb) fb.style.display = "none"; }, 4000);
+      }
+    };
+  }
+
+  if ($("btn-clean-restore-marker")) {
+    $("btn-clean-restore-marker").onclick = () => {
+      const targetIdx = parseInt($("clean-marker-select") ? $("clean-marker-select").value : "0", 10);
+      restoreMarkerTrajectory(targetIdx);
+      const fb = $("clean-feedback");
+      if (fb) {
+        fb.style.display = "block";
+        fb.style.color = "#22c55e";
+        fb.textContent = `✓ Restored raw data for marker "${trial.labels[targetIdx]}".`;
+        setTimeout(() => { if (fb) fb.style.display = "none"; }, 4000);
+      }
+    };
+  }
+
+  // Sidebar buttons
+  if ($("btn-sidebar-export-csv")) {
+    $("btn-sidebar-export-csv").onclick = () => exportSingleMarkerCSV(activeMarkerIndex);
+  }
+  if ($("btn-sidebar-blank-frame")) {
+    $("btn-sidebar-blank-frame").onclick = () => blankMarkerFrames(activeMarkerIndex, [frame]);
+  }
+  if ($("btn-sidebar-open-trajectory")) {
+    $("btn-sidebar-open-trajectory").onclick = () => openKinematicsTab("points");
+  }
+
+  // Menu items
+  if ($("action-export-active-marker-csv")) {
+    $("action-export-active-marker-csv").onclick = () => exportSingleMarkerCSV(activeMarkerIndex);
+  }
+  if ($("action-import-replace-marker-csv")) {
+    $("action-import-replace-marker-csv").onclick = () => {
+      openKinematicsTab("points");
+      if ($("btn-vp-mode-csv")) $("btn-vp-mode-csv").click();
+    };
+  }
+  if ($("action-clean-marker-frames")) {
+    $("action-clean-marker-frames").onclick = () => {
+      openKinematicsTab("points");
+      const el = $("clean-marker-select");
+      if (el) el.scrollIntoView({ behavior: "smooth" });
+    };
+  }
+  if ($("btn-export-all-vp-csv")) {
+    $("btn-export-all-vp-csv").onclick = () => {
+      if ($("action-export-all-csv")) $("action-export-all-csv").click();
     };
   }
 

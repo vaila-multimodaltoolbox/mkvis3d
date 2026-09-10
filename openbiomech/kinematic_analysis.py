@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import io
+import re
 import warnings
+from pathlib import Path
 
 import numpy as np
 
@@ -465,3 +468,305 @@ def compute_two_vector_angle(
     v = p4 - p3
     res = compute_vector_dot_product_angle(u, v, degrees=degrees)
     return np.asarray(res, dtype=np.float64)
+
+
+def parse_frame_list_csv(
+    source: str | Path | io.StringIO,
+) -> list[int]:
+    """Parse a list of frame indices or ranges from a CSV or text source.
+
+    Supports:
+    - Single frame integer per line or comma/whitespace-separated: '1, 2, 5, 10'.
+    - Header rows with labels such as 'frame', 'frames', 'index'.
+    - Interval ranges such as '10-25' or '10..25' (inclusive of end).
+
+    Returns:
+        Sorted list of unique 0-based integer frame indices.
+    """
+    if isinstance(source, Path) or (
+        isinstance(source, str) and "\n" not in source and Path(source).is_file()
+    ):
+        text = Path(source).read_text(encoding="utf-8")
+    elif isinstance(source, io.StringIO):
+        text = source.getvalue()
+    else:
+        text = str(source)
+
+    frames: set[int] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Split line by commas, semicolons, or whitespace
+        tokens = re.split(r"[,;\s]+", line)
+        for token in tokens:
+            token = token.strip()
+            if not token or token.lower() in ("frame", "frames", "index", "f", "id"):
+                continue
+            # Check for range: e.g. "10-25" or "10..25"
+            range_match = re.match(r"^(\d+)(?:-|\.\.)(\d+)$", token)
+            if range_match:
+                start_f = int(range_match.group(1))
+                end_f = int(range_match.group(2))
+                if start_f <= end_f:
+                    frames.update(range(start_f, end_f + 1))
+                else:
+                    frames.update(range(end_f, start_f + 1))
+                continue
+            # Check for single integer
+            try:
+                val = int(token)
+                if val >= 0:
+                    frames.add(val)
+            except ValueError:
+                pass
+
+    return sorted(frames)
+
+
+def load_marker_trajectory_csv(
+    source: str | Path | io.StringIO,
+    *,
+    expected_frames: int | None = None,
+) -> np.ndarray:
+    """Parse a CSV matrix with frames in rows and (X, Y, Z) coordinates in columns.
+
+    Supports:
+    - 3 columns: X, Y, Z coordinates.
+    - 4 columns: [frame, X, Y, Z] or [X, Y, Z, residual].
+    - 5 columns: [frame, time, X, Y, Z].
+    - Automatic delimiter detection (comma, semicolon, tab, whitespace).
+    - Header detection (identifies columns named 'x', 'y', 'z' or case variants).
+    - Missing / NaN values ('', 'nan', 'NaN', 'null', 'None', '-').
+    - Padding / truncating to match expected_frames if provided.
+
+    Returns:
+        (N, 3) float64 array of coordinates in meters.
+    """
+    if isinstance(source, Path) or (
+        isinstance(source, str) and "\n" not in source and Path(source).is_file()
+    ):
+        text = Path(source).read_text(encoding="utf-8")
+    elif isinstance(source, io.StringIO):
+        text = source.getvalue()
+    else:
+        text = str(source)
+
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    if not lines:
+        raise ValueError("CSV source is empty or contains only comments")
+
+    # Detect delimiter from the first non-empty line
+    first_line = lines[0]
+    if ";" in first_line and first_line.count(";") >= 2:
+        delimiter = ";"
+    elif "\t" in first_line:
+        delimiter = "\t"
+    elif "," in first_line:
+        delimiter = ","
+    else:
+        delimiter = None  # whitespace split
+
+    raw_rows: list[list[str]] = []
+    for line in lines:
+        if delimiter:
+            parts = [p.strip() for p in line.split(delimiter)]
+        else:
+            parts = [p.strip() for p in line.split()]
+        if parts:
+            raw_rows.append(parts)
+
+    if not raw_rows:
+        raise ValueError("No data rows found in CSV")
+
+    # Inspect first row for headers
+    header_candidate = raw_rows[0]
+    has_header = False
+    for cell in header_candidate:
+        try:
+            float(cell)
+        except ValueError:
+            has_header = True
+            break
+
+    x_idx, y_idx, z_idx = 0, 1, 2
+    data_rows = raw_rows
+    if has_header:
+        data_rows = raw_rows[1:]
+        col_names = [c.lower() for c in header_candidate]
+        # Search for x, y, z named columns
+        matching_x = [
+            i
+            for i, c in enumerate(col_names)
+            if re.search(r"\b(x|pos_x|coord_x|x_m)\b", c) or c == "x"
+        ]
+        matching_y = [
+            i
+            for i, c in enumerate(col_names)
+            if re.search(r"\b(y|pos_y|coord_y|y_m)\b", c) or c == "y"
+        ]
+        matching_z = [
+            i
+            for i, c in enumerate(col_names)
+            if re.search(r"\b(z|pos_z|coord_z|z_m)\b", c) or c == "z"
+        ]
+
+        if matching_x and matching_y and matching_z:
+            x_idx, y_idx, z_idx = matching_x[0], matching_y[0], matching_z[0]
+        else:
+            # Fallback by column count
+            n_cols = len(header_candidate)
+            if n_cols == 3:
+                x_idx, y_idx, z_idx = 0, 1, 2
+            elif n_cols == 4:
+                x_idx, y_idx, z_idx = 1, 2, 3
+            elif n_cols >= 5:
+                x_idx, y_idx, z_idx = 2, 3, 4
+    else:
+        n_cols = len(header_candidate)
+        if n_cols == 3:
+            x_idx, y_idx, z_idx = 0, 1, 2
+        elif n_cols == 4:
+            x_idx, y_idx, z_idx = 1, 2, 3
+        elif n_cols >= 5:
+            x_idx, y_idx, z_idx = 2, 3, 4
+
+    coords_list: list[list[float]] = []
+    nan_strings = {"", "nan", "none", "null", "-", "na", "n/a"}
+    for row in data_rows:
+        pt: list[float] = []
+        for col_i in (x_idx, y_idx, z_idx):
+            if col_i < len(row):
+                val_str = row[col_i].strip().lower()
+                if val_str in nan_strings:
+                    pt.append(np.nan)
+                else:
+                    try:
+                        pt.append(float(val_str))
+                    except ValueError:
+                        pt.append(np.nan)
+            else:
+                pt.append(np.nan)
+        coords_list.append(pt)
+
+    arr = np.asarray(coords_list, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[1] != 3:
+        raise ValueError(f"Expected (N, 3) coordinates matrix, got shape {arr.shape}")
+
+    if expected_frames is not None and expected_frames > 0:
+        n_rows = arr.shape[0]
+        if n_rows < expected_frames:
+            padding = np.full((expected_frames - n_rows, 3), np.nan, dtype=np.float64)
+            arr = np.vstack([arr, padding])
+        elif n_rows > expected_frames:
+            arr = arr[:expected_frames]
+
+    return arr
+
+
+def export_marker_trajectory_csv(
+    trial: MarkerTrial,
+    marker_name: str,
+    filepath: str | Path | None = None,
+) -> str:
+    """Export a single marker's 3D trajectory to standard CSV (frame,time_s,x,y,z).
+
+    Returns:
+        CSV string content. If filepath is provided, also writes to disk.
+    """
+    coords = trial.marker(marker_name)
+    rate = float(trial.rate_hz) if trial.rate_hz > 0 else 100.0
+    lines = ["frame,time_s,x,y,z"]
+    for f in range(coords.shape[0]):
+        t = f / rate
+        x, y, z = coords[f]
+        x_str = f"{x:.6f}" if np.isfinite(x) else ""
+        y_str = f"{y:.6f}" if np.isfinite(y) else ""
+        z_str = f"{z:.6f}" if np.isfinite(z) else ""
+        lines.append(f"{f},{t:.5f},{x_str},{y_str},{z_str}")
+
+    content = "\n".join(lines) + "\n"
+    if filepath is not None:
+        Path(filepath).write_text(content, encoding="utf-8")
+    return content
+
+
+def replace_marker_trajectory(
+    trial: MarkerTrial,
+    marker_name: str,
+    new_xyz: np.ndarray,
+) -> MarkerTrial:
+    """Replace an existing marker's trajectory in trial.xyz across all frames."""
+    if marker_name not in trial.labels:
+        raise ValueError(f"Marker '{marker_name}' not found in trial labels: {trial.labels}")
+    new_xyz = np.asarray(new_xyz, dtype=np.float64)
+    if new_xyz.shape != (trial.n_frames, 3):
+        raise ValueError(
+            f"new_xyz shape {new_xyz.shape} does not match trial frames ({trial.n_frames}, 3)"
+        )
+    idx = trial.labels.index(marker_name)
+    trial.xyz[:, idx, :] = new_xyz
+    trial.residuals[:, idx] = np.where(np.isfinite(new_xyz).all(axis=1), 0.0, np.nan)
+    return trial
+
+
+def add_marker_trajectory(
+    trial: MarkerTrial,
+    marker_name: str,
+    new_xyz: np.ndarray,
+    *,
+    residual: float = 0.0,
+) -> MarkerTrial:
+    """Append a new marker trajectory to trial.labels and trial.xyz."""
+    if marker_name in trial.labels:
+        raise ValueError(f"Marker '{marker_name}' already exists in trial labels")
+    new_xyz = np.asarray(new_xyz, dtype=np.float64)
+    if new_xyz.shape != (trial.n_frames, 3):
+        raise ValueError(
+            f"new_xyz shape {new_xyz.shape} does not match trial frames ({trial.n_frames}, 3)"
+        )
+    trial.labels = trial.labels + (marker_name,)
+    trial.xyz = np.concatenate([trial.xyz, new_xyz[:, None, :]], axis=1)
+    new_res = np.where(np.isfinite(new_xyz).all(axis=1), residual, np.nan)[:, None]
+    trial.residuals = np.concatenate([trial.residuals, new_res], axis=1)
+    return trial
+
+
+def blank_marker_frames(
+    trial: MarkerTrial,
+    marker_name: str,
+    *,
+    frames: list[int] | np.ndarray | None = None,
+    frame_range: tuple[int, int] | None = None,
+    csv_frames_source: str | Path | io.StringIO | None = None,
+) -> MarkerTrial:
+    """Blank (set to NaN) marker coordinates at specified frames, range, or CSV list."""
+    if marker_name not in trial.labels:
+        raise ValueError(f"Marker '{marker_name}' not found in trial labels")
+    idx = trial.labels.index(marker_name)
+    target_frames: set[int] = set()
+
+    if frames is not None:
+        for f in frames:
+            target_frames.add(int(f))
+
+    if frame_range is not None:
+        start_f, end_f = frame_range
+        if start_f <= end_f:
+            target_frames.update(range(start_f, end_f + 1))
+        else:
+            target_frames.update(range(end_f, start_f + 1))
+
+    if csv_frames_source is not None:
+        target_frames.update(parse_frame_list_csv(csv_frames_source))
+
+    valid_frames = [f for f in target_frames if 0 <= f < trial.n_frames]
+    if valid_frames:
+        trial.xyz[valid_frames, idx, :] = np.nan
+        trial.residuals[valid_frames, idx] = np.nan
+
+    return trial
