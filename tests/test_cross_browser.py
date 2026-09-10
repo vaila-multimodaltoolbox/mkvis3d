@@ -14,6 +14,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
 
+from openbiomech.trial_io import load_trial
+from openbiomech.viewer import render_viewer, trial_payload
+
 
 def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -38,11 +41,12 @@ def get_browser_driver(browser_name):
         return driver, lambda: (driver.quit(), shutil.rmtree(tmpdir, ignore_errors=True))
 
     elif browser_name == "chromium":
+        chromium = shutil.which("chromium") or "/snap/bin/chromium"
         port = find_free_port()
         tmpdir = tempfile.mkdtemp(prefix="chromium-snap-")
         proc = subprocess.Popen(
             [
-                "/snap/bin/chromium",
+                chromium,
                 "--headless=new",
                 f"--remote-debugging-port={port}",
                 "--no-sandbox",
@@ -56,6 +60,7 @@ def get_browser_driver(browser_name):
         )
         time.sleep(2)
         opts = ChromeOptions()
+        opts.binary_location = chromium
         opts.add_experimental_option("debuggerAddress", f"127.0.0.1:{port}")
         driver = webdriver.Chrome(options=opts)
 
@@ -82,8 +87,20 @@ def get_browser_driver(browser_name):
 
 def run_suite_for_browser(browser_name):
     driver, cleanup = get_browser_driver(browser_name)
+    # Snap browsers must be able to read the fixture, so use a workspace temp dir.
+    artifacts = tempfile.TemporaryDirectory(prefix=".browser-", dir=Path.cwd())
+    output_dir = Path(artifacts.name)
     try:
-        html_file = Path("outputs/rec3d_viewer.html").resolve()
+        for filename, source in [
+            ("rec3d_viewer.html", "rec3d_20260826_121305_m.c3d"),
+            ("squat_viewer.html", "pilot0102_squat03.c3d"),
+        ]:
+            (output_dir / filename).write_text(
+                render_viewer(trial_payload(load_trial(Path("data") / source), source)),
+                encoding="utf-8",
+            )
+        (output_dir / "empty_viewer.html").write_text(render_viewer(), encoding="utf-8")
+        html_file = output_dir / "rec3d_viewer.html"
         file_url = html_file.as_uri()
         print(f"[{browser_name}] Loading: {file_url}")
         driver.get(file_url)
@@ -117,7 +134,7 @@ def run_suite_for_browser(browser_name):
         assert driver.find_element(By.ID, "theme-label").text == "Light"
 
         # Capture light screenshot
-        out_light = f"outputs/screenshot_{browser_name}_light.png"
+        out_light = f"{output_dir}/screenshot_{browser_name}_light.png"
         driver.save_screenshot(out_light)
         print(f"[{browser_name}] PASS: Theme switched to light, saved {out_light}")
 
@@ -132,7 +149,7 @@ def run_suite_for_browser(browser_name):
         assert driver.find_element(By.ID, "theme-label").text == "Dark"
 
         # Capture dark screenshot
-        out_dark = f"outputs/screenshot_{browser_name}_dark.png"
+        out_dark = f"{output_dir}/screenshot_{browser_name}_dark.png"
         driver.save_screenshot(out_dark)
         print(f"[{browser_name}] PASS: Theme switched to dark, saved {out_dark}")
 
@@ -322,25 +339,25 @@ def run_suite_for_browser(browser_name):
         print(f"[{browser_name}] PASS: Floating subwindow and popout synchronization logic")
 
         # 8. Visual3D Laboratory Coordinate System (LCS)
-        btn_open_lcs = driver.find_element(By.ID, "btn-open-lcs")
-        driver.execute_script("arguments[0].scrollIntoView();", btn_open_lcs)
+        driver.find_element(By.CSS_SELECTOR, "#menu-analysis > .menu-btn").click()
+        btn_open_lcs = driver.find_element(By.ID, "action-view-lcs")
         btn_open_lcs.click()
         time.sleep(0.3)
         modal_lcs = driver.find_element(By.ID, "modal-lcs")
-        assert "open" in modal_lcs.get_attribute("class"), "LCS modal should be open"
+        assert modal_lcs.is_displayed(), "LCS modal should be open"
 
         # Capture screenshot of LCS modal in Google Chrome
         if browser_name == "google-chrome":
-            driver.save_screenshot("outputs/screenshot_lcs_modal.png")
+            driver.save_screenshot(str(output_dir / "screenshot_lcs_modal.png"))
 
-        # Test preset click: BVH / Unity (+Y Up, +Z AP)
-        bvh_btn = driver.find_element(By.CSS_SELECTOR, ".btn-lcs-preset[data-preset='y_up_bvh']")
+        # Test the Y-Up preset (-X lateral, +Z anterior, +Y vertical)
+        bvh_btn = driver.find_element(By.CSS_SELECTOR, ".btn-lcs-preset[data-preset='y_up']")
         bvh_btn.click()
         time.sleep(0.2)
 
-        axial_val = driver.find_element(By.ID, "lcs-axial-select").get_attribute("value")
-        ap_val = driver.find_element(By.ID, "lcs-ap-select").get_attribute("value")
-        ml_text = driver.find_element(By.ID, "lcs-ml-result").text
+        axial_val = driver.find_element(By.ID, "lcs-axis-z").get_attribute("value")
+        ap_val = driver.find_element(By.ID, "lcs-axis-y").get_attribute("value")
+        ml_text = driver.find_element(By.ID, "lcs-axis-x").get_attribute("value")
         det_text = driver.find_element(By.ID, "lcs-det-result").text
 
         assert axial_val == "+Y", f"Expected axial +Y, got {axial_val}"
@@ -352,20 +369,23 @@ def run_suite_for_browser(browser_name):
         btn_apply_lcs = driver.find_element(By.ID, "btn-apply-lcs")
         btn_apply_lcs.click()
         time.sleep(0.3)
-        assert "open" not in modal_lcs.get_attribute("class"), "LCS modal should close after apply"
+        assert not modal_lcs.is_displayed(), "LCS modal should close after apply"
 
         lcs_badge = driver.find_element(By.ID, "lcs-active-badge")
-        assert "BVH" in lcs_badge.text, (
-            f"LCS badge should indicate BVH preset, got: {lcs_badge.text}"
+        assert "Y-Up" in lcs_badge.text, (
+            f"LCS badge should indicate Y-Up preset, got: {lcs_badge.text}"
         )
 
-        # Reset LCS via modal
+        # Reset LCS via the Analysis menu
+        driver.find_element(By.CSS_SELECTOR, "#menu-analysis > .menu-btn").click()
         btn_open_lcs.click()
         time.sleep(0.2)
         btn_reset_lcs = driver.find_element(By.ID, "btn-reset-lcs")
         btn_reset_lcs.click()
         time.sleep(0.3)
-        assert "ISB" in lcs_badge.text, f"LCS badge should return to ISB, got: {lcs_badge.text}"
+        assert "Default (Z-Up)" in lcs_badge.text, (
+            f"LCS badge should return to default, got: {lcs_badge.text}"
+        )
         print(f"[{browser_name}] PASS: Visual3D LCS dialog, presets, matrix computation, and reset")
 
         # 9. Biomechanical Signal Processing & Gap-Fill Modal, Live Preview & Undo
@@ -374,11 +394,11 @@ def run_suite_for_browser(browser_name):
         btn_open_filter.click()
         time.sleep(0.3)
         modal_filter = driver.find_element(By.ID, "modal-filter")
-        assert "open" in modal_filter.get_attribute("class"), "Filter modal should be open"
+        assert modal_filter.is_displayed(), "Filter modal should be open"
 
         # Capture screenshot of Filter modal in Google Chrome
         if browser_name == "google-chrome":
-            driver.save_screenshot("outputs/screenshot_filter_modal.png")
+            driver.save_screenshot(str(output_dir / "screenshot_filter_modal.png"))
 
         # Verify default filter cutoff readout
         cutoff_val = driver.find_element(By.ID, "flt-cutoff-val").text
@@ -397,9 +417,7 @@ def run_suite_for_browser(browser_name):
         btn_apply_filter = driver.find_element(By.ID, "btn-apply-filter")
         btn_apply_filter.click()
         time.sleep(0.3)
-        assert "open" not in modal_filter.get_attribute("class"), (
-            "Filter modal should close after apply"
-        )
+        assert not modal_filter.is_displayed(), "Filter modal should close after apply"
 
         filter_badge = driver.find_element(By.ID, "filter-status-badge")
         assert "BW 8" in filter_badge.text, (
@@ -434,7 +452,7 @@ def run_suite_for_browser(browser_name):
         )
 
         # 10. Welcome Screen & Select File Button
-        welcome_url = Path("outputs/empty_viewer.html").resolve().as_uri()
+        welcome_url = (output_dir / "empty_viewer.html").as_uri()
         driver.get(welcome_url)
         time.sleep(0.5)
 
@@ -455,7 +473,7 @@ def run_suite_for_browser(browser_name):
         print(f"[{browser_name}] PASS: Welcome screen and Select File button click handler")
 
         # 11. Test Squat file (squat_viewer.html) & Force Platforms / GRF Visualization
-        squat_url = Path("outputs/squat_viewer.html").resolve().as_uri()
+        squat_url = (output_dir / "squat_viewer.html").as_uri()
         driver.get(squat_url)
         time.sleep(1.2)
         squat_frame_text = driver.find_element(By.ID, "frame").text
@@ -473,9 +491,11 @@ def run_suite_for_browser(browser_name):
         assert chk_plates.is_selected(), "Show Force Plates should be checked by default"
         assert chk_vectors.is_selected(), "Show Force Vectors should be checked by default"
 
-        # Check Plot 1 mode defaults to Vertical GRF
+        # Check XYZ remains the default with force plates
         plot1_val = driver.find_element(By.ID, "plot1-mode").get_attribute("value")
-        assert plot1_val == "fp-all-fz", f"Expected default plot1 mode fp-all-fz, got: {plot1_val}"
+        assert plot1_val == "active-xyz", (
+            f"Expected default plot1 mode active-xyz, got: {plot1_val}"
+        )
 
         # Check Vertical GRF readout
         fz_readout = driver.find_element(By.ID, "total-fz-val").text
@@ -492,7 +512,7 @@ def run_suite_for_browser(browser_name):
         assert "2.5" in scale_val, f"Expected 2.5 in scale value, got: {scale_val}"
 
         # Capture squat force plate screenshot
-        out_squat = f"outputs/screenshot_{browser_name}_squat_force_plates.png"
+        out_squat = f"{output_dir}/screenshot_{browser_name}_squat_force_plates.png"
         driver.save_screenshot(out_squat)
         print(
             f"[{browser_name}] PASS: Force plates & GRF visualization verified on squat trial ({fp_badge})"
@@ -503,6 +523,7 @@ def run_suite_for_browser(browser_name):
 
     finally:
         cleanup()
+        artifacts.cleanup()
 
 
 @pytest.mark.browser

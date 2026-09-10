@@ -746,7 +746,7 @@ def serve_viewer(
         initial_videos=initial_videos,
     )
     print(f"mkvis3d: {url}", flush=True)
-    print("Use File > Encerrar mkvis3d in the viewer or press Ctrl+C to stop.", flush=True)
+    print("Use File > Shut Down mkvis3d in the viewer or press Ctrl+C to stop.", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:

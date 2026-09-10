@@ -428,7 +428,16 @@ def test_browser_smoke_automated(tmp_path):
             pytest.fail("Chrome CDP did not become ready in time")
 
         root = Path(__file__).resolve().parent.parent
-        env = dict(os.environ, CDP_PORT=str(cdp_port))
+        # Always exercise the current template and JavaScript, never a stale export.
+        output = tmp_path / "artifacts" / "rec3d_viewer.html"
+        output.parent.mkdir(exist_ok=True)
+        output.write_text(
+            render_viewer(
+                trial_payload(load_trial(root / "data/rec3d_20260826_121305_m.c3d"), "rec3d")
+            ),
+            encoding="utf-8",
+        )
+        env = dict(os.environ, CDP_PORT=str(cdp_port), SMOKE_OUTPUT_DIR=str(output.parent))
         res = subprocess.run(
             ["node", str(root / "tests/browser_smoke.mjs"), str(root), url],
             env=env,
