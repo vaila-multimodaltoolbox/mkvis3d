@@ -3,6 +3,10 @@
 set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+if [ "$(uname)" = "Darwin" ]; then
+    exec "$DIR/scripts/install_macos.sh" "$@"
+fi
+
 ICON_PATH="$DIR/assets/icons/vaila_512x512.png"
 if [ ! -f "$ICON_PATH" ]; then
     ICON_PATH="$DIR/assets/icons/vaila.png"

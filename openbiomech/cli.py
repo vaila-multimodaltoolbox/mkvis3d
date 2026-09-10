@@ -200,6 +200,75 @@ def _cmd_bvh(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_install(args: argparse.Namespace) -> int:
+    import platform
+    import shutil
+    import subprocess
+
+    from .viewer import get_project_root
+
+    system = platform.system().lower()
+    root = get_project_root()
+
+    if system == "darwin":
+        app_candidates = [
+            root / "dist" / "mkvis3d.app",
+            root / "mkvis3d.app",
+            Path("/Applications/mkvis3d.app"),
+        ]
+        target_app = next((p for p in app_candidates if p.is_dir()), None)
+
+        if target_app:
+            try:
+                subprocess.run(["xattr", "-cr", str(target_app)], check=False)
+                print(f"✅ Quarentena do macOS removida com sucesso em: {target_app}")
+            except Exception:
+                pass
+
+        if (
+            getattr(args, "applications", False)
+            and target_app
+            and target_app != Path("/Applications/mkvis3d.app")
+        ):
+            dest = Path("/Applications/mkvis3d.app")
+            try:
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(target_app, dest)
+                subprocess.run(["xattr", "-cr", str(dest)], check=False)
+                print(f"✅ Aplicativo copiado para: {dest}")
+            except Exception as e:
+                print(f"Aviso: não foi possível copiar para /Applications ({e})")
+
+        print("\n" + "=" * 70)
+        print("⚠️  Instrução importante para os usuários de Mac (Gatekeeper / Quarentena):")
+        print("=" * 70)
+        print(
+            "Como o app ainda não possui uma assinatura paga de desenvolvedor Apple (notarização):"
+        )
+        print("Quando o usuário baixar o .zip pelo navegador e descompactar o mkvis3d.app,")
+        print('o macOS bloqueará a execução dizendo que "o app não pôde ser verificado".\n')
+        print("No macOS (primeira execução):")
+        print(
+            "• Clique com o botão direito (ou Control + clique) sobre o mkvis3d.app e escolha Abrir (Open)."
+        )
+        print("• Ou rode no Terminal:")
+        print("  xattr -cr mkvis3d.app")
+        print("=" * 70 + "\n")
+        return 0
+
+    elif system == "linux":
+        launcher_script = root / "scripts" / "install_desktop_launcher.sh"
+        if launcher_script.exists():
+            return subprocess.run(["bash", str(launcher_script)]).returncode
+        print("Script scripts/install_desktop_launcher.sh não encontrado.")
+        return 1
+
+    else:
+        print("No Windows, execute o executável dist/mkvis3d.exe diretamente ou use mkvis3d.bat.")
+        return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mkvis3d",
@@ -342,6 +411,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_filter.add_argument("--rate", type=float, default=100.0, help="sampling rate in Hz")
     p_filter.add_argument("--units", choices=("m", "cm", "mm"), default="m")
     p_filter.set_defaults(func=_cmd_filter)
+
+    p_install = sub.add_parser(
+        "install",
+        help="configure application launcher and OS permissions / Gatekeeper",
+    )
+    p_install.add_argument(
+        "--applications",
+        action="store_true",
+        help="copy mkvis3d.app to /Applications (macOS only)",
+    )
+    p_install.set_defaults(func=_cmd_install)
     return parser
 
 
@@ -358,6 +438,7 @@ def main(argv: list[str] | None = None) -> int:
         "bvh",
         "lcs",
         "filter",
+        "install",
         "-h",
         "--help",
     }

@@ -81,4 +81,23 @@ jobs:
             mkvis3d-linux-x86_64/*
             mkvis3d-windows-x86_64.exe/*
             mkvis3d-macos-app/*
+          body: |
+            ### 📦 Download Packages
+            - **Linux (x86_64):** `mkvis3d-linux-x86_64`
+            - **Windows (x86_64):** `mkvis3d-windows-x86_64.exe`
+            - **macOS (Universal / Apple Silicon):** `mkvis3d-macos-app.zip` (extraia o `mkvis3d.app`)
+
+            ---
+
+            ### ⚠️ Instrução importante para os usuários de Mac (Gatekeeper / Quarentena)
+
+            Como o app ainda não possui uma assinatura paga de desenvolvedor Apple (notarização):
+            Quando o usuário baixar o `.zip` pelo navegador e descompactar o `mkvis3d.app`, o macOS bloqueará a execução dizendo que *"o app não pôde ser verificado"*.
+
+            **No macOS (primeira execução):**
+            - Clique com o **botão direito (ou Control + clique)** sobre o `mkvis3d.app` e escolha **Abrir (Open)**.
+            - Ou rode no Terminal:
+              ```bash
+              xattr -cr mkvis3d.app
+              ```
           generate_release_notes: true

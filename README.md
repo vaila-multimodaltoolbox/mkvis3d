@@ -178,10 +178,10 @@ to remember `uv run` once `uv sync` has run once:
 - 🍎 `./mkvis3d.command`
 - 🪟 `mkvis3d.bat`
 
-Each one prefers a standalone `dist/mkvis3d` binary if one has been built
-(see [Building Standalone Executables](#building-standalone-executables)),
-falls back to `uv run mkvis3d gui`, and finally to a bare `python3 -m
-openbiomech.cli gui` if `uv` isn't on `PATH`.
+Each one prefers a standalone `dist/mkvis3d` binary (or `dist/mkvis3d.app` on macOS)
+if one has been built (see [Building Standalone Executables](#building-standalone-executables)),
+falls back to `uv run mkvis3d gui`, and finally to a bare `python3 -m openbiomech.cli gui` if `uv` isn't on `PATH`.
+On macOS, `./mkvis3d.command` also automatically clears Gatekeeper quarantine flags if needed.
 
 ---
 
@@ -244,6 +244,42 @@ An unsigned build may show Microsoft Defender SmartScreen on first launch.
 Only when the file came from a trusted source, the user can choose **More
 info → Run anyway**. Avoiding that warning for public distribution requires
 signing the executable with a trusted Windows code-signing certificate.
+
+### 🍎 macOS portable application (.app)
+
+On a macOS development machine, build with:
+
+```bash
+uv run python scripts/build_app.py
+# or
+./scripts/build_macos.sh
+```
+
+This generates `dist/mkvis3d.app` and packages `dist/mkvis3d-macos-app.zip` for GitHub Release distribution.
+
+> [!IMPORTANT]
+> ### ⚠️ Instrução importante para os usuários de Mac (Gatekeeper / Quarentena)
+>
+> Como o app ainda não possui uma assinatura paga de desenvolvedor Apple (notarização):
+> Quando o usuário baixar o `.zip` pelo navegador e descompactar o `mkvis3d.app`, o macOS bloqueará a execução dizendo que *"o app não pôde ser verificado"* ou que *"está corrompido"*.
+>
+> Na descrição do seu Release e no suporte a usuários de Mac, informe:
+>
+> **No macOS (primeira execução):**
+> - Clique com o **botão direito (ou Control + clique)** sobre o `mkvis3d.app` e escolha **Abrir (Open)**.
+> - **Ou** execute no Terminal:
+>   ```bash
+>   xattr -cr mkvis3d.app
+>   # ou se moveu para /Applications:
+>   xattr -cr /Applications/mkvis3d.app
+>   ```
+>
+> Alternativamente, execute o assistente de instalação local para configurar automaticamente e remover a quarentena:
+> ```bash
+> ./scripts/install_macos.sh
+> # ou via CLI:
+> uv run mkvis3d install
+> ```
 
 `.github/workflows/build_executables.yml` runs the same script on
 `ubuntu-latest`/`macos-latest`/`windows-latest` for every push to `main` and

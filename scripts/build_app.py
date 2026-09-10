@@ -42,9 +42,29 @@ def main() -> int:
     elif system == "darwin":
         app_path = dist_dir / "mkvis3d.app"
         print(f"macOS Application: {app_path}")
-    else:
-        bin_path = dist_dir / "mkvis3d"
-        print(f"Linux Executable: {bin_path}")
+        zip_path = dist_dir / "mkvis3d-macos-app.zip"
+        if app_path.exists():
+            subprocess.run(
+                ["zip", "-r", "-q", "mkvis3d-macos-app.zip", "mkvis3d.app"],
+                cwd=str(dist_dir),
+                check=False,
+            )
+            print(f"macOS Release Zip: {zip_path}")
+        print("\n" + "=" * 70)
+        print("⚠️  Instrução importante para os usuários de Mac (Gatekeeper / Quarentena):")
+        print(
+            "Como o app ainda não possui uma assinatura paga de desenvolvedor Apple (notarização):"
+        )
+        print("Quando o usuário baixar o .zip pelo navegador e descompactar o mkvis3d.app,")
+        print('o macOS bloqueará a execução dizendo que "o app não pôde ser verificado".\n')
+        print("Na descrição da sua Release e para usuários, adicione a instrução:")
+        print("  No macOS (primeira execução):")
+        print(
+            "  • Clique com o botão direito (ou Control + clique) sobre o mkvis3d.app e escolha Abrir (Open)."
+        )
+        print("  • Ou rode no Terminal:")
+        print("    xattr -cr mkvis3d.app")
+        print("=" * 70)
 
     return 0
 

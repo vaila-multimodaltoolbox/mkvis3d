@@ -176,6 +176,22 @@ uv run mkvis3d filter data/trial.c3d --interp linear --smooth butterworth --cuto
 | `--window` | Window size for median/moving-average/Hampel (default `5`) |
 | `--output`, `-o` | Output file path (required) |
 
+## `install`
+
+Configure application launcher and OS permissions / Gatekeeper.
+
+```bash
+uv run mkvis3d install
+# or on macOS to copy to /Applications:
+uv run mkvis3d install --applications
+```
+
+| Argument | Description |
+|---|---|
+| `--applications` | Copy `mkvis3d.app` directly into `/Applications` (macOS only) |
+
+On macOS, clears Apple Gatekeeper quarantine (`xattr -cr`) on `mkvis3d.app` and displays first-run security instructions. On Linux, sets up the desktop launcher.
+
 ---
 
 See [architecture.md](architecture.md) for the math each command implements,

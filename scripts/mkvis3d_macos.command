@@ -4,7 +4,13 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DIR"
 
 if [ -d "$DIR/dist/mkvis3d.app" ]; then
-    open "$DIR/dist/mkvis3d.app"
+    # Clear macOS Gatekeeper quarantine if present
+    xattr -cr "$DIR/dist/mkvis3d.app" 2>/dev/null || true
+    if ! open "$DIR/dist/mkvis3d.app"; then
+        echo "⚠️  Não foi possível abrir o mkvis3d.app diretamente."
+        echo "Tente clicar com o botão direito sobre o mkvis3d.app e selecionar 'Abrir'."
+        echo "Ou execute no Terminal: xattr -cr \"$DIR/dist/mkvis3d.app\""
+    fi
 elif [ -f "$DIR/dist/mkvis3d" ]; then
     exec "$DIR/dist/mkvis3d" "$@"
 elif [ -f "$DIR/mkvis3d.py" ]; then

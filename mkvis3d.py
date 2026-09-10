@@ -58,6 +58,7 @@ def run(args: list[str] | None = None) -> int:
         "dynamics",
         "lcs",
         "filter",
+        "install",
     }
     if (
         not first_arg.startswith("-")
