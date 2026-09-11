@@ -1632,10 +1632,10 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           <span>🌊 Filter & Gap Fill...</span>
         </button>
         <div style="display: flex; gap: 4px; align-items: center;">
-          <input id="quick-filter-cutoff" type="number" min="0.5" max="100" step="0.5" value="6" style="width: 44px; font-size: 11px; padding: 3px 2px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-canvas); color: var(--text-bright);" title="Cutoff Frequency in Hz (Standard: 6 Hz)">
+          <input id="quick-filter-cutoff" type="number" min="0.5" max="100" step="0.5" value="6" style="width: 44px; font-size: 11px; padding: 3px 2px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-canvas); color: var(--text-bright);" title="Cutoff Frequency in Hz (Default: 6 Hz)">
           <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Hz</span>
           <button id="btn-quick-filter" type="button" style="flex: 1; font-size: 11px; padding: 3px 6px;" title="Apply Butterworth lowpass filter with specified cutoff frequency (Hotkey: S)">
-            ⚡ Quick Smooth (<span id="quick-filter-cutoff-label">6</span> Hz)
+            ⚡ Quick Smooth
           </button>
         </div>
         <button id="btn-revert-filter" type="button" style="width: 100%; font-size: 11px;" disabled>
@@ -10054,6 +10054,8 @@ function applyQuickSmoothFilter(cutoffVal) {
     const parsed = parseFloat($("quick-filter-cutoff").value);
     if (Number.isFinite(parsed) && parsed > 0) {
       quickFilterCutoff = parsed;
+    } else {
+      quickFilterCutoff = 6.0;
     }
   }
   if ($("quick-filter-cutoff")) {
@@ -10079,13 +10081,21 @@ function initLCSAndFilterControls() {
   if ($("btn-open-filter")) $("btn-open-filter").onclick = openFilterModal;
   if ($("btn-quick-filter")) $("btn-quick-filter").onclick = () => applyQuickSmoothFilter();
   if ($("quick-filter-cutoff")) {
-    $("quick-filter-cutoff").onchange = (e) => {
+    const updateCutoff = (e) => {
       const val = parseFloat(e.target.value);
       if (Number.isFinite(val) && val > 0) {
         quickFilterCutoff = val;
         saveSessionState();
       }
     };
+    $("quick-filter-cutoff").onchange = updateCutoff;
+    $("quick-filter-cutoff").oninput = updateCutoff;
+    $("quick-filter-cutoff").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        applyQuickSmoothFilter();
+      }
+    });
   }
   if ($("btn-revert-filter")) $("btn-revert-filter").onclick = revertFilter;
 

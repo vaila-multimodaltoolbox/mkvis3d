@@ -6819,6 +6819,8 @@ function applyQuickSmoothFilter(cutoffVal) {
     const parsed = parseFloat($("quick-filter-cutoff").value);
     if (Number.isFinite(parsed) && parsed > 0) {
       quickFilterCutoff = parsed;
+    } else {
+      quickFilterCutoff = 6.0;
     }
   }
   if ($("quick-filter-cutoff")) {
@@ -6844,13 +6846,21 @@ function initLCSAndFilterControls() {
   if ($("btn-open-filter")) $("btn-open-filter").onclick = openFilterModal;
   if ($("btn-quick-filter")) $("btn-quick-filter").onclick = () => applyQuickSmoothFilter();
   if ($("quick-filter-cutoff")) {
-    $("quick-filter-cutoff").onchange = (e) => {
+    const updateCutoff = (e) => {
       const val = parseFloat(e.target.value);
       if (Number.isFinite(val) && val > 0) {
         quickFilterCutoff = val;
         saveSessionState();
       }
     };
+    $("quick-filter-cutoff").onchange = updateCutoff;
+    $("quick-filter-cutoff").oninput = updateCutoff;
+    $("quick-filter-cutoff").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        applyQuickSmoothFilter();
+      }
+    });
   }
   if ($("btn-revert-filter")) $("btn-revert-filter").onclick = revertFilter;
 

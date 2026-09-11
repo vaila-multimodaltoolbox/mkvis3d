@@ -1,29 +1,26 @@
-# Session Handoff: Universal CSV Marker Header Support and Verification
+# Session Handoff: Universal CSV Marker Header Support and Quick Smooth UI Refinement
 
 - **Status:** Completed
 - **Current State:**
+  - **Quick Smooth UI Refinement ([`openbiomech/viewer.html`](file:///home/preto/data/mkvis3d/openbiomech/viewer.html) & [`openbiomech/viewer.js`](file:///home/preto/data/mkvis3d/openbiomech/viewer.js))**:
+    - Removed redundant `(6 Hz)` label from the button text: button now cleanly displays `⚡ Quick Smooth`.
+    - Input box on the left side (`#quick-filter-cutoff`) defaults to `6`, with adjacent `Hz` indicator.
+    - `applyQuickSmoothFilter()` dynamically reads the value from `#quick-filter-cutoff` on click (or hotkey `S`), immediately applying whatever cutoff frequency is set in the box.
+    - Added both `onchange` and `oninput` listeners along with `keydown Enter` on the cutoff input for responsive interaction.
+    - Falls back safely to default `6.0` Hz if the box is empty or non-positive.
   - **Universal CSV 3D Marker Loader in Python Backend (`openbiomech/csv_io.py`)**:
     - Removed restrictive legacy dependency on only numbered `p{n}_x, p{n}_y, p{n}_z` columns.
-    - Implemented generic marker triplet extraction supporting:
-      - Arbitrary marker names (e.g. `nose_x, nose_y, nose_z`, `left_eye_x`, `left_shoulder_x`, `C7_x`, `LASI_x`).
-      - Multiple coordinate suffixes and separators: underscore (`_x, _y, _z`), dot (`.x, .y, .z`), colon (`:x, :y, :z`), space (` x,  y,  z`), dash (`-x, -y, -z`), slash (`/x, /y, /z`), brackets (`[x], [y], [z]`), and trailing axis letters without separator (`HeadX, HeadY, HeadZ`).
-      - Full case-insensitivity (`_X, _Y, _Z` vs `_x, _y, _z`).
-      - Multi-line headers (row 0 marker names, row 1 coordinates X, Y, Z as exported by Vicon, Qualisys, OpenSim).
-      - Multi-delimiter sniffing (comma, semicolon, tab, whitespace).
-      - Automatic sampling rate inference when a monotonic `time` column is present.
-      - Preserves 100% backward-compatibility: files matching `p\d+` remain sorted numerically (`p1..p70`), while named markers preserve their exact appearance order from the CSV.
-      - Gracefully handles missing coordinates with descriptive error reporting (`missing coordinate columns: ...`).
-  - **Universal CSV Loader in Browser Viewer (`openbiomech/viewer.js`)**:
-    - Added `parseWideCsvClient` for graceful client-side fallback parsing when running offline without the loopback API server.
-    - Enhanced `applySkeletonTemplate` label matching with automatic dash/underscore normalization (`replace(/_/g, "-")` and `replace(/-/g, "_")`) so templates match markers regardless of hyphenation convention.
+    - Implemented generic marker triplet extraction supporting arbitrary marker names (`nose_x, left_eye_x, left_shoulder_x, ...`), various suffixes/separators, multi-line headers, and delimiter autodetection.
+    - Fully verified with `/home/preto/data/jjkabuto/JJ_Kabuto_sam3dinov3_visualized_id_00/JJ_Kabuto_id_00_mhr70_3d.csv`.
   - **Testing & Verification**:
-    - Direct verification on target file `/home/preto/data/jjkabuto/JJ_Kabuto_sam3dinov3_visualized_id_00/JJ_Kabuto_id_00_mhr70_3d.csv`: successfully loaded all 70 markers and 331 frames in CLI (`openbiomech info`), loopback API (`/api/trial`), and HTML viewer (`openbiomech view`).
-    - Verified Monocular 3D transformation ("Convert to Standard") on the target CSV: successfully transformed upright with floor zeroed.
-    - Added dedicated test suite `tests/test_csv_io.py` (7/7 tests passed).
-    - Full test suite: 252/252 non-browser tests passed in 21.5s (`uv run pytest -m "not browser"`).
+    - Selenium headless Chrome automation verified:
+      - Quick Smooth button text is `⚡ Quick Smooth` (without `6` or `Hz`).
+      - Left input defaults to `6`.
+      - Clicking Quick Smooth applies `6 Hz` (`BW 6HZ + LINEAR`).
+      - Editing the input to `8.5` and clicking Quick Smooth applies `8.5 Hz` (`BW 8.5HZ + LINEAR`).
+      - Revert button restores `RAW` data.
+    - Full test suite: 252/252 non-browser tests passed in 21.8s (`uv run pytest -m "not browser"`).
     - Code quality: `uv run ruff check .` passed (0 errors), `uv run ruff format --check .` passed (all 88 files formatted).
-    - Regenerated HTML viewers: `outputs/jj_kabuto_csv_viewer.html`, `outputs/rec3d_viewer.html`, `outputs/jj_kabuto_viewer.html`, `outputs/pilot0102_squat03_viewer.html`.
-    - Headless Chrome Selenium automation: captured screenshots of the target CSV rendered in the 3D viewport.
-    - Standalone binary built: `dist/mkvis3d` and `dist/mkvis3d-linux-x86_64` verified directly with the target CSV.
+    - Standalone binary built: `dist/mkvis3d` and `dist/mkvis3d-linux-x86_64`.
 - **User Rules & Git Operations**:
   - STRICTLY NO `git add`, `git commit`, or `git push` was executed. All version control operations are left exclusively for the user.
