@@ -1,27 +1,29 @@
-# Session Handoff: Multi-Platform Tag & Release Automation (rp10set26)
+# Session Handoff: Universal CSV Marker Header Support and Verification
 
 - **Status:** Completed
 - **Current State:**
-  - **Tag & Release Architecture**:
-    - Workflow `.github/workflows/build_executables.yml` triggers on `v*` and `rp*` tags (including user's convention `rp<day><mon><year>`, e.g., `rp10set26` for Ribeirão Preto, 10 de setembro de 2026).
-    - GitHub Actions executes a parallel matrix of 3 VMs (`ubuntu-latest`, `windows-latest`, `macos-latest`).
-    - Standardized asset packaging:
-      - Linux: `mkvis3d-linux-x86_64`
-      - Windows: `mkvis3d-windows-x86_64.exe`
-      - macOS: `mkvis3d-macos-app.zip` (containing `mkvis3d.app`)
-    - Enhanced `scripts/build_app.py` to copy/package release binaries with self-describing platform names on both local runs and CI runners.
-    - Fixed `tests/test_cli.py` by monkeypatching `platform.system` in `test_install_command_prints_gatekeeper_instructions` and adding Windows coverage, ensuring 100% clean test execution across any host platform.
-  - **Documentation & Plan**:
-    - Created implementation plan artifact `plan_release_process.md`.
-    - Created walkthrough artifact `walkthrough.md` with sequence diagram and exact terminal commands for creating and pushing `rp10set26`.
-  - **Version Control (Git)**:
-    - Strictly adhered to rule: NEVER execute `git add`, `git commit`, or `git push`. All git staging, commits, tag creation, and pushes remain exclusively for the user.
-- **What Worked:**
-  - Standardized release filenames in `.github/workflows/build_executables.yml` and `scripts/build_app.py`.
-  - Comprehensive guide written in `walkthrough.md`.
-  - 238 unit tests passing with code 0 (`uv run pytest -q -m "not browser"`).
-  - All 87 files clean under `uv run ruff check .` and `uv run ruff format --check .`.
-- **Failed Approaches:**
-  - Unpatched `test_install_command_prints_gatekeeper_instructions` failed when running directly on Windows because it checked for macOS Gatekeeper output without mocking `Darwin`. Resolved cleanly with `monkeypatch.setattr(platform, "system", lambda: "Darwin")`.
-- **Open Questions & Next Steps:**
-  - The user can run `git add .`, `git commit -m "..."`, `git tag -a rp10set26 -m "..."`, and `git push origin rp10set26` from their terminal to trigger the GitHub Actions release workflow.
+  - **Universal CSV 3D Marker Loader in Python Backend (`openbiomech/csv_io.py`)**:
+    - Removed restrictive legacy dependency on only numbered `p{n}_x, p{n}_y, p{n}_z` columns.
+    - Implemented generic marker triplet extraction supporting:
+      - Arbitrary marker names (e.g. `nose_x, nose_y, nose_z`, `left_eye_x`, `left_shoulder_x`, `C7_x`, `LASI_x`).
+      - Multiple coordinate suffixes and separators: underscore (`_x, _y, _z`), dot (`.x, .y, .z`), colon (`:x, :y, :z`), space (` x,  y,  z`), dash (`-x, -y, -z`), slash (`/x, /y, /z`), brackets (`[x], [y], [z]`), and trailing axis letters without separator (`HeadX, HeadY, HeadZ`).
+      - Full case-insensitivity (`_X, _Y, _Z` vs `_x, _y, _z`).
+      - Multi-line headers (row 0 marker names, row 1 coordinates X, Y, Z as exported by Vicon, Qualisys, OpenSim).
+      - Multi-delimiter sniffing (comma, semicolon, tab, whitespace).
+      - Automatic sampling rate inference when a monotonic `time` column is present.
+      - Preserves 100% backward-compatibility: files matching `p\d+` remain sorted numerically (`p1..p70`), while named markers preserve their exact appearance order from the CSV.
+      - Gracefully handles missing coordinates with descriptive error reporting (`missing coordinate columns: ...`).
+  - **Universal CSV Loader in Browser Viewer (`openbiomech/viewer.js`)**:
+    - Added `parseWideCsvClient` for graceful client-side fallback parsing when running offline without the loopback API server.
+    - Enhanced `applySkeletonTemplate` label matching with automatic dash/underscore normalization (`replace(/_/g, "-")` and `replace(/-/g, "_")`) so templates match markers regardless of hyphenation convention.
+  - **Testing & Verification**:
+    - Direct verification on target file `/home/preto/data/jjkabuto/JJ_Kabuto_sam3dinov3_visualized_id_00/JJ_Kabuto_id_00_mhr70_3d.csv`: successfully loaded all 70 markers and 331 frames in CLI (`openbiomech info`), loopback API (`/api/trial`), and HTML viewer (`openbiomech view`).
+    - Verified Monocular 3D transformation ("Convert to Standard") on the target CSV: successfully transformed upright with floor zeroed.
+    - Added dedicated test suite `tests/test_csv_io.py` (7/7 tests passed).
+    - Full test suite: 252/252 non-browser tests passed in 21.5s (`uv run pytest -m "not browser"`).
+    - Code quality: `uv run ruff check .` passed (0 errors), `uv run ruff format --check .` passed (all 88 files formatted).
+    - Regenerated HTML viewers: `outputs/jj_kabuto_csv_viewer.html`, `outputs/rec3d_viewer.html`, `outputs/jj_kabuto_viewer.html`, `outputs/pilot0102_squat03_viewer.html`.
+    - Headless Chrome Selenium automation: captured screenshots of the target CSV rendered in the 3D viewport.
+    - Standalone binary built: `dist/mkvis3d` and `dist/mkvis3d-linux-x86_64` verified directly with the target CSV.
+- **User Rules & Git Operations**:
+  - STRICTLY NO `git add`, `git commit`, or `git push` was executed. All version control operations are left exclusively for the user.

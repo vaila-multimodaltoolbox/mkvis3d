@@ -158,7 +158,7 @@ def test_install_command_prints_gatekeeper_instructions(monkeypatch, capsys):
     rc = main(["install"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "Gatekeeper / Quarentena" in out
+    assert "Gatekeeper / Quarantine" in out
     assert "xattr -cr mkvis3d.app" in out
 
 
@@ -169,4 +169,4 @@ def test_install_command_windows(monkeypatch, capsys):
     rc = main(["install"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "No Windows" in out
+    assert "On Windows" in out

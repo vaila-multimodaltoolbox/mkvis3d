@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 import numpy as np
 
 from .analysis_io import run_dynamics
+from .biomech_math.lcs import transform_trial_monocular_to_standard
 from .c3d_io import c3d_bytes
 from .kinematic_analysis import (
     TAIT_BRYAN_SEQUENCES,
@@ -443,6 +444,7 @@ def create_server(
                 "/api/analyze/import_trajectory_csv",
                 "/api/analyze/export_trajectory_csv",
                 "/api/analyze/blank_frames",
+                "/api/analyze/convert_monocular",
                 "/api/analyze/dynamics",
                 "/api/shutdown",
             ):
@@ -460,13 +462,25 @@ def create_server(
                 if not 0 < length <= 256 * 1024 * 1024:
                     raise ValueError("file must be nonempty and no larger than 256 MiB")
                 if req_path == "/api/export/c3d":
-                    edited = json.loads(self.rfile.read(length))
+                    payload = json.loads(self.rfile.read(length))
+                    if isinstance(payload, dict) and "trial" in payload:
+                        trial_data = payload["trial"]
+                        custom_filename = payload.get("filename") or payload.get("save_as_path")
+                    else:
+                        trial_data = payload
+                        custom_filename = None
                     template = (
                         current_source[0][1]
                         if current_source[0] and Path(current_source[0][0]).suffix.lower() == ".c3d"
                         else None
                     )
-                    body = c3d_bytes(trial_from_payload(edited), template=template)
+                    body = c3d_bytes(trial_from_payload(trial_data), template=template)
+                    if custom_filename and source_dir and source_dir.is_dir():
+                        target_name = Path(str(custom_filename)).name
+                        if not target_name.lower().endswith(".c3d"):
+                            target_name += ".c3d"
+                        with contextlib.suppress(OSError):
+                            (source_dir / target_name).write_bytes(body)
                     self.send_bytes(200, body, "application/octet-stream")
                     return
                 if req_path == "/api/export/vaila":
@@ -639,6 +653,25 @@ def create_server(
                             {"xyz": json_compatible(trial.xyz)},
                             allow_nan=False,
                         ).encode(),
+                        "application/json",
+                    )
+                    return
+                if req_path == "/api/analyze/convert_monocular":
+                    request = json.loads(self.rfile.read(length))
+                    trial = trial_from_payload(request["trial"])
+                    auto_floor_z = bool(request.get("auto_floor_z", True))
+                    auto_center_xy = bool(request.get("auto_center_xy", True))
+                    transformed_trial, R, trans = transform_trial_monocular_to_standard(
+                        trial, auto_floor_z=auto_floor_z, auto_center_xy=auto_center_xy
+                    )
+                    out = {
+                        "xyz": json_compatible(transformed_trial.xyz),
+                        "R": json_compatible(R),
+                        "translation": json_compatible(trans),
+                    }
+                    self.send_bytes(
+                        200,
+                        json.dumps(out, allow_nan=False).encode(),
                         "application/json",
                     )
                     return

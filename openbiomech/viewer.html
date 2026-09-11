@@ -141,16 +141,43 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
   top: 100%;
   left: 0;
   min-width: 230px;
-  max-height: calc(100vh - 60px);
-  overflow-y: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   box-shadow: var(--shadow-menu);
   padding: 6px 0;
   z-index: 2000;
+  overflow: visible;
 }
 .menu-item.open > .dropdown-menu { display: block; }
+#menu-view > .dropdown-menu,
+#menu-windows > .dropdown-menu {
+  max-height: calc(100vh - 42px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.dropdown-submenu {
+  position: relative;
+  width: 100%;
+}
+.dropdown-submenu-menu {
+  display: none;
+  position: absolute;
+  top: -6px;
+  left: 100%;
+  min-width: 260px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+  padding: 6px 0;
+  z-index: 2050;
+}
+.dropdown-submenu:hover > .dropdown-submenu-menu,
+.dropdown-submenu:focus-within > .dropdown-submenu-menu,
+.dropdown-submenu.open > .dropdown-submenu-menu {
+  display: block;
+}
 .dropdown-item {
   width: 100%;
   border: 0;
@@ -1110,15 +1137,23 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <button type="button" class="dropdown-item" id="btn-attach-analysis">Attach Analysis JSON/CSV...</button>
       <input id="file-analysis" type="file" accept=".json,.csv" hidden>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-header">Sample Trials in data/</div>
-      <button type="button" class="dropdown-item" data-example="pilot0102_squat03.c3d">Vicon Squat (pilot0102_squat03.c3d)</button>
-      <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305_m.c3d">Full Body Gait C3D (rec3d..._m.c3d)</button>
-      <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305.csv">Wide CSV Trial (rec3d....csv)</button>
-      <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305.3d">Wide 3D Trial (rec3d....3d)</button>
+      <div class="dropdown-submenu" id="submenu-sample-trials">
+        <button type="button" class="dropdown-item submenu-toggle">
+          <span>📁 Sample Trials</span>
+          <span style="font-size: 11px; margin-left: 12px; color: var(--text-muted);">▸</span>
+        </button>
+        <div class="dropdown-submenu-menu">
+          <button type="button" class="dropdown-item" data-example="pilot0102_squat03.c3d">Lower Body Squat (pilot0102_squat03.c3d)</button>
+          <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305_m.c3d">Full Body Gait C3D (rec3d..._m.c3d)</button>
+          <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305.csv">Wide CSV Trial (rec3d....csv)</button>
+          <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305.3d">Wide 3D Trial (rec3d....3d)</button>
+        </div>
+      </div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Export & 3D Interchange</div>
+      <button type="button" class="dropdown-item" id="action-save-as-c3d">Save As (C3D)... <span class="shortcut-hint">Ctrl+Shift+S</span></button>
+      <button type="button" class="dropdown-item" id="action-export-c3d">Quick Save C3D (_edited.c3d)</button>
       <button type="button" class="dropdown-item" id="action-save-vaila">Save Complete Project (.vaila)...</button>
-      <button type="button" class="dropdown-item" id="action-export-c3d">Save Edited Trial (C3D)...</button>
       <button type="button" class="dropdown-item" id="action-export-plot">Export Distance / Plot CSV...</button>
       <button type="button" class="dropdown-item" id="action-export-all-csv">Export All Trajectories (CSV)...</button>
       <button type="button" class="dropdown-item" id="action-export-active-marker-csv">Export Active Marker (CSV)...</button>
@@ -1152,11 +1187,11 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <button type="button" class="dropdown-item" id="action-toggle-distance">✓ Distance Line (A–B) <span class="shortcut-hint">D</span></button>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Color Theme</div>
-      <button type="button" class="dropdown-item" id="action-theme-dark">✓ Dark Mode (Escuro)</button>
-      <button type="button" class="dropdown-item" id="action-theme-light">  Light Mode (Claro)</button>
+      <button type="button" class="dropdown-item" id="action-theme-dark">✓ Dark Mode</button>
+      <button type="button" class="dropdown-item" id="action-theme-light">  Light Mode</button>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Lab Vertical Up-Axis</div>
-      <button type="button" class="dropdown-item" data-up="z">✓ Z-Up (ISB / Vicon standard)</button>
+      <button type="button" class="dropdown-item" data-up="z">✓ Z-Up (Standard ISB / 3D Mocap)</button>
       <button type="button" class="dropdown-item" data-up="y">Y-Up</button>
       <button type="button" class="dropdown-item" data-up="x">X-Up</button>
       <div class="dropdown-divider"></div>
@@ -1180,7 +1215,9 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
     <div class="dropdown-menu">
       <div class="dropdown-header">Segment Reference Systems & Motion</div>
       <button type="button" class="dropdown-item" id="action-kinematics-modal">📐 Segment Bases (s1, s2, sg) & Kinematics... <span class="shortcut-hint">Alt+K</span></button>
-      <button type="button" class="dropdown-item" id="action-view-lcs">Reference System & Origin... <span class="shortcut-hint">Alt+L</span></button>
+      <button type="button" class="dropdown-item" id="action-view-lcs">🌐 Reference System & Origin... <span class="shortcut-hint">Alt+L</span></button>
+      <button type="button" class="dropdown-item" id="action-toggle-lefthand">🖐️ Left-Hand Rule (Swap X ↔ Y: Vicon / Blender)</button>
+      <button type="button" class="dropdown-item" id="action-convert-monocular">🚀 Convert Monocular 3D (vailá) to Left-Hand Mocap</button>
       <button type="button" class="dropdown-item" id="action-view-filter">Smooth, Filter & Gap Fill... <span class="shortcut-hint">Alt+F</span></button>
       <button type="button" class="dropdown-item" id="action-kinematics-virtual-pts">✨ Create Virtual Points & CSV Trajectories...</button>
       <button type="button" class="dropdown-item" id="action-clean-marker-frames">✂️ Clean / Blank Marker Frames (NaN Gaps)...</button>
@@ -1203,6 +1240,8 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <button type="button" class="dropdown-item" id="action-win-table">Marker Inspector Table</button>
       <button type="button" class="dropdown-item" id="action-win-select-points">Select Points…</button>
       <button type="button" class="dropdown-item" id="action-win-video">Reference Video</button>
+      <button type="button" class="dropdown-item" id="action-win-lcs">🌐 Reference System & Origin... <span class="shortcut-hint">Alt+L</span></button>
+      <button type="button" class="dropdown-item" id="action-win-kinematics">📐 Segment Bases & Kinematics... <span class="shortcut-hint">Alt+K</span></button>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Floating & Pop-out Windows</div>
       <button type="button" class="dropdown-item" id="action-float-plot1">↗ Float Plot Window 1</button>
@@ -1465,7 +1504,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <option value="mediapipe_pose33">MediaPipe Pose (33 keypoints)</option>
         <option value="openpose_body25">OpenPose Body-25 (25 keypoints)</option>
         <option value="fifa_body15">FIFA Body-15 (15 keypoints)</option>
-        <option value="vicon_squat">Vicon Squat (15 markers)</option>
+        <option value="vicon_squat">Lower Body Squat (15 markers)</option>
         <option value="mediapipe_hand21">MediaPipe Hand (21 keypoints)</option>
         <option value="mediapipe_hands42">MediaPipe Both Hands (42 keypoints)</option>
         <option value="mediapipe_holistic75">MediaPipe Holistic (75 keypoints)</option>
@@ -1634,7 +1673,13 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <button type="button" class="btn-pane-tool" id="btn-mode-pan" aria-pressed="false" title="Pan Mode (drag to translate 3D view)">Pan</button>
             </div>
             <button type="button" class="btn-pane-tool primary" id="btn-win-header-kinematics" title="Segment Bases (s1, s2, sg) & Kinematics (Alt+K)" style="background: var(--accent); color: #fff; font-weight: 700; padding: 2px 10px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2);">
-              <span>📐</span><span>Bases & Kinematics (s1, s2, sg)</span>
+              <span>📐</span><span>Bases & Kinematics</span>
+            </button>
+            <button type="button" class="btn-pane-tool" id="btn-win-header-lefthand" title="Left-Hand Rule: Swap X ↔ Y (Vicon / Blender / Optitrack)" style="background: var(--bg-card); color: var(--text-color); font-weight: 600; padding: 2px 10px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; border: 1px solid var(--border-color);">
+              <span>🖐️</span><span>Left-Hand (X↔Y)</span>
+            </button>
+            <button type="button" class="btn-pane-tool" id="btn-win-header-lcs" title="Reference System & Origin Calibration (Alt+L)" style="background: var(--bg-card); color: var(--text-color); font-weight: 600; padding: 2px 10px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; border: 1px solid var(--border-color);">
+              <span>🌐</span><span>Ref System & Origin</span>
             </button>
             <span id="viewport-hint" style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Drag / Middle: Orbit | Alt+Drag: Select | Ctrl+Drag: Zoom | Shift: Pan</span>
             <button type="button" class="btn-pane-tool" id="btn-refresh-3d" title="Fast 3D Viewport Refresh (re-sync canvas, layout reflow, and camera fit)">↻ Refresh 3D</button>
@@ -1941,16 +1986,52 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         Swap coordinate axes (+ / -) and translate the origin to adjust your 3D animation reference frame.
       </p>
 
+      <!-- Formalism & Rule Mnemonic Card -->
+      <div style="background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 11px; line-height: 1.45;">
+        <div style="font-weight: 700; color: #22c55e; margin-bottom: 4px;">🖐️ Left-Hand Rule Formalism (Vicon, Blender, Optitrack Standard)</div>
+        <div style="color: var(--text-color); margin-bottom: 4px;">
+          • <strong>Thumb:</strong> <span style="color: #3b82f6; font-weight: 700;">+Z (Vertical Up)</span><br>
+          • <strong>Index Finger:</strong> <span style="color: #22c55e; font-weight: 700;">+Y (Forward / Walkway progression)</span><br>
+          • <strong>Middle Finger:</strong> <span style="color: #ef4444; font-weight: 700;">+X (Right / Lateral)</span>
+        </div>
+        <div style="color: var(--text-muted);">
+          <strong>Left-Hand Cross Products:</strong>
+          <code style="color: #22c55e; font-weight: 600;">Z = Y × X</code> &nbsp;|&nbsp;
+          <code style="color: #22c55e; font-weight: 600;">X = Z × Y</code> &nbsp;|&nbsp;
+          <code style="color: #22c55e; font-weight: 600;">Y = X × Z</code> &nbsp;|&nbsp;
+          <span style="color: #22c55e; font-weight: 700;">det(R) = -1.0</span> (Left-Handed Basis).
+        </div>
+        <div style="color: var(--text-muted); margin-top: 3px; font-size: 10px;">
+          Right-Hand Cartesian: <code>Z = X × Y</code> (det = +1.0).
+        </div>
+      </div>
+
+      <!-- Quick Shortcut for Monocular Screen 3D (vailá Toolbox) -->
+      <div style="margin-bottom: 12px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-subtle);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+          <div>
+            <div style="font-weight: 700; font-size: 11px; color: var(--accent);">🚀 Monocular 3D / Screen Coordinates (vailá Toolbox)</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 2px;">
+              Screen frame (SAM3, DINOv3, Sapiens2: Y-Down, Z-Depth, X-ML) → Left-Hand Mocap (X-Right: +X, Y-Fwd: +Z, Z-Up: -Y) + Floor to Z=0.
+            </div>
+          </div>
+          <button type="button" id="btn-lcs-monocular-vaila" class="primary" style="font-weight: 700; font-size: 11px; padding: 5px 10px; white-space: nowrap;">
+            ⚡ Convert to Standard
+          </button>
+        </div>
+      </div>
+
       <!-- Presets -->
       <div style="margin-bottom: 12px;">
-        <label style="font-weight: 600; margin-bottom: 6px; font-size: 12px;">Default Templates:</label>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
-          <button type="button" class="btn-lcs-preset active" data-preset="default_z">Default (Z-Up)</button>
+        <label style="font-weight: 600; margin-bottom: 6px; font-size: 12px;">Standard Presets (Orthonormal):</label>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 6px;">
+          <button type="button" class="btn-lcs-preset" data-preset="swap_xy">🖐️ Left-Hand (Swap X↔Y)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="monocular_vaila">📷 Monocular 3D (vailá)</button>
+          <button type="button" class="btn-lcs-preset active" data-preset="default_z">Standard 3D (Z-Up)</button>
+          <button type="button" class="btn-lcs-preset" data-preset="walkway_x">Walkway along X</button>
+          <button type="button" class="btn-lcs-preset" data-preset="reverse_y">Reverse Walk (-Y)</button>
           <button type="button" class="btn-lcs-preset" data-preset="y_up">Y-Up (Vertical Y)</button>
           <button type="button" class="btn-lcs-preset" data-preset="x_up">X-Up (Vertical X)</button>
-          <button type="button" class="btn-lcs-preset" data-preset="walkway_x">Walkway along X</button>
-          <button type="button" class="btn-lcs-preset" data-preset="inverted_z">Inverted Z</button>
-          <button type="button" class="btn-lcs-preset" data-preset="reverse_y">Reverse Walk (-Y)</button>
         </div>
       </div>
 
@@ -1960,7 +2041,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px;">
           <div>
-            <label for="lcs-axis-x" style="font-weight: 600; font-size: 11px; margin-top:0;">Target X Axis:</label>
+            <label for="lcs-axis-x" style="font-weight: 600; font-size: 11px; margin-top:0;">Target X Axis (Right):</label>
             <select id="lcs-axis-x" style="width: 100%;">
               <option value="+X" selected>+X</option>
               <option value="-X">-X</option>
@@ -1971,7 +2052,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             </select>
           </div>
           <div>
-            <label for="lcs-axis-y" style="font-weight: 600; font-size: 11px; margin-top:0;">Target Y Axis:</label>
+            <label for="lcs-axis-y" style="font-weight: 600; font-size: 11px; margin-top:0;">Target Y Axis (Forward):</label>
             <select id="lcs-axis-y" style="width: 100%;">
               <option value="+X">+X</option>
               <option value="-X">-X</option>
@@ -1994,13 +2075,22 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           </div>
         </div>
 
-        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
           <button type="button" id="btn-swap-xy" style="font-size: 10px; padding: 4px 8px;">Swap X ↔ Y</button>
           <button type="button" id="btn-swap-xz" style="font-size: 10px; padding: 4px 8px;">Swap X ↔ Z</button>
           <button type="button" id="btn-swap-yz" style="font-size: 10px; padding: 4px 8px;">Swap Y ↔ Z</button>
           <button type="button" id="btn-invert-x" style="font-size: 10px; padding: 4px 8px;">± Invert X</button>
           <button type="button" id="btn-invert-y" style="font-size: 10px; padding: 4px 8px;">± Invert Y</button>
           <button type="button" id="btn-invert-z" style="font-size: 10px; padding: 4px 8px;">± Invert Z</button>
+        </div>
+
+        <!-- Cross Product Auto-Tools -->
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border-color);">
+          <button type="button" id="btn-calc-z-cross-lh" style="font-size: 10px; padding: 4px 8px; color: #22c55e; font-weight: 600;" title="Left-Hand Rule: Set Z = Y × X (Thumb = Index × Middle)">🖐️ Auto Z = Y × X (Left-Hand)</button>
+          <button type="button" id="btn-calc-z-cross" style="font-size: 10px; padding: 4px 8px;" title="Right-Hand: Set Z = X × Y">📐 Auto Z = X × Y (Right-Hand)</button>
+          <button type="button" id="btn-calc-x-cross-lh" style="font-size: 10px; padding: 4px 8px;" title="Left-Hand: Set X = Z × Y">🖐️ Auto X = Z × Y</button>
+          <button type="button" id="btn-calc-x-cross" style="font-size: 10px; padding: 4px 8px;" title="Right-Hand: Set X = Y × Z">📐 Auto X = Y × Z</button>
+          <button type="button" id="btn-calc-y-cross" style="font-size: 10px; padding: 4px 8px;" title="Set Y = Z × X">⚡ Auto Y = Z × X</button>
         </div>
       </fieldset>
 
@@ -2735,7 +2825,11 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           <h2>2. Data Formats & Biomechanical I/O</h2>
           <p>mkvis3d supports industry-standard motion capture and biomechanical exchange formats:</p>
           <ul>
-            <li><strong>C3D (.c3d):</strong> Binary standard preserving 3D point coordinates, analog channels, sampling frequencies, video sync frame ratios, and parameter groups (<code>POINT</code>, <code>ANALOG</code>, <code>FORCE_PLATFORM</code>). Supports both float32 and integer data formats across Little-Endian and Big-Endian architectures.</li>
+            <li><strong>C3D (.c3d):</strong> Binary standard preserving 3D point coordinates, analog channels, sampling frequencies, video sync frame ratios, and parameter groups (<code>POINT</code>, <code>ANALOG</code>, <code>FORCE_PLATFORM</code>). Supports both float32 and integer data formats across Little-Endian and Big-Endian architectures.
+              <br>• <strong>Save As (C3D)... (<span class="key-cap">Ctrl+Shift+S</span>):</strong> Prompts for a new target filename (preserving original file) with edited markers, gap-fills, and virtual points.
+              <br>• <strong>Quick Save C3D:</strong> Quickly saves to <code>&lt;stem&gt;_edited.c3d</code>.
+              <br>• <strong>Sample Trials Submenu:</strong> Built-in demonstration files are grouped in a compact flyout menu (<code>File ▾ 📁 Sample Trials ▸</code>).
+            </li>
             <li><strong>CSV (.csv):</strong> Universal tabular format containing frame index, time (s), and 3D coordinate columns (<code>X</code>, <code>Y</code>, <code>Z</code>) per marker.</li>
             <li><strong>Raw 3D (.3d):</strong> ASCII and binary 3D trajectory data formats.</li>
             <li><strong>Project Session State (.vaila):</strong> Complete JSON-encoded project file capturing current camera view, active marker, selected skeletons, custom virtual points, filter parameters, and LCS definitions.</li>
@@ -2850,6 +2944,27 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             <br><span style="color: #22c55e; font-weight: 600;">✓ Unit norm: ||ex|| = 1.000, ||ey|| = 1.000, ||ez|| = 1.000</span>
             <br><span style="color: #22c55e; font-weight: 600;">✓ Mutual orthogonality: 90.0° between all axis pairs (ei · ej = 0)</span>
             <br><span style="color: #22c55e; font-weight: 600;">✓ Right-handed chirality: det([ex, ey, ez]) = +1.000</span>
+          </p>
+          <h3>6.3 Left-Hand Rule Mnemonic & Right-Hand Cross-Product Mathematics</h3>
+          <p>
+            In standard biomechanics and 3D modeling (such as Blender 3D), global coordinate frames follow the intuitive <strong>Left-Hand Rule mnemonic</strong>:
+            <br>• <strong>Middle Finger:</strong> +X axis (pointing Right / Lateral)
+            <br>• <strong>Index Finger:</strong> +Y axis (pointing Forward / Walkway progression)
+            <br>• <strong>Thumb:</strong> +Z axis (pointing Vertically Upward)
+          </p>
+          <div class="math-block">
+            Z = X × Y, &nbsp; X = Y × Z, &nbsp; Y = Z × X, &nbsp; det(R) = +1.0
+          </div>
+          <p>
+            In the <strong>Reference System & Origin (LCS)</strong> modal (<span class="key-cap">Alt+L</span>), use 1-click tools: <code>Auto Z = X × Y</code>, <code>Auto X = Y × Z</code>, <code>Auto Y = Z × X</code>, and <code>Enforce Right-Handed (det = +1.0)</code> to ensure proper physical chirality.
+          </p>
+          <h3>6.4 Vision AI / Monocular 3D Quick Conversion (vailá Toolbox)</h3>
+          <p>
+            Files generated from monocular video and vision AI models (SAM3, DINOv3, Sapiens2 in the <code>vailá</code> Toolbox) record coordinates where X is mediolateral, Y is vertical down, and Z is optical depth.
+            <br>Click <strong>🚀 Convert Monocular 3D (vailá) to Standard Mocap</strong> in the <code>Analysis ▾</code> menu or LCS modal:
+            <br>• <strong>Axis Remap:</strong> Target X = +X_src, Target Y = +Z_src, Target Z = −Y_src (det = +1.0)
+            <br>• <strong>Auto-Floor:</strong> Shifts vertical coordinates so lowest marker touches the floor plane (Z = 0.0)
+            <br>• <strong>Auto-Center:</strong> Centers subject bounding box at the laboratory origin (X = 0.0, Y = 0.0)
           </p>
         </section>
 
@@ -3068,6 +3183,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <tr><td><span class="key-cap">Shift + Drag</span></td><td>Pan 3D camera across scene</td></tr>
               <tr><td><span class="key-cap">Mouse Wheel</span></td><td>Zoom 3D camera in / out</td></tr>
               <tr><td><span class="key-cap">R</span> / <span class="key-cap">Home</span></td><td>Reset 3D camera and fit to subject</td></tr>
+              <tr><td><span class="key-cap">Ctrl + Shift + S</span></td><td><strong>Save As (C3D) with custom filename</strong></td></tr>
               <tr><td><span class="key-cap">Alt + K</span></td><td><strong>Open Segment Bases & Kinematics Modal</strong></td></tr>
               <tr><td><span class="key-cap">Alt + L</span></td><td>Open Reference System & Origin (LCS) Modal</td></tr>
               <tr><td><span class="key-cap">Alt + F</span></td><td>Open Signal Filtering & Gap Fill Modal</td></tr>

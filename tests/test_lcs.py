@@ -148,3 +148,77 @@ def test_transform_trial_reference_system_with_translation():
     new_p2 = transformed_rot.marker("p2")
     new_dist = np.linalg.norm(new_p1 - new_p2, axis=-1)
     assert np.allclose(orig_dist, new_dist, atol=1e-12)
+
+
+def test_verify_reference_system_orientation():
+    from openbiomech.biomech_math.lcs import (
+        verify_reference_system_orientation,
+        verify_right_handed_cross_products,
+    )
+
+    # Canonical standard right-handed: X, Y, Z (det = +1.0)
+    orient_rh, info_rh = verify_reference_system_orientation("+X", "+Y", "+Z")
+    assert orient_rh == "right_handed"
+    assert info_rh["det"] == "+1.0"
+    assert info_rh["expected_z_rh"] == "+Z"
+
+    # Left-Hand Rule: Swap X ↔ Y (Vicon / Blender standard: det = -1.0)
+    orient_lh, info_lh = verify_reference_system_orientation("+Y", "+X", "+Z")
+    assert orient_lh == "left_handed"
+    assert info_lh["det"] == "-1.0"
+    assert info_lh["expected_z_lh"] == "+Z"
+
+    # Monocular vaila: X=+X, Y=+Z, Z=-Y (det = +1.0)
+    orient_mono, info_mono = verify_reference_system_orientation("+X", "+Z", "-Y")
+    assert orient_mono == "right_handed"
+    assert info_mono["det"] == "+1.0"
+    assert info_mono["expected_z_rh"] == "-Y"
+
+    # Backward compatibility
+    is_rh, info = verify_right_handed_cross_products("+X", "+Y", "+Z")
+    assert is_rh is True
+    is_rh_lh, _ = verify_right_handed_cross_products("+Y", "+X", "+Z")
+    assert is_rh_lh is False
+
+
+def test_transform_trial_monocular_to_standard():
+    from openbiomech.biomech_math.lcs import transform_trial_monocular_to_standard
+
+    trial = read_c3d_native(FIXTURE_C3D)
+    transformed, R, (tx, ty, tz) = transform_trial_monocular_to_standard(
+        trial, auto_floor_z=True, auto_center_xy=True
+    )
+    assert transformed.n_frames == trial.n_frames
+    assert np.isclose(np.linalg.det(R), 1.0)
+    # Floor to Z=0 means minimum Z coordinate is at 0.0
+    assert np.isclose(np.nanmin(transformed.xyz[..., 2]), 0.0, atol=1e-6)
+    # Center X/Y means mean X and Y are at 0.0
+    assert np.isclose(np.nanmean(transformed.xyz[..., 0]), 0.0, atol=1e-6)
+    assert np.isclose(np.nanmean(transformed.xyz[..., 1]), 0.0, atol=1e-6)
+
+
+def test_transform_trial_monocular_jjkabuto_file():
+    from openbiomech.biomech_math.lcs import transform_trial_monocular_to_standard
+
+    kabuto_path = Path(
+        "/home/preto/data/jjkabuto/c3d/processed_linear_butterworth_cut5_0_20260908_171307/csv2c3d_20260908_171334/JJ_Kabuto_id_00_mhr70_3d_butterworth.c3d"
+    )
+    if not kabuto_path.is_file():
+        pytest.skip("JJ_Kabuto file not available in test environment")
+
+    trial = read_c3d_native(kabuto_path)
+    transformed, R, (tx, ty, tz) = transform_trial_monocular_to_standard(
+        trial, auto_floor_z=True, auto_center_xy=True
+    )
+    assert transformed.n_frames == trial.n_frames
+    assert np.isclose(np.linalg.det(R), 1.0)
+    labels = list(transformed.labels)
+    # Nose Z should be greater than ankles Z (Z is up)
+    nose = labels.index("NOSE")
+    r_ank = labels.index("RIGHT_ANKLE")
+    assert transformed.xyz[0, nose, 2] > transformed.xyz[0, r_ank, 2]
+    # Min Z on floor = 0.0
+    assert np.isclose(np.nanmin(transformed.xyz[..., 2]), 0.0, atol=1e-5)
+    # Forward progression is along Y
+    y_range = np.nanmax(transformed.xyz[..., 1]) - np.nanmin(transformed.xyz[..., 1])
+    assert y_range > 0.5

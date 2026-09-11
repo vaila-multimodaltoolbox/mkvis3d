@@ -14,7 +14,7 @@ try {
 const token = location.hash.slice(1);
 
 let trial = null, frame = 0, playing = false, lastTick = 0, elapsed = 0;
-let yaw = -0.45, pitch = 0.22, zoom = 1, pan = [0, 0], center = [0, 0, 0], span = 1;
+let yaw = -0.15, pitch = 0.22, zoom = 1, pan = [0, 0], center = [0, 0, 0], span = 1;
 // Trial-wide lowest marker height (oriented Z), used as the "auto" ground
 // plane reference. Computed once per fit() instead of per-frame so the grid
 // does not flicker when the lowest marker changes frame-to-frame (e.g. feet
@@ -189,10 +189,10 @@ function setTheme(theme) {
 
   // Update View menu items
   if ($("action-theme-dark")) {
-    $("action-theme-dark").textContent = (currentTheme === "dark" ? "✓ " : "  ") + "Dark Mode (Escuro)";
+    $("action-theme-dark").textContent = (currentTheme === "dark" ? "✓ " : "  ") + "Dark Mode";
   }
   if ($("action-theme-light")) {
-    $("action-theme-light").textContent = (currentTheme === "light" ? "✓ " : "  ") + "Light Mode (Claro)";
+    $("action-theme-light").textContent = (currentTheme === "light" ? "✓ " : "  ") + "Light Mode";
   }
 
   const autoSwatch = document.querySelector('#marker-color-swatches .color-swatch-btn[data-color="auto"]');
@@ -242,9 +242,10 @@ function projectOriented(p, w = canvas.clientWidth, h = canvas.clientHeight) {
   const diff = [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
   const x = Math.cos(yaw) * diff[0] - Math.sin(yaw) * diff[1];
   const depth = Math.sin(yaw) * diff[0] + Math.cos(yaw) * diff[1];
-  const z = Math.cos(pitch) * diff[2] - Math.sin(pitch) * depth;
+  const z = Math.cos(pitch) * diff[2] + Math.sin(pitch) * depth;
   const s = Math.min(w, h) * 0.75 / span * zoom;
-  return [w / 2 + x * s + pan[0], h / 2 - z * s + pan[1], depth];
+  const camDepth = depth * Math.cos(pitch) - diff[2] * Math.sin(pitch);
+  return [w / 2 + x * s + pan[0], h / 2 - z * s + pan[1], camDepth];
 }
 
 function project(raw, w = canvas.clientWidth, h = canvas.clientHeight) {
@@ -344,30 +345,46 @@ function drawGroundGrid(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clie
   const extent = count * step;
   const isLight = currentTheme === "light";
 
+  // Grid center aligned to world coordinates (snapped to step)
+  const snapCenterX = Math.round(center[0] / step) * step;
+  const snapCenterY = Math.round(center[1] / step) * step;
+
   targetCtx.lineWidth = 1;
+
+  // Lines of constant X (parallel to Y axis / Walkway direction)
+  // When line is at X = 0 (or closest to center if 0 not in view), highlight Y axis in GREEN (RGB: Y = Green)
   for (let i = -count; i <= count; i++) {
-    const x = i * step;
-    const isCenter = i === 0;
-    targetCtx.strokeStyle = isCenter
-      ? (isLight ? "rgba(220, 38, 38, 0.7)" : "rgba(239, 134, 134, 0.6)")
+    const posX = snapCenterX + i * step;
+    const isYAxis = Math.abs(posX) < 1e-4;
+    const isCenterFallback = (!isYAxis && i === 0 && Math.abs(snapCenterX) > extent);
+    const isAxis = isYAxis || isCenterFallback;
+
+    targetCtx.strokeStyle = isAxis
+      ? (isLight ? "rgba(22, 163, 74, 0.75)" : "rgba(130, 217, 157, 0.7)")
       : (isLight ? "rgba(100, 116, 139, 0.25)" : "rgba(75, 105, 135, 0.25)");
-    targetCtx.lineWidth = isCenter ? 1.5 : 1;
-    const p1 = projectOriented([center[0] + x, center[1] - extent, floorH], w, h);
-    const p2 = projectOriented([center[0] + x, center[1] + extent, floorH], w, h);
+    targetCtx.lineWidth = isAxis ? 1.5 : 1;
+    const p1 = projectOriented([posX, snapCenterY - extent, floorH], w, h);
+    const p2 = projectOriented([posX, snapCenterY + extent, floorH], w, h);
     targetCtx.beginPath();
     targetCtx.moveTo(p1[0], p1[1]);
     targetCtx.lineTo(p2[0], p2[1]);
     targetCtx.stroke();
   }
+
+  // Lines of constant Y (parallel to X axis / Mediolateral / Squat bar direction)
+  // When line is at Y = 0 (or closest to center if 0 not in view), highlight X axis in RED (RGB: X = Red)
   for (let i = -count; i <= count; i++) {
-    const y = i * step;
-    const isCenter = i === 0;
-    targetCtx.strokeStyle = isCenter
-      ? (isLight ? "rgba(22, 163, 74, 0.7)" : "rgba(130, 217, 157, 0.6)")
+    const posY = snapCenterY + i * step;
+    const isXAxis = Math.abs(posY) < 1e-4;
+    const isCenterFallback = (!isXAxis && i === 0 && Math.abs(snapCenterY) > extent);
+    const isAxis = isXAxis || isCenterFallback;
+
+    targetCtx.strokeStyle = isAxis
+      ? (isLight ? "rgba(220, 38, 38, 0.75)" : "rgba(239, 134, 134, 0.7)")
       : (isLight ? "rgba(100, 116, 139, 0.25)" : "rgba(75, 105, 135, 0.25)");
-    targetCtx.lineWidth = isCenter ? 1.5 : 1;
-    const p1 = projectOriented([center[0] - extent, center[1] + y, floorH], w, h);
-    const p2 = projectOriented([center[0] + extent, center[1] + y, floorH], w, h);
+    targetCtx.lineWidth = isAxis ? 1.5 : 1;
+    const p1 = projectOriented([snapCenterX - extent, posY, floorH], w, h);
+    const p2 = projectOriented([snapCenterX + extent, posY, floorH], w, h);
     targetCtx.beginPath();
     targetCtx.moveTo(p1[0], p1[1]);
     targetCtx.lineTo(p2[0], p2[1]);
@@ -375,7 +392,7 @@ function drawGroundGrid(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clie
   }
 }
 
-// Built-in fallback Vicon squat skeleton template
+// Built-in fallback Lower Body Squat skeleton template
 const VICON_SQUAT_TEMPLATE = {
   schema: "vicon_squat",
   connections: [
@@ -412,7 +429,10 @@ function applySkeletonTemplate(templateObj) {
   }
   const labelMap = new Map();
   trial.labels.forEach((lbl, idx) => {
-    labelMap.set(lbl.toLowerCase().trim(), idx);
+    const clean = lbl.toLowerCase().trim();
+    labelMap.set(clean, idx);
+    labelMap.set(clean.replace(/_/g, "-"), idx);
+    labelMap.set(clean.replace(/-/g, "_"), idx);
     labelMap.set(`p${idx + 1}`, idx);
   });
 
@@ -429,12 +449,16 @@ function applySkeletonTemplate(templateObj) {
     let idxA = -1, idxB = -1;
 
     if (labelMap.has(aStr)) idxA = labelMap.get(aStr);
+    else if (labelMap.has(aStr.replace(/_/g, "-"))) idxA = labelMap.get(aStr.replace(/_/g, "-"));
+    else if (labelMap.has(aStr.replace(/-/g, "_"))) idxA = labelMap.get(aStr.replace(/-/g, "_"));
     else if (tKeypointToIdx.has(aStr)) {
       const pIdx = tKeypointToIdx.get(aStr);
       if (pIdx < trial.labels.length) idxA = pIdx;
     }
 
     if (labelMap.has(bStr)) idxB = labelMap.get(bStr);
+    else if (labelMap.has(bStr.replace(/_/g, "-"))) idxB = labelMap.get(bStr.replace(/_/g, "-"));
+    else if (labelMap.has(bStr.replace(/-/g, "_"))) idxB = labelMap.get(bStr.replace(/-/g, "_"));
     else if (tKeypointToIdx.has(bStr)) {
       const pIdx = tKeypointToIdx.get(bStr);
       if (pIdx < trial.labels.length) idxB = pIdx;
@@ -1917,7 +1941,7 @@ function load(data) {
 
   // Deep copy raw coordinates for lossless LCS and filter transformations
   rawLoadedXYZ = data.xyz.map(f => f.map(p => p ? [p[0], p[1], p[2]] : null));
-  currentLCS = { ap: "+Y", axial: "+Z" };
+  currentLCS = { x: "+X", y: "+Y", z: "+Z", tx: 0, ty: 0, tz: 0, ap: "+Y", axial: "+Z" };
   activeFilterConfig = null;
   filterPreviewActive = false;
   filterPreviewSeries = null;
@@ -2013,9 +2037,13 @@ function resize() {
   for (const c of [canvas, graph1, $("graph2")]) {
     if (!c) continue;
     const ratio = window.devicePixelRatio || 1;
-    c.width = Math.round(c.clientWidth * ratio);
-    c.height = Math.round(c.clientHeight * ratio);
-    c.getContext("2d").setTransform(ratio, 0, 0, ratio, 0, 0);
+    const w = c.clientWidth;
+    const h = c.clientHeight;
+    if (w > 0 && h > 0) {
+      c.width = Math.round(w * ratio);
+      c.height = Math.round(h * ratio);
+      c.getContext("2d").setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
   }
   draw();
 }
@@ -2045,19 +2073,8 @@ setSidebarVisible(sidebarVisible, false);
 $("btn-toggle-sidebar").onclick = $("action-win-sidebar").onclick = () => setSidebarVisible($("sidebar").hidden);
 
 function refresh3DViewport() {
-  // 1. Force layout reflow and drop stale textures on 3D pane
   const pane3d = $("panel-3d");
-  if (pane3d) {
-    const origBody = pane3d.querySelector(".pane-body");
-    if (origBody) {
-      const prevDisp = origBody.style.display;
-      origBody.style.display = "none";
-      void origBody.offsetHeight; // Force browser layout reflow
-      origBody.style.display = prevDisp === "none" ? "" : prevDisp;
-    }
-  }
-
-  // 2. Clear stale transforms and sync canvas pixel ratios
+  // 1. Clear stale transforms and sync canvas pixel ratios
   for (const c of [canvas, graph1, $("graph2")]) {
     if (!c) continue;
     const ratio = window.devicePixelRatio || 1;
@@ -2072,7 +2089,7 @@ function refresh3DViewport() {
   }
 
   // 3. Reset camera angles to standard isometric view and auto-fit bounding box
-  yaw = -0.45;
+  yaw = -0.15;
   pitch = 0.22;
   pan = [0, 0];
   zoom = 1;
@@ -2217,8 +2234,8 @@ function handleCanvasPointerMove(e) {
   // Middle mouse button (button 1) unconditionally orbits the camera
   if (pointerDownButton === 1) {
     selectionBox = null;
-    yaw += dx * 0.008;
-    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.008));
+    yaw -= dx * 0.008;
+    pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch - dy * 0.008));
     draw();
     saveSessionState();
     return;
@@ -2260,8 +2277,8 @@ function handleCanvasPointerMove(e) {
   // No modifier: follow viewport mode (default is "rotate" = orbit)
   if (viewportMode === "rotate") {
     selectionBox = null;
-    yaw += dx * 0.008;
-    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.008));
+    yaw -= dx * 0.008;
+    pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch - dy * 0.008));
     draw();
     saveSessionState();
     return;
@@ -2570,8 +2587,8 @@ if ($("graph2")) setupChartSeek($("graph2"));
 
 // Camera View Presets
 $("front").onclick = () => { yaw = 0; pitch = 0; draw(); saveSessionState(); };
-$("side").onclick = () => { yaw = Math.PI / 2; pitch = 0; draw(); saveSessionState(); };
-$("top").onclick = () => { yaw = 0; pitch = Math.PI / 2; draw(); saveSessionState(); };
+$("side").onclick = () => { yaw = -Math.PI / 2; pitch = 0; draw(); saveSessionState(); };
+$("top").onclick = () => { yaw = 0; pitch = Math.PI / 2 - 0.01; draw(); saveSessionState(); };
 $("reset").onclick = () => { refresh3DViewport(); saveSessionState(); };
 
 if ($("up")) $("up").onchange = () => {
@@ -2726,7 +2743,7 @@ async function loadSelectedSkeleton() {
     activeSkeletonTemplate = "vicon_squat";
     const count = applySkeletonTemplate(VICON_SQUAT_TEMPLATE);
     saveSessionState();
-    status(`Vicon Squat skeleton loaded (${count} connections).`);
+    status(`Lower Body Squat skeleton loaded (${count} connections).`);
     return;
   }
 
@@ -2795,7 +2812,17 @@ function closeMenus() {
     item.classList.remove("open");
     item.querySelector(".menu-btn").setAttribute("aria-expanded", "false");
   });
+  document.querySelectorAll(".dropdown-submenu").forEach(item => {
+    item.classList.remove("open");
+  });
 }
+document.querySelectorAll(".dropdown-submenu .submenu-toggle").forEach(btn => {
+  btn.onclick = e => {
+    e.stopPropagation();
+    const parent = btn.closest(".dropdown-submenu");
+    if (parent) parent.classList.toggle("open");
+  };
+});
 document.querySelectorAll(".menu-item").forEach(item => {
   const btn = item.querySelector(".menu-btn");
   btn.setAttribute("aria-expanded", "false");
@@ -3397,16 +3424,16 @@ function popoutPane(paneId, placement = null) {
       const dx = e.clientX - popDrag[0], dy = e.clientY - popDrag[1];
       popDrag = [e.clientX, e.clientY];
       if (popDragButton === 1) {
-        yaw += dx * 0.008;
-        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.008));
+        yaw -= dx * 0.008;
+        pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch - dy * 0.008));
       } else if (e.ctrlKey || e.metaKey) {
         zoom = Math.max(0.1, Math.min(20, zoom * Math.exp(-dy * 0.01)));
       } else if (e.shiftKey) {
         pan[0] += dx;
         pan[1] += dy;
       } else if (e.altKey || viewportMode === "rotate") {
-        yaw += dx * 0.008;
-        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.008));
+        yaw -= dx * 0.008;
+        pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch - dy * 0.008));
       } else if (viewportMode === "pan") {
         pan[0] += dx;
         pan[1] += dy;
@@ -4867,7 +4894,7 @@ if (shortcutsModalEl) {
 
 if ($("action-help-about")) {
   $("action-help-about").onclick = () => {
-    alert("OpenBiomech · vailá Multimodal Toolbox (mkvis3d)\nGitHub: https://github.com/paulopreto/mkvis3d\nModern biomechanical motion viewer & analysis suite\nCompatible with Vicon, Qualisys, C3D, CSV, and .3d formats.");
+    alert("OpenBiomech · vailá Multimodal Toolbox (mkvis3d)\nGitHub: https://github.com/paulopreto/mkvis3d\nModern biomechanical motion viewer & analysis suite\nCompatible with standard C3D, CSV, BVH, and .3d formats.");
   };
 }
 if ($("action-help-github")) {
@@ -4891,6 +4918,16 @@ document.addEventListener("keydown", e => {
   if (e.altKey && (e.key === "k" || e.key === "K")) {
     e.preventDefault();
     openKinematicsModal();
+    return;
+  }
+  if (e.altKey && (e.key === "l" || e.key === "L")) {
+    e.preventDefault();
+    openLCSModal();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "S" || e.key === "s")) {
+    e.preventDefault();
+    saveAsC3D();
     return;
   }
   if (e.key === "F1") {
@@ -5031,7 +5068,7 @@ function download(text, name, type) {
   downloadBlob(new Blob([text], { type }), name);
 }
 
-async function exportEditedC3D() {
+async function exportEditedC3D(customFilename = null) {
   if (!trial) {
     status("Load a trial before exporting C3D.", true);
     return;
@@ -5040,7 +5077,9 @@ async function exportEditedC3D() {
     status("C3D export requires the local GUI session; CSV, BVH, Blender, and HTML remain available offline.", true);
     return;
   }
-  status("Encoding the currently edited trial as C3D...");
+  const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filename = customFilename || `${stem}_edited.c3d`;
+  status(`Encoding edited trial as C3D (${filename})...`);
   try {
     const response = await fetch("/api/export/c3d", {
       method: "POST",
@@ -5048,21 +5087,40 @@ async function exportEditedC3D() {
         "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(trial)
+      body: JSON.stringify({
+        trial: trial,
+        filename: filename
+      })
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error || "Failed to export C3D.");
     }
-    const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
-    downloadBlob(await response.blob(), `${stem}_edited.c3d`);
-    status(`Saved ${stem}_edited.c3d from the current FPS and edited trajectories.`);
+    downloadBlob(await response.blob(), filename);
+    status(`Saved ${filename} with all edited trajectories, virtual points, and transformations.`);
   } catch (error) {
     status(error.message, true);
   }
 }
 
-if ($("action-export-c3d")) $("action-export-c3d").onclick = exportEditedC3D;
+async function saveAsC3D() {
+  if (!trial) {
+    status("Load a trial before saving as C3D.", true);
+    return;
+  }
+  const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const defaultName = `${stem}_edited.c3d`;
+  const name = window.prompt("Save As (C3D) - enter new filename to preserve original trial:", defaultName);
+  if (!name || !name.trim()) return;
+  let finalName = name.trim();
+  if (!finalName.toLowerCase().endsWith(".c3d")) {
+    finalName += ".c3d";
+  }
+  await exportEditedC3D(finalName);
+}
+
+if ($("action-save-as-c3d")) $("action-save-as-c3d").onclick = saveAsC3D;
+if ($("action-export-c3d")) $("action-export-c3d").onclick = () => exportEditedC3D();
 
 function collectAnalysisResults() {
   const results = JSON.parse(JSON.stringify(analysisResults || {}));
@@ -5342,6 +5400,106 @@ function applyTrialRate() {
   status(`Sampling rate applied: ${rateHz} Hz. Playback, time, filters, and exports now use this FPS.`);
 }
 
+function parseWideCsvClient(text, name, rateHz, units) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+  if (!lines.length) throw new Error("CSV file is empty.");
+  let delim = ",";
+  const first = lines[0];
+  if (first.includes(";") && (first.match(/;/g) || []).length >= 2) delim = ";";
+  else if (first.includes("\t")) delim = "\t";
+  else if (!first.includes(",") && /\s{2,}/.test(first)) delim = /\s+/;
+
+  const rawRows = lines.map(l => typeof delim === "string" ? l.split(delim).map(s => s.trim()) : l.split(delim).map(s => s.trim()));
+  if (rawRows.length < 2) throw new Error("CSV file has no data rows.");
+
+  let header = rawRows[0];
+  let dataRows = rawRows.slice(1);
+
+  if (dataRows.length > 0) {
+    const sub = dataRows[0].map(s => s.toLowerCase());
+    const xyzCount = sub.filter(s => s === "x" || s === "y" || s === "z").length;
+    if (xyzCount >= 3 && xyzCount / Math.max(1, sub.filter(Boolean).length) > 0.5) {
+      const newHeader = [];
+      let curr = "";
+      for (let i = 0; i < header.length; i++) {
+        const h = header[i];
+        const s = sub[i] || "";
+        if (h && !h.startsWith("Unnamed:")) curr = h;
+        if ((s === "x" || s === "y" || s === "z") && curr) newHeader.push(`${curr}_${s}`);
+        else newHeader.push(h || s);
+      }
+      header = newHeader;
+      dataRows = dataRows.slice(1);
+    }
+  }
+
+  const markerAxes = {};
+  const markerOrder = [];
+  const bracketRe = /^(.*?)\s*[\[\(]([xyzXYZ])[\]\)]\s*$/;
+  const sepRe = /^(.*)[_.:\s/-]([xyzXYZ])$/;
+  const nosepRe = /^(.*?)([xyzXYZ])$/;
+
+  for (let colIdx = 0; colIdx < header.length; colIdx++) {
+    const col = header[colIdx];
+    if (!col) continue;
+    let mName = null, mAxis = null;
+    let m = bracketRe.exec(col);
+    if (m && m[1].trim()) { mName = m[1].trim(); mAxis = m[2].toLowerCase(); }
+    else {
+      m = sepRe.exec(col);
+      if (m && m[1].trim()) { mName = m[1].trim(); mAxis = m[2].toLowerCase(); }
+      else if (["x", "y", "z"].includes(col.toLowerCase())) { mName = "p1"; mAxis = col.toLowerCase(); }
+      else {
+        m = nosepRe.exec(col);
+        if (m && m[1].trim()) { mName = m[1].trim(); mAxis = m[2].toLowerCase(); }
+      }
+    }
+    if (mName && mAxis) {
+      if (!markerAxes[mName]) {
+        markerAxes[mName] = {};
+        markerOrder.push(mName);
+      }
+      markerAxes[mName][mAxis] = colIdx;
+    }
+  }
+
+  let validMarkers = markerOrder.filter(m => markerAxes[m].x !== undefined && markerAxes[m].y !== undefined && markerAxes[m].z !== undefined);
+  if (!validMarkers.length) throw new Error("No 3D marker coordinate triplets (x, y, z) found in CSV.");
+
+  if (validMarkers.every(m => /^p\d+$/i.test(m))) {
+    validMarkers.sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10));
+  }
+
+  const scale = units === "mm" ? 0.001 : (units === "cm" ? 0.01 : 1.0);
+  const nFrames = dataRows.length;
+  const nMarkers = validMarkers.length;
+  const xyz = [];
+  for (let f = 0; f < nFrames; f++) {
+    const row = dataRows[f];
+    const framePts = [];
+    for (let m = 0; m < nMarkers; m++) {
+      const marker = validMarkers[m];
+      const cX = parseFloat(row[markerAxes[marker].x]);
+      const cY = parseFloat(row[markerAxes[marker].y]);
+      const cZ = parseFloat(row[markerAxes[marker].z]);
+      if (Number.isFinite(cX) && Number.isFinite(cY) && Number.isFinite(cZ)) {
+        framePts.push([cX * scale, cY * scale, cZ * scale]);
+      } else {
+        framePts.push(null);
+      }
+    }
+    xyz.push(framePts);
+  }
+
+  return {
+    name: name.replace(/\.[^.]+$/, ""),
+    labels: validMarkers,
+    rate_hz: rateHz,
+    xyz: xyz,
+    residuals: new Array(nFrames).fill(0).map(() => new Array(nMarkers).fill(0))
+  };
+}
+
 async function uploadFile(file) {
   pause();
   status(`Uploading and parsing ${file.name}...`);
@@ -5365,6 +5523,21 @@ async function uploadFile(file) {
     if (data.project) loadVailaProject(data.project);
     else load(data);
   } catch (error) {
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if ((ext === "csv" || ext === "3d") && (!token || error.message.includes("fetch") || error.message.includes("Failed to fetch") || error.message.includes("404") || error.message.includes("Session token required"))) {
+      try {
+        const text = await file.text();
+        const units = $("units") ? $("units").value : "m";
+        const rate = $("rate") ? Number($("rate").value) || 100 : 100;
+        const trialData = parseWideCsvClient(text, file.name, rate, units);
+        load(trialData);
+        status(`Loaded "${file.name}" locally (${trialData.labels.length} markers, ${trialData.xyz.length} frames).`);
+        return;
+      } catch (clientErr) {
+        status(`Failed to open file: ${clientErr.message}`, true);
+        return;
+      }
+    }
     status(error.message, true);
   } finally {
     if ($("file")) {
@@ -5571,16 +5744,19 @@ const DIRECTION_VECTORS = {
 };
 
 const REF_SYSTEM_PRESETS = {
-  default_z: { x: "+X", y: "+Y", z: "+Z", label: "Default (Z-Up)" },
-  y_up: { x: "-X", y: "+Z", z: "+Y", label: "Y-Up (Vertical Y)" },
-  x_up: { x: "+Y", y: "+Z", z: "+X", label: "X-Up (Vertical X)" },
+  swap_xy: { x: "+Y", y: "+X", z: "+Z", label: "Left-Hand Rule (Swap X ↔ Y: Vicon/Blender)" },
+  monocular_vaila: { x: "+X", y: "+Z", z: "-Y", label: "Monocular 3D (vailá: Left-Hand Rule)" },
+  default_z: { x: "+X", y: "+Y", z: "+Z", label: "Standard Right-Hand (Z-Up)" },
   walkway_x: { x: "-Y", y: "+X", z: "+Z", label: "Walkway along X" },
-  inverted_z: { x: "+X", y: "+Y", z: "-Z", label: "Inverted Z" },
-  reverse_y: { x: "-X", y: "-Y", z: "+Z", label: "Reverse Walk (-Y)" }
+  reverse_y: { x: "-X", y: "-Y", z: "+Z", label: "Reverse Walk (-Y)" },
+  y_up: { x: "-X", y: "+Z", z: "+Y", label: "Y-Up (Vertical Y)" },
+  x_up: { x: "+Y", y: "+Z", z: "+X", label: "X-Up (Vertical X)" }
 };
 
 const LCS_PRESETS = {
-  isb_default: { ap: "+Y", axial: "+Z", label: "ISB (+Z Up, +Y AP)" },
+  isb_default: { ap: "+Y", axial: "+Z", label: "Standard ISB (+Z Up, +Y AP)" },
+  vicon_left_hand: { ap: "+X", axial: "+Z", label: "Left-Hand Mocap (+Z Up, +X AP: Vicon/Blender)" },
+  monocular_vaila: { ap: "+Z", axial: "-Y", label: "Monocular 3D (vailá: Left-Hand: -Y Up, +Z AP)" },
   y_up_bvh: { ap: "+Z", axial: "+Y", label: "BVH / Unity (+Y Up, +Z AP)" },
   y_up_threejs: { ap: "-Z", axial: "+Y", label: "Three.js (+Y Up, -Z AP)" },
   x_up: { ap: "+Y", axial: "+X", label: "X-Up (+X Up, +Y AP)" },
@@ -5598,6 +5774,18 @@ function cross3(a, b) {
     a[2] * b[0] - a[0] * b[2],
     a[0] * b[1] - a[1] * b[0]
   ];
+}
+
+function vectorToDirectionKey(vec) {
+  if (!vec) return null;
+  for (const [name, v] of Object.entries(DIRECTION_VECTORS)) {
+    if (Math.abs(v[0] - vec[0]) < 1e-4 &&
+        Math.abs(v[1] - vec[1]) < 1e-4 &&
+        Math.abs(v[2] - vec[2]) < 1e-4) {
+      return name;
+    }
+  }
+  return null;
 }
 
 function computeReferenceSystemMatrix(xKey, yKey, zKey) {
@@ -6412,14 +6600,23 @@ function updateReferenceSystemFeedback() {
   const btnApply = $("btn-apply-lcs");
 
   if (res.valid) {
+    const vx = DIRECTION_VECTORS[xKey];
+    const vy = DIRECTION_VECTORS[yKey];
+    const expectedZ_RH = vectorToDirectionKey(cross3(vx, vy));
+    const expectedZ_LH = vectorToDirectionKey(cross3(vy, vx));
+    const isLeftHandRule = (res.det < -0.5 && zKey === expectedZ_LH);
+    const isRightHandRule = (res.det > 0.5 && zKey === expectedZ_RH);
+
     if (sumEl) sumEl.textContent = `X→${xKey}, Y→${yKey}, Z→${zKey}`;
     if (detEl) {
-      if (res.det > 0.5) {
-        detEl.textContent = `Right-Handed System (det = +${res.det.toFixed(1)})`;
-        detEl.style.color = "#22c55e";
+      if (isLeftHandRule) {
+        detEl.innerHTML = `<span style="color: #22c55e; font-weight: 700;">✓ Left-Hand Rule (Standard Vicon / Blender / Optitrack, det = -1.0)</span> <div style="color: var(--text-muted); font-size: 10px; margin-top: 2px;">Thumb: +Z (Vertical Up) · Index Finger: +Y (Forward/Walkway) · Middle Finger: +X (Right/Lateral) (Z = Y × X = ${expectedZ_LH})</div>`;
+      } else if (isRightHandRule) {
+        detEl.innerHTML = `<span style="color: #3b82f6; font-weight: 700;">✓ Right-Handed Basis (det = +1.0)</span> <div style="color: var(--text-muted); font-size: 10px; margin-top: 2px;">Cartesian standard: Z = X × Y = ${expectedZ_RH}</div>`;
+      } else if (res.det < -0.5) {
+        detEl.innerHTML = `<span style="color: #22c55e; font-weight: 700;">✓ Left-Handed Basis (det = -1.0)</span> <div style="color: var(--text-muted); font-size: 10px; margin-top: 2px;">Left-Hand expected Z: ${expectedZ_LH}</div>`;
       } else {
-        detEl.textContent = `Left-Handed / Mirrored (det = ${res.det.toFixed(1)})`;
-        detEl.style.color = "#38bdf8";
+        detEl.innerHTML = `<span style="color: #f59e0b; font-weight: 700;">⚠️ Inverted Frame (det = ${res.det.toFixed(1)})</span>`;
       }
     }
     if (errEl) errEl.style.display = "none";
@@ -6459,11 +6656,10 @@ function applyReferenceSystem(xKey, yKey, zKey, tx = 0, ty = 0, tz = 0) {
     ap: yKey,
     axial: zKey
   };
-  yaw = -0.45;
+  yaw = -0.15;
   pitch = 0.22;
   recomputeTrialXYZ();
   updateLCSUI();
-  closeLCSModal();
   refresh3DViewport();
   status(`Reference System applied: X→${xKey}, Y→${yKey}, Z→${zKey}, Offset=[${(currentLCS.tx).toFixed(2)}, ${(currentLCS.ty).toFixed(2)}, ${(currentLCS.tz).toFixed(2)}] m.`);
 }
@@ -6486,7 +6682,7 @@ function resetLCS() {
   if ($("lcs-trans-y")) $("lcs-trans-y").value = "0.00";
   if ($("lcs-trans-z")) $("lcs-trans-z").value = "0.00";
   if ($("up")) $("up").value = "z";
-  yaw = -0.45;
+  yaw = -0.15;
   pitch = 0.22;
   updateReferenceSystemFeedback();
   recomputeTrialXYZ();
@@ -6705,6 +6901,96 @@ function initLCSAndFilterControls() {
     if (s) { s.value = s.value.startsWith("-") ? "+" + s.value.slice(1) : "-" + s.value.slice(1); updateReferenceSystemFeedback(); }
   };
 
+  if ($("btn-calc-z-cross-lh")) $("btn-calc-z-cross-lh").onclick = () => {
+    const sx = $("lcs-axis-x"), sy = $("lcs-axis-y"), sz = $("lcs-axis-z");
+    if (sx && sy && sz) {
+      const vx = DIRECTION_VECTORS[sx.value], vy = DIRECTION_VECTORS[sy.value];
+      if (vx && vy) {
+        const targetZ = vectorToDirectionKey(cross3(vy, vx));
+        if (targetZ) { sz.value = targetZ; updateReferenceSystemFeedback(); }
+      }
+    }
+  };
+  if ($("btn-calc-x-cross-lh")) $("btn-calc-x-cross-lh").onclick = () => {
+    const sx = $("lcs-axis-x"), sy = $("lcs-axis-y"), sz = $("lcs-axis-z");
+    if (sx && sy && sz) {
+      const vy = DIRECTION_VECTORS[sy.value], vz = DIRECTION_VECTORS[sz.value];
+      if (vy && vz) {
+        const targetX = vectorToDirectionKey(cross3(vz, vy));
+        if (targetX) { sx.value = targetX; updateReferenceSystemFeedback(); }
+      }
+    }
+  };
+  if ($("btn-calc-z-cross")) $("btn-calc-z-cross").onclick = () => {
+    const sx = $("lcs-axis-x"), sy = $("lcs-axis-y"), sz = $("lcs-axis-z");
+    if (sx && sy && sz) {
+      const vx = DIRECTION_VECTORS[sx.value], vy = DIRECTION_VECTORS[sy.value];
+      if (vx && vy) {
+        const targetZ = vectorToDirectionKey(cross3(vx, vy));
+        if (targetZ) { sz.value = targetZ; updateReferenceSystemFeedback(); }
+      }
+    }
+  };
+  if ($("btn-calc-x-cross")) $("btn-calc-x-cross").onclick = () => {
+    const sx = $("lcs-axis-x"), sy = $("lcs-axis-y"), sz = $("lcs-axis-z");
+    if (sx && sy && sz) {
+      const vy = DIRECTION_VECTORS[sy.value], vz = DIRECTION_VECTORS[sz.value];
+      if (vy && vz) {
+        const targetX = vectorToDirectionKey(cross3(vy, vz));
+        if (targetX) { sx.value = targetX; updateReferenceSystemFeedback(); }
+      }
+    }
+  };
+  if ($("btn-calc-y-cross")) $("btn-calc-y-cross").onclick = () => {
+    const sx = $("lcs-axis-x"), sy = $("lcs-axis-y"), sz = $("lcs-axis-z");
+    if (sx && sy && sz) {
+      const vz = DIRECTION_VECTORS[sz.value], vx = DIRECTION_VECTORS[sx.value];
+      if (vz && vx) {
+        const targetY = vectorToDirectionKey(cross3(vz, vx));
+        if (targetY) { sy.value = targetY; updateReferenceSystemFeedback(); }
+      }
+    }
+  };
+
+  function toggleLeftHandRule() {
+    const isCurrentlySwapped = (currentLCS.x === "+Y" && currentLCS.y === "+X");
+    const newX = isCurrentlySwapped ? "+X" : "+Y";
+    const newY = isCurrentlySwapped ? "+Y" : "+X";
+    const newZ = currentLCS.z || "+Z";
+    applyReferenceSystem(newX, newY, newZ, currentLCS.tx, currentLCS.ty, currentLCS.tz);
+    if ($("lcs-axis-x")) $("lcs-axis-x").value = newX;
+    if ($("lcs-axis-y")) $("lcs-axis-y").value = newY;
+    if ($("lcs-axis-z")) $("lcs-axis-z").value = newZ;
+    updateReferenceSystemFeedback();
+    const modeLabel = isCurrentlySwapped ? "Standard Right-Hand (+X, +Y, +Z)" : "Left-Hand Rule (Swap X ↔ Y: Vicon/Blender, det = -1.0)";
+    status(`Applied ${modeLabel}: X→${newX}, Y→${newY}, Z→${newZ}.`);
+  }
+  if ($("btn-win-header-lefthand")) $("btn-win-header-lefthand").onclick = toggleLeftHandRule;
+  if ($("action-toggle-lefthand")) $("action-toggle-lefthand").onclick = toggleLeftHandRule;
+
+  function applyMonocularToStandardShortcut(autoApply = false) {
+    if ($("lcs-axis-x")) $("lcs-axis-x").value = "+X";
+    if ($("lcs-axis-y")) $("lcs-axis-y").value = "+Z";
+    if ($("lcs-axis-z")) $("lcs-axis-z").value = "-Y";
+    updateReferenceSystemFeedback();
+    if ($("btn-trans-center-xy")) $("btn-trans-center-xy").click();
+    if ($("btn-trans-zero-floor")) $("btn-trans-zero-floor").click();
+    updateReferenceSystemFeedback();
+    if (autoApply) {
+      if ($("btn-apply-lcs")) $("btn-apply-lcs").click();
+      status("Applied Monocular 3D (vailá) Left-Hand Rule conversion: X→+X (Right), Y→+Z (Forward), Z→-Y (Up), Centered & Floored.");
+    } else {
+      status("Configured Monocular 3D (vailá) Left-Hand Rule preset: X→+X, Y→+Z, Z→-Y.");
+    }
+  }
+  if ($("btn-lcs-monocular-vaila")) $("btn-lcs-monocular-vaila").onclick = () => {
+    applyMonocularToStandardShortcut(false);
+  };
+  if ($("action-convert-monocular")) $("action-convert-monocular").onclick = () => {
+    openLCSModal();
+    applyMonocularToStandardShortcut(true);
+  };
+
   if ($("btn-trans-center-xy")) $("btn-trans-center-xy").onclick = () => {
     if (!trial || !rawLoadedXYZ) return;
     const xKey = $("lcs-axis-x")?.value || "+X";
@@ -6762,6 +7048,10 @@ function initLCSAndFilterControls() {
 
   document.querySelectorAll(".btn-lcs-preset").forEach(btn => {
     btn.onclick = () => {
+      if (btn.dataset.preset === "monocular_vaila") {
+        applyMonocularToStandardShortcut(false);
+        return;
+      }
       const p = REF_SYSTEM_PRESETS[btn.dataset.preset] || LCS_PRESETS[btn.dataset.preset];
       if (p) {
         if (p.x && p.y && p.z) {
@@ -8622,8 +8912,11 @@ function initKinematicsControls() {
   };
 
   if ($("btn-win-header-kinematics")) $("btn-win-header-kinematics").onclick = () => openKinematicsTab("bases");
+  if ($("btn-win-header-lcs")) $("btn-win-header-lcs").onclick = () => openLCSModal();
   if ($("btn-plot-kinematics")) $("btn-plot-kinematics").onclick = () => openKinematicsTab("kinematics");
 
+  if ($("action-win-lcs")) $("action-win-lcs").onclick = () => openLCSModal();
+  if ($("action-win-kinematics")) $("action-win-kinematics").onclick = () => openKinematicsTab("bases");
   if ($("action-kinematics-modal")) $("action-kinematics-modal").onclick = () => openKinematicsTab("bases");
   if ($("action-kinematics-virtual-pts")) $("action-kinematics-virtual-pts").onclick = () => openKinematicsTab("points");
   if ($("action-kinematics-live-tab")) $("action-kinematics-live-tab").onclick = () => openKinematicsTab("kinematics");

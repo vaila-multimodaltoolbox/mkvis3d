@@ -64,18 +64,14 @@ def main() -> int:
             )
             print(f"macOS Release Zip: {zip_path}")
         print("\n" + "=" * 70)
-        print("⚠️  Instrução importante para os usuários de Mac (Gatekeeper / Quarentena):")
-        print(
-            "Como o app ainda não possui uma assinatura paga de desenvolvedor Apple (notarização):"
-        )
-        print("Quando o usuário baixar o .zip pelo navegador e descompactar o mkvis3d.app,")
-        print('o macOS bloqueará a execução dizendo que "o app não pôde ser verificado".\n')
-        print("Na descrição da sua Release e para usuários, adicione a instrução:")
-        print("  No macOS (primeira execução):")
-        print(
-            "  • Clique com o botão direito (ou Control + clique) sobre o mkvis3d.app e escolha Abrir (Open)."
-        )
-        print("  • Ou rode no Terminal:")
+        print("⚠️  Important instruction for macOS users (Gatekeeper / Quarantine):")
+        print("Since the app does not have an Apple Developer signature (notarization):")
+        print("When downloading and unzipping mkvis3d.app via browser,")
+        print('macOS may block execution stating "the app cannot be verified".\n')
+        print("In your Release description and user documentation, include:")
+        print("  On macOS (first launch):")
+        print("  • Right-click (or Control + click) on mkvis3d.app and select Open.")
+        print("  • Or run in Terminal:")
         print("    xattr -cr mkvis3d.app")
         print("=" * 70)
 

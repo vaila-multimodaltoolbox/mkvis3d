@@ -236,23 +236,19 @@ def _cmd_install(args: argparse.Namespace) -> int:
                     shutil.rmtree(dest)
                 shutil.copytree(target_app, dest)
                 subprocess.run(["xattr", "-cr", str(dest)], check=False)
-                print(f"✅ Aplicativo copiado para: {dest}")
+                print(f"✅ Application copied to: {dest}")
             except Exception as e:
-                print(f"Aviso: não foi possível copiar para /Applications ({e})")
+                print(f"Warning: could not copy to /Applications ({e})")
 
         print("\n" + "=" * 70)
-        print("⚠️  Instrução importante para os usuários de Mac (Gatekeeper / Quarentena):")
+        print("⚠️  Important instruction for macOS users (Gatekeeper / Quarantine):")
         print("=" * 70)
-        print(
-            "Como o app ainda não possui uma assinatura paga de desenvolvedor Apple (notarização):"
-        )
-        print("Quando o usuário baixar o .zip pelo navegador e descompactar o mkvis3d.app,")
-        print('o macOS bloqueará a execução dizendo que "o app não pôde ser verificado".\n')
-        print("No macOS (primeira execução):")
-        print(
-            "• Clique com o botão direito (ou Control + clique) sobre o mkvis3d.app e escolha Abrir (Open)."
-        )
-        print("• Ou rode no Terminal:")
+        print("Since the app does not have an Apple Developer signature (notarization):")
+        print("When downloading and unzipping mkvis3d.app via browser,")
+        print('macOS may block execution stating "the app cannot be verified".\n')
+        print("On macOS (first launch):")
+        print("• Right-click (or Control + click) on mkvis3d.app and select Open.")
+        print("• Or run in Terminal:")
         print("  xattr -cr mkvis3d.app")
         print("=" * 70 + "\n")
         return 0
@@ -261,11 +257,11 @@ def _cmd_install(args: argparse.Namespace) -> int:
         launcher_script = root / "scripts" / "install_desktop_launcher.sh"
         if launcher_script.exists():
             return subprocess.run(["bash", str(launcher_script)]).returncode
-        print("Script scripts/install_desktop_launcher.sh não encontrado.")
+        print("Script scripts/install_desktop_launcher.sh not found.")
         return 1
 
     else:
-        print("No Windows, execute o executável dist/mkvis3d.exe diretamente ou use mkvis3d.bat.")
+        print("On Windows, run dist/mkvis3d.exe directly or use mkvis3d.bat.")
         return 0
 
 

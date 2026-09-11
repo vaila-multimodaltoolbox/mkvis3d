@@ -103,13 +103,25 @@ def compute_lcs_matrix(ap_direction: str, axial_direction: str) -> tuple[np.ndar
 # Common presets
 LCS_PRESETS: dict[str, dict[str, str]] = {
     "isb_default": {
-        "name": "ISB / Vicon / Visual3D (Z-Up, Y-Forward)",
+        "name": "Standard ISB / 3D Mocap (Z-Up, Y-Forward)",
         "axial": "+Z",
         "ap": "+Y",
         "description": "Standard biomechanics: Z is vertical up, Y is progression, X is right.",
     },
+    "monocular_vaila": {
+        "name": "Monocular 3D / Screen (vailá Toolbox: Left-Hand Rule)",
+        "axial": "-Y",
+        "ap": "+Z",
+        "description": "Convert monocular screen coordinates (SAM3, DINOv3, Sapiens2: Y-Down, Z-Depth, X-ML) to Left-Hand Mocap (X-Right: +X, Y-Fwd: +Z, Z-Up: -Y).",
+    },
+    "vicon_left_hand": {
+        "name": "Left-Hand Mocap / Blender / Vicon (Z-Up, Swap X↔Y)",
+        "axial": "+Z",
+        "ap": "+X",
+        "description": "Left-Hand Rule mocap: Thumb=+Z Up, Index=+Y Forward/Walkway, Middle=+X Right (det=-1.0).",
+    },
     "y_up_bvh": {
-        "name": "BVH / Unity / Blender (Y-Up, Z-Forward)",
+        "name": "BVH / Unity / Game Standard (Y-Up, Z-Forward)",
         "axial": "+Y",
         "ap": "+Z",
         "description": "Common animation/game format: Y is vertical up, Z is forward.",
@@ -267,3 +279,124 @@ def transform_trial_reference_system(
         analog=trial.analog.copy(),
     )
     return new_trial, R, det
+
+
+def verify_reference_system_orientation(
+    x_axis: str = "+X",
+    y_axis: str = "+Y",
+    z_axis: str = "+Z",
+) -> tuple[str, dict[str, str]]:
+    """Check the reference system orientation and cross-product formalisms:
+
+    Left-Hand Rule (Standard Vicon / Blender / Optitrack: det = -1.0):
+      Thumb: +Z (Vertical Up)
+      Index finger: +Y (Forward / Walkway progression)
+      Middle finger: +X (Right / Lateral)
+      Cross product: Z = cross(Y, X), X = cross(Z, Y), Y = cross(X, Z)
+
+    Right-Hand Rule (Cartesian standard: det = +1.0):
+      Cross product: Z = cross(X, Y), X = cross(Y, Z), Y = cross(Z, X)
+    """
+    x_name, vx = parse_direction(x_axis)
+    y_name, vy = parse_direction(y_axis)
+    z_name, vz = parse_direction(z_axis)
+
+    R = np.vstack([vx, vy, vz])
+    det = float(np.linalg.det(R))
+
+    # Left-hand cross products: Z = Y x X, X = Z x Y, Y = X x Z
+    expected_z_lh = format_vector_as_direction(np.cross(vy, vx))
+    expected_x_lh = format_vector_as_direction(np.cross(vz, vy))
+    expected_y_lh = format_vector_as_direction(np.cross(vx, vz))
+
+    # Right-hand cross products: Z = X x Y, X = Y x Z, Y = Z x X
+    expected_z_rh = format_vector_as_direction(np.cross(vx, vy))
+    expected_x_rh = format_vector_as_direction(np.cross(vy, vz))
+    expected_y_rh = format_vector_as_direction(np.cross(vz, vx))
+
+    if np.isclose(det, -1.0, atol=1e-4) and z_name == expected_z_lh:
+        orientation = "left_handed"
+    elif np.isclose(det, 1.0, atol=1e-4) and z_name == expected_z_rh:
+        orientation = "right_handed"
+    else:
+        orientation = "non_orthogonal" if abs(det) < 1e-4 else "inverted"
+
+    return orientation, {
+        "det": f"{det:+.1f}",
+        "orientation": orientation,
+        "expected_z_lh": expected_z_lh,
+        "expected_x_lh": expected_x_lh,
+        "expected_y_lh": expected_y_lh,
+        "expected_z_rh": expected_z_rh,
+        "expected_x_rh": expected_x_rh,
+        "expected_y_rh": expected_y_rh,
+    }
+
+
+def verify_right_handed_cross_products(
+    x_axis: str = "+X",
+    y_axis: str = "+Y",
+    z_axis: str = "+Z",
+) -> tuple[bool, dict[str, str]]:
+    """Backward-compatible helper checking whether basis is right-handed (det = +1.0)."""
+    orientation, info = verify_reference_system_orientation(x_axis, y_axis, z_axis)
+    return orientation == "right_handed", {
+        "det": info["det"],
+        "expected_z": info["expected_z_rh"],
+        "expected_x": info["expected_x_rh"],
+        "expected_y": info["expected_y_rh"],
+        "expected_z_lh": info["expected_z_lh"],
+        "orientation": orientation,
+    }
+
+
+def transform_trial_monocular_to_standard(
+    trial: MarkerTrial,
+    *,
+    auto_floor_z: bool = True,
+    auto_center_xy: bool = True,
+) -> tuple[MarkerTrial, np.ndarray, tuple[float, float, float]]:
+    """Converts screen/camera coordinates from Monocular 3D (SAM3, DINOv3, Sapiens2 in vailá Toolbox)
+    into canonical Left-Handed Mocap coordinates (X=Right, Y=Forward, Z=Up).
+
+    Source axes (monocular screen frame):
+      X: horizontal image axis (progression / facing direction in sagittal video)
+      Y: vertical pointing DOWN
+      Z: optical depth (medio-lateral / shoulder width across depth)
+
+    Target axes (Thumb=+Z Up, Index=+Y Forward, Middle=+X Right):
+      Target X = +X_raw (Medio-lateral Right / Middle finger)
+      Target Y = +Z_raw (Forward along progression / Index finger)
+      Target Z = -Y_raw (Vertical Up / Thumb)
+
+    Cross-products verified:
+      Z = cross(X, Y) = (+X) x (+Z) = -Y  (det = +1.0)
+    """
+    R, det = compute_reference_system_matrix("+X", "+Z", "-Y")
+
+    # Rotate marker coordinates to compute bounds
+    xyz_rot = np.einsum("ij,fmj->fmi", R, trial.xyz)
+
+    tx, ty, tz = 0.0, 0.0, 0.0
+    if auto_center_xy:
+        mean_x = float(np.nanmean(xyz_rot[..., 0]))
+        mean_y = float(np.nanmean(xyz_rot[..., 1]))
+        if np.isfinite(mean_x):
+            tx = -mean_x
+        if np.isfinite(mean_y):
+            ty = -mean_y
+
+    if auto_floor_z:
+        min_z = float(np.nanmin(xyz_rot[..., 2]))
+        if np.isfinite(min_z):
+            tz = -min_z
+
+    translation = (tx, ty, tz)
+    new_trial, R, det = transform_trial_reference_system(
+        trial,
+        x_axis="+X",
+        y_axis="+Z",
+        z_axis="-Y",
+        translation=translation,
+    )
+    return new_trial, R, translation

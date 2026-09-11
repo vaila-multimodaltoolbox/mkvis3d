@@ -363,6 +363,73 @@ def test_gui_inverse_dynamics_analysis_endpoint(tmp_path):
         thread.join(timeout=5)
 
 
+def test_gui_export_c3d_save_as_and_convert_monocular(tmp_path):
+    trial = MarkerTrial(
+        labels=("M1", "M2"),
+        rate_hz=100.0,
+        xyz=np.array([[[1.0, 2.0, -0.5], [1.1, 2.1, -0.4]]], dtype=np.float64),
+        residuals=np.zeros((1, 2), dtype=np.float64),
+    )
+    payload = trial_payload(trial, "original.c3d")
+    source_bytes = write_c3d(trial, tmp_path / "original.c3d").read_bytes()
+    server, url = create_server(
+        initial_payload=payload,
+        initial_source_name="original.c3d",
+        initial_source_bytes=source_bytes,
+        source_dir=tmp_path,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    token = url.split("#")[1]
+    try:
+        # Test Save As C3D (payload with trial & filename)
+        save_as_body = json.dumps({"trial": payload, "filename": "trial_save_as.c3d"}).encode()
+        connection.request(
+            "POST",
+            "/api/export/c3d",
+            body=save_as_body,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        resp = connection.getresponse()
+        assert resp.status == 200
+        saved_c3d_bytes = resp.read()
+        assert len(saved_c3d_bytes) > 0
+
+        # Verify disk write to source_dir
+        saved_on_disk = tmp_path / "trial_save_as.c3d"
+        assert saved_on_disk.is_file()
+        assert saved_on_disk.read_bytes() == saved_c3d_bytes
+        loaded = load_trial(saved_on_disk)
+        assert loaded.labels == ("M1", "M2")
+        assert_allclose(loaded.xyz, trial.xyz)
+
+        # Test /api/analyze/convert_monocular
+        convert_body = json.dumps(
+            {"trial": payload, "auto_floor_z": True, "auto_center_xy": True}
+        ).encode()
+        connection.request(
+            "POST",
+            "/api/analyze/convert_monocular",
+            body=convert_body,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        resp_conv = connection.getresponse()
+        assert resp_conv.status == 200
+        conv_res = json.loads(resp_conv.read())
+        assert "xyz" in conv_res
+        assert "R" in conv_res
+        assert "translation" in conv_res
+        # Verify min Z was floored to 0.0
+        xyz_arr = np.array(conv_res["xyz"])
+        assert_allclose(np.min(xyz_arr[..., 2]), 0.0, atol=1e-6)
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_cli_defaults_to_gui_when_no_args(monkeypatch):
     called = []
 

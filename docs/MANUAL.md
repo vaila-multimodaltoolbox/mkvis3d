@@ -131,6 +131,31 @@ The Global Reference System defines the real-world laboratory space:
   where $\mathbf{e}_x = [1, 0, 0]^T$ (typically Anterior/Right), $\mathbf{e}_y = [0, 1, 0]^T$ (Anterior/Progression), and $\mathbf{e}_z = [0, 0, 1]^T$ (Vertical Up).
 - **Custom Laboratory System:** If the capture system uses a non-standard axis alignment or requires rotation to a force platform, $s_g$ can be constructed from 3 fixed calibration markers measured in the laboratory.
 
+#### Left-Hand Rule Formalism (Vicon, Blender & Optitrack Standard)
+In motion capture laboratories and 3D animation suites (such as Vicon, Blender 3D, and Optitrack), reference system orientation follows the **Left-Hand Rule**:
+- **Middle Finger:** $+X$ axis (pointing to the Subject's Right / Mediolateral).
+- **Index Finger:** $+Y$ axis (pointing Forward along the Walkway / Anterior progression).
+- **Thumb:** $+Z$ axis (pointing Vertically Upward).
+
+**Left-Hand Cross-Product Mathematics ($\det(\mathbf{R}) = -1.0$):**
+$$\mathbf{Z} = \mathbf{Y} \times \mathbf{X}, \quad \mathbf{X} = \mathbf{Z} \times \mathbf{Y}, \quad \mathbf{Y} = \mathbf{X} \times \mathbf{Z}, \quad \det(\mathbf{R}) = -1.0$$
+
+mkvis3d provides 1-click auto-calculation tools in the Reference System & Origin dialog (`🖐️ Auto Z = Y × X (Left-Hand)`, `🖐️ Auto X = Z × Y`) and a dedicated quick-toggle button in the 3D Viewport header toolbar:
+- **`🖐️ Left-Hand (X↔Y)`:** Instantly toggles the Left-Hand Swap $X \leftrightarrow Y$ convention ($X \to +Y, Y \to +X, Z \to +Z$, $\det = -1.0$).
+- **`🌐 Ref System & Origin`:** Opens the Reference System & Origin dialog (which remains open upon clicking `Apply Reference System` to facilitate iterative adjustments).
+
+#### Vision AI / Monocular 3D Quick Conversion (`vailá` Toolbox)
+Video-based 3D pose estimation tools (such as SAM3, DINOv3, and Sapiens2 in the `vailá` Toolbox) output 3D trajectories in camera/screen coordinate systems where:
+- Raw $X$ is horizontal progression across the video frame (sagittal walkway direction).
+- Raw $Y$ is vertical pointing downward (screen row index, Head is low, Feet are high).
+- Raw $Z$ is optical depth across the subject's lateral width (distance from camera).
+
+mkvis3d provides a **1-click direct conversion shortcut** (`🚀 Convert Monocular 3D (vailá) to Left-Hand Mocap` in the `Analysis ▾` menu and LCS modal):
+1. **Axis Remapping:**
+   $$\text{Target } X = +X_{\text{src}} \ (\text{Right / Middle finger}), \quad \text{Target } Y = +Z_{\text{src}} \ (\text{Walkway / Index finger}), \quad \text{Target } Z = -Y_{\text{src}} \ (\text{Up / Thumb})$$
+2. **Auto-Floor ($Z = 0.0$):** Translates all markers along the vertical axis so the lowest marker point contacts the floor plane ($Z \ge 0$).
+3. **Auto-Center ($X = 0.0, Y = 0.0$):** Centers the midpoint of the subject on the laboratory origin $(0, 0, 0)$.
+
 ### 2.2 Local Segment Coordinate Systems ($s_1, s_2$ — Anatomical Frames)
 To describe the motion of an articulated limb (e.g. thigh and shank, or pelvis and trunk), each segment is assigned a Cartesian basis:
 - **$s_1$ (Segment 1):** The proximal body segment (e.g. Pelvis or Thigh).
@@ -539,21 +564,27 @@ From `File ▾` ➔ `Save Standalone HTML Viewer...`:
 - Bundles coordinates, timeline curves, 3D renderer, and complete UI into a single `.html` file.
 - Requires no server, no internet connection, and zero installation. Shareable with clients, physicians, or colleagues.
 
-### 9.2 C3D Export with Analog Signal Preservation
-From `File ▾` ➔ `Save Edited Trial (C3D)...`:
-- Exports edited trajectories, interpolated markers, and newly created virtual points back into a binary C3D file.
-- Fully preserves synchronized analog force plate and EMG channels, sample rates, and parameter groups.
+### 9.2 C3D Export & Save As (C3D)...
+- **`Save As (C3D)...` (`Ctrl + Shift + S`):** Prompts for a new target filename (defaulting to `<stem>_edited.c3d`), preserving the original C3D file while exporting modified trajectories, gap-filled markers, and custom virtual points.
+- **`Quick Save C3D`:** Directly exports the current modified state as `<stem>_edited.c3d`.
+- **Analog Signal Preservation:** Fully preserves synchronized analog channels (force plates, EMG), sample rates, manufacturer parameter groups, and events.
 
-### 9.3 Blender 3D Python Integration
+### 9.3 Sample Trials Flyout Submenu
+To keep the primary `File ▾` menu compact, built-in demonstration trials are cleanly organized in a flyout submenu (`File ▾` ➔ `📁 Sample Trials ▸`):
+- `rec3d Gait (2 markers)`: Monocular 3D gait sample.
+- `Deep Squat (15 markers)`: Multi-marker lower body squat with synchronized bilateral force platforms.
+- Additional demo files loaded without menu clutter.
+
+### 9.4 Blender 3D Python Integration
 From `File ▾` ➔ `Export Blender Python Script (.py)...`:
 - Generates an automated Python script for Blender 3D.
 - Re-creates 3D marker empties, attaches keyframed animation, generates bone meshes, and enables photorealistic Cycles/Eevee rendering.
 
-### 9.4 Complete Open .vaila Project Archives
+### 9.5 Complete Open .vaila Project Archives
 From `File ▾` ➔ `Save Complete Project (.vaila)...`:
 - Packages raw trial data, processing history, filter parameters, reference systems, and external analyses into a ZIP-based `.vaila` archive for open science and reproducible research.
 
-### 9.5 Command-Line Interface (CLI) Reference
+### 9.6 Command-Line Interface (CLI) Reference
 
 ```bash
 # Display C3D trial header, marker count, rate, and labels
@@ -647,6 +678,7 @@ uv run mkvis3d.py dynamics trial.json --output results.csv
 | **`D`** | Toggle distance measurement line |
 | **`C`** | Cycle marker colors (11 viewc3d presets) |
 | **`+` / `-`** | Increase / decrease marker size |
+| **`Ctrl + Shift + S`** | **Save As (C3D) with custom filename** |
 | **`Alt + K`** | **Open Segment Bases & Kinematics Modal** |
 | **`Alt + L`** | Open Reference System & Origin (LCS) Modal |
 | **`Alt + F`** | Open Signal Filtering & Gap Fill Modal |

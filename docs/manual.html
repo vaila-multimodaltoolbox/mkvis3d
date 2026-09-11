@@ -328,7 +328,11 @@
         <h2>2. Data Formats & Biomechanical I/O</h2>
         <p>mkvis3d supports industry-standard motion capture and biomechanical exchange formats:</p>
         <ul>
-          <li><strong>C3D (.c3d):</strong> Standard binary format preserving 3D point coordinates, analog channels, sampling frequencies, video sync frame ratios, and parameter groups (<code>POINT</code>, <code>ANALOG</code>, <code>FORCE_PLATFORM</code>). Supports float32 and integer data across Little-Endian and Big-Endian architectures.</li>
+          <li><strong>C3D (.c3d):</strong> Standard binary format preserving 3D point coordinates, analog channels, sampling frequencies, video sync frame ratios, and parameter groups (<code>POINT</code>, <code>ANALOG</code>, <code>FORCE_PLATFORM</code>). Supports float32 and integer data across Little-Endian and Big-Endian architectures.
+            <br>• <strong>Save As (C3D)... (<span class="key-cap">Ctrl+Shift+S</span>):</strong> Prompts for a target filename to preserve original C3D file while saving modified trajectories, gap fills, and virtual points.
+            <br>• <strong>Quick Save C3D:</strong> Quickly saves to <code>&lt;stem&gt;_edited.c3d</code>.
+            <br>• <strong>Sample Trials Submenu:</strong> Built-in demonstration files are grouped in a compact flyout menu (<code>File ▾ 📁 Sample Trials ▸</code>).
+          </li>
           <li><strong>CSV (.csv):</strong> Universal tabular format containing frame index, time (s), and 3D coordinate columns (<code>X</code>, <code>Y</code>, <code>Z</code>) per marker.</li>
           <li><strong>Raw 3D (.3d):</strong> ASCII and binary 3D trajectory data formats.</li>
           <li><strong>Project Session State (.vaila):</strong> Complete JSON-encoded project file capturing current camera view, active marker, selected skeletons, custom virtual points, filter parameters, and LCS definitions.</li>
@@ -441,6 +445,29 @@
           <br><span class="badge-ok">✓ Unit norm: ||ex|| = 1.000, ||ey|| = 1.000, ||ez|| = 1.000</span>
           <br><span class="badge-ok">✓ Mutual orthogonality: 90.0° between all axis pairs (ei · ej = 0)</span>
           <br><span class="badge-ok">✓ Right-handed chirality: det([ex, ey, ez]) = +1.000</span>
+        </p>
+        <h3>6.3 Left-Hand Rule Formalism (Vicon, Blender & Optitrack Standard)</h3>
+        <p>
+          In standard motion capture laboratories and 3D modeling environments (such as Vicon, Blender 3D, and Optitrack), reference frames follow the <strong>Left-Hand Rule</strong>:
+          <br>• <strong>Middle Finger:</strong> +X axis (pointing Right / Mediolateral)
+          <br>• <strong>Index Finger:</strong> +Y axis (pointing Forward / Walkway progression)
+          <br>• <strong>Thumb:</strong> +Z axis (pointing Vertically Upward)
+        </p>
+        <div class="math-block">
+          Z = Y × X, &nbsp; X = Z × Y, &nbsp; Y = X × Z, &nbsp; det(R) = −1.0
+        </div>
+        <p>
+          In the 3D Viewport header and Reference System dialog (<span class="key-cap">Alt+L</span>), use the 1-click tools:
+          <br>• <strong>🖐️ Left-Hand (X↔Y):</strong> Quick-toggle button in the 3D Viewport header to swap X and Y with 1 click.
+          <br>• <strong>Auto Z = Y × X (Left-Hand)</strong> and <strong>Auto X = Z × Y</strong>: Instantly solve the third axis according to the Left-Hand Rule.
+        </p>
+        <h3>6.4 Vision AI / Monocular 3D Quick Conversion (vailá Toolbox)</h3>
+        <p>
+          Files generated from monocular video and vision AI models (SAM3, DINOv3, Sapiens2 in the <code>vailá</code> Toolbox) record coordinates where X is progression across the video frame, Y is vertical down, and Z is optical depth.
+          <br>Click <strong>🚀 Convert Monocular 3D (vailá) to Left-Hand Mocap</strong> in the <code>Analysis ▾</code> menu or LCS modal:
+          <br>• <strong>Axis Remap:</strong> Target X = +X_src (Right / Middle finger), Target Y = +Z_src (Walkway / Index finger), Target Z = −Y_src (Up / Thumb)
+          <br>• <strong>Auto-Floor:</strong> Shifts vertical coordinates so lowest marker touches the floor plane (Z = 0.0)
+          <br>• <strong>Auto-Center:</strong> Centers subject bounding box at the laboratory origin (X = 0.0, Y = 0.0)
         </p>
       </section>
 
@@ -658,6 +685,7 @@
             <tr><td><span class="key-cap">Shift + Drag</span></td><td>Pan 3D camera across scene</td></tr>
             <tr><td><span class="key-cap">Mouse Wheel</span></td><td>Zoom 3D camera in / out</td></tr>
             <tr><td><span class="key-cap">R</span> / <span class="key-cap">Home</span></td><td>Reset 3D camera and frame subject</td></tr>
+            <tr><td><span class="key-cap">Ctrl + Shift + S</span></td><td><strong>Save As (C3D) with custom filename</strong></td></tr>
             <tr><td><span class="key-cap">Alt + K</span></td><td><strong>Open Segment Bases & Kinematics Modal</strong></td></tr>
             <tr><td><span class="key-cap">Alt + L</span></td><td>Open Reference System & Origin (LCS) Modal</td></tr>
             <tr><td><span class="key-cap">Alt + F</span></td><td>Open Signal Filtering & Gap Fill Modal</td></tr>

@@ -68,7 +68,7 @@ class OPENBIOMECH_OT_import_motion(bpy.types.Operator, ImportHelper):  # noqa: N
             ("SAM3D_MHR70", "SAM 3D / MHR-70 (70 markers)", "30 anatomical bones"),
             ("COCO17", "COCO-17 / YOLO (17 keypoints)", "19 anatomical bones"),
             ("MEDIAPIPE33", "MediaPipe Pose (33 keypoints)", "35 anatomical bones"),
-            ("SQUAT15", "Vicon Squat (15 markers)", "Lower body kinematics"),
+            ("SQUAT15", "Lower Body Squat (15 markers)", "Lower body kinematics"),
             ("NONE", "None (Markers Only)", "Import only marker trajectories"),
         ],
         default="AUTO",
