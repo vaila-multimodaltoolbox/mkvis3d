@@ -1,38 +1,27 @@
-# Session Handoff: Right-Click Context Menu, Named Segments, Planes/LCS (s1, s2), Kinematics & 100% English UI
+# Session Handoff: Multi-Platform Tag & Release Automation (rp10set26)
 
 - **Status:** Completed
 - **Current State:**
-  - **Right-Click Context Menu (`#canvas-context-menu`)**:
-    - Right mouse click (`button === 2`) on the 3D animation canvas reliably opens the context menu at `(e.clientX, e.clientY)`.
-    - Right-click release (`pointerup` with `button === 2` or `pointerDownButton === 2`) is isolated and prevented from clearing selected markers or triggering canvas drag state.
-    - Clicking on an unselected marker automatically adds it to the active selection group before displaying the menu.
-    - Right-clicking empty space keeps the existing selection intact and displays actions appropriate for the current point count.
-    - Document `pointerdown` listener respects `button !== 2` so menu is not dismissed prematurely during right-clicks; dismissed on outside left click or `Escape` key.
-  - **Named Segments from 2 Points (`K`)**:
-    - When 2 markers are selected, context menu enables **"🦴 Create Segment / Bone (K)"** (displaying marker names e.g. `Create Segment (R_KNEE ↔ R_ANKLE)`).
-    - Prompts user with `promptName(...)` (respecting `navigator.webdriver` to avoid hangs in automated headless environments).
-    - Adds the connection to `skeletonPairs` and stores `[lblA, lblB, segName]` into `customSegments`, automatically enabling the `#bones` checkbox, updating the connections badge, redrawing the scene, and saving session state.
-  - **Planes & Local Coordinate Systems from 3+ Points**:
-    - When 3 or more markers are selected, context menu enables:
-      - **"📐 Define System / Plane s1 (3+ Pts)"**: Sets Point 1 as Origin, Point 2 as Primary Axis, Point 3 as Plane Point, prompts for system name, and opens the Kinematics dialog with `s1` configured.
-      - **"📐 Define System / Plane s2 (3+ Pts)"**: Sets Point 1 as Origin, Point 2 as Primary Axis, Point 3 as Plane Point, prompts for system name, and opens the Kinematics dialog with `s2` configured.
-      - **"⚡ Compute Kinematics (Euler, MR, Quat)"**: Directly assigns `s1`, enables 3D triad visualization (`kinematicsConfig.showTriads = true`), computes orthonormal bases, relative rotation matrix $MR$, Euler angles ($\alpha, \beta, \gamma$), and Quaternions ($w, x, y, z$) relative to `s2` or the Global reference system (`sg` / Lab frame), opens the Live Kinematics telemetry tab, and renders the 3D RGB triad axes on the canvas animation.
-  - **Angle Measurements (2, 3, or 4+ Points)**:
-    - Automatically routes to Absolute Angle (2 pts, relative to SG axis), 3-Point vertex angle, or 4-Point dihedral angle based on selected point count.
-  - **100% English UI Consistency**:
-    - Eliminated all residual Portuguese strings:
-      - Viewport hint: `"Drag / Middle: Orbit | Alt+Drag: Select | Ctrl+Drag: Zoom | Shift: Pan"`.
-      - Help shortcuts table: `"Drag / Middle: Orbit camera view (yaw and pitch)"`.
-      - File menu: `"Shut Down mkvis3d"`.
-      - Shutdown confirmations and alerts translated to English in `openbiomech/viewer.js` and `openbiomech/viewer.py`.
+  - **Tag & Release Architecture**:
+    - Workflow `.github/workflows/build_executables.yml` triggers on `v*` and `rp*` tags (including user's convention `rp<day><mon><year>`, e.g., `rp10set26` for Ribeirão Preto, 10 de setembro de 2026).
+    - GitHub Actions executes a parallel matrix of 3 VMs (`ubuntu-latest`, `windows-latest`, `macos-latest`).
+    - Standardized asset packaging:
+      - Linux: `mkvis3d-linux-x86_64`
+      - Windows: `mkvis3d-windows-x86_64.exe`
+      - macOS: `mkvis3d-macos-app.zip` (containing `mkvis3d.app`)
+    - Enhanced `scripts/build_app.py` to copy/package release binaries with self-describing platform names on both local runs and CI runners.
+    - Fixed `tests/test_cli.py` by monkeypatching `platform.system` in `test_install_command_prints_gatekeeper_instructions` and adding Windows coverage, ensuring 100% clean test execution across any host platform.
+  - **Documentation & Plan**:
+    - Created implementation plan artifact `plan_release_process.md`.
+    - Created walkthrough artifact `walkthrough.md` with sequence diagram and exact terminal commands for creating and pushing `rp10set26`.
   - **Version Control (Git)**:
-    - Strictly adhered to rule: NEVER execute `git add`, `git commit`, or `git push`. All git staging and commits remain exclusively for the user.
-- **Verification & Testing:**
-  - `node --check openbiomech/viewer.js` and `node --check tests/browser_smoke.mjs`: passed with code 0.
-  - `uv run ruff check .` and `uv run ruff format --check .`: all checks passed, 87 files clean.
-  - `uv run pytest tests/test_application.py -vv`: 15 passed in 11.71s (including automated Chrome CDP browser smoke tests exercising right-click context menu, named segment creation, and kinematics calculation).
-  - `uv run pytest tests/test_cross_browser.py -vv`: 3 passed across Google Chrome, Chromium, and Firefox in 40.34s.
-  - `uv run pytest -q -k 'not test_install_command_prints_gatekeeper_instructions'`: 242 passed, 1 skipped, 1 deselected in 58.36s.
+    - Strictly adhered to rule: NEVER execute `git add`, `git commit`, or `git push`. All git staging, commits, tag creation, and pushes remain exclusively for the user.
+- **What Worked:**
+  - Standardized release filenames in `.github/workflows/build_executables.yml` and `scripts/build_app.py`.
+  - Comprehensive guide written in `walkthrough.md`.
+  - 238 unit tests passing with code 0 (`uv run pytest -q -m "not browser"`).
+  - All 87 files clean under `uv run ruff check .` and `uv run ruff format --check .`.
+- **Failed Approaches:**
+  - Unpatched `test_install_command_prints_gatekeeper_instructions` failed when running directly on Windows because it checked for macOS Gatekeeper output without mocking `Darwin`. Resolved cleanly with `monkeypatch.setattr(platform, "system", lambda: "Darwin")`.
 - **Open Questions & Next Steps:**
-  - All requested features and fixes completed and verified.
-  - Commit and push can be performed manually by the user.
+  - The user can run `git add .`, `git commit -m "..."`, `git tag -a rp10set26 -m "..."`, and `git push origin rp10set26` from their terminal to trigger the GitHub Actions release workflow.

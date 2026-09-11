@@ -2,6 +2,7 @@
 """Cross-platform build script for mkvis3d executable."""
 
 import platform
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,18 @@ def main() -> int:
     if system == "windows":
         exe_path = dist_dir / "mkvis3d.exe"
         print(f"Windows Executable: {exe_path}")
+        release_path = dist_dir / "mkvis3d-windows-x86_64.exe"
+        if exe_path.exists():
+            shutil.copy2(exe_path, release_path)
+            print(f"Windows Release Executable: {release_path}")
+    elif system == "linux":
+        bin_path = dist_dir / "mkvis3d"
+        print(f"Linux Executable: {bin_path}")
+        release_path = dist_dir / "mkvis3d-linux-x86_64"
+        if bin_path.exists():
+            shutil.copy2(bin_path, release_path)
+            release_path.chmod(0o755)
+            print(f"Linux Release Executable: {release_path}")
     elif system == "darwin":
         app_path = dist_dir / "mkvis3d.app"
         print(f"macOS Application: {app_path}")

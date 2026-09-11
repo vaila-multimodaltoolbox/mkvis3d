@@ -151,9 +151,22 @@ def test_direct_vaila_project_restores_complete_gui_state(monkeypatch, tmp_path)
     assert called[0]["initial_project"].analyses["distance"]["values"] == [0.0]
 
 
-def test_install_command_prints_gatekeeper_instructions(capsys):
+def test_install_command_prints_gatekeeper_instructions(monkeypatch, capsys):
+    import platform
+
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
     rc = main(["install"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Gatekeeper / Quarentena" in out
     assert "xattr -cr mkvis3d.app" in out
+
+
+def test_install_command_windows(monkeypatch, capsys):
+    import platform
+
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    rc = main(["install"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "No Windows" in out

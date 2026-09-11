@@ -19,13 +19,13 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_name: mkvis3d-linux-x86_64
-            dist_file: dist/mkvis3d
+            dist_file: dist/mkvis3d-linux-x86_64
           - os: windows-latest
             artifact_name: mkvis3d-windows-x86_64.exe
-            dist_file: dist/mkvis3d.exe
+            dist_file: dist/mkvis3d-windows-x86_64.exe
           - os: macos-latest
             artifact_name: mkvis3d-macos-app
-            dist_file: dist/mkvis3d.app
+            dist_file: dist/mkvis3d-macos-app.zip
 
     steps:
       - name: Checkout Code
@@ -45,24 +45,19 @@ jobs:
       - name: Build Standalone Application
         run: uv run python scripts/build_app.py
 
-      - name: Package macOS App Bundle
+      - name: Ensure macOS Zip Bundle
         if: runner.os == 'macOS'
         run: |
           cd dist
-          zip -r mkvis3d-macos-app.zip mkvis3d.app
-          echo "DIST_UPLOAD=dist/mkvis3d-macos-app.zip" >> $GITHUB_ENV
-
-      - name: Set Upload Path (Linux / Windows)
-        if: runner.os != 'macOS'
-        shell: bash
-        run: |
-          echo "DIST_UPLOAD=${{ matrix.dist_file }}" >> $GITHUB_ENV
+          if [ ! -f mkvis3d-macos-app.zip ]; then
+            zip -r mkvis3d-macos-app.zip mkvis3d.app
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ env.DIST_UPLOAD }}
+          path: ${{ matrix.dist_file }}
 
   release:
     name: Create GitHub Release
