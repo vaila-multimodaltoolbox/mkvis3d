@@ -3887,7 +3887,97 @@ function addVideoSource(source) {
   return refVideosList.length - 1;
 }
 
-function switchVideoCamera(index) {
+function sessionAuthHeaders() {
+  const headers = {};
+  // Session token lives in location.hash (see `const token` at top), not boot.token.
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function ensureServerBrowserVideo(item) {
+  if (!boot.server || !item || !item.name) return null;
+  status(`Checking browser codec for "${item.name}"…`);
+  const resp = await fetch(`/api/ensure_browser_video?name=${encodeURIComponent(item.name)}`);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data.error || `ensure_browser_video failed (${resp.status})`);
+  }
+  if (data.transcoded) {
+    status(`Saved H.264 as "${data.name}" and loaded it for playback.`);
+  }
+  return data;
+}
+
+async function transcodeUploadedVideo(item) {
+  if (!boot.server || !item || !item.file) return null;
+  status(`Compressing "${item.name}" to H.264 (*_compress.mp4)…`);
+  const localPath = item.file && item.file.path ? String(item.file.path) : "";
+  let url = `/api/transcode_upload?name=${encodeURIComponent(item.name)}`;
+  if (localPath) url += `&local_path=${encodeURIComponent(localPath)}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...sessionAuthHeaders(),
+      "Content-Type": item.file.type || "application/octet-stream",
+    },
+    body: item.file,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data.error || `transcode_upload failed (${resp.status})`);
+  }
+  return data;
+}
+
+async function pickAndEnsureVideo() {
+  if (!boot.server) {
+    if ($("video-file-input")) $("video-file-input").click();
+    return;
+  }
+  if (!trial) {
+    status("Load a trial before loading reference video.", true);
+    return;
+  }
+  status("Choose a reference video (host file dialog)…");
+  try {
+    const resp = await fetch("/api/pick_and_ensure_video", {
+      method: "POST",
+      headers: sessionAuthHeaders(),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(data.error || `pick_and_ensure_video failed (${resp.status})`);
+    }
+    const idx = addVideoSource({
+      name: data.name,
+      url: data.url,
+      file: null,
+      isServer: true,
+      transcodedFrom: data.original_name || null,
+    });
+    updateCameraSelectorUI();
+    if (data.transcoded) {
+      status(`Compressed to "${data.name}" beside the original and loaded it.`);
+    }
+    await switchVideoCamera(idx, { skipEnsure: true, allowRecover: false });
+  } catch (err) {
+    status(`Could not load video: ${err.message || err}`, true);
+  }
+}
+
+function applyPlayableVideoSource(item, data) {
+  if (!data || !data.url) return;
+  if (item.url && String(item.url).startsWith("blob:")) {
+    try { URL.revokeObjectURL(item.url); } catch (_) {}
+  }
+  item.url = data.url;
+  item.name = data.name || item.name;
+  item.isServer = true;
+  item.file = null;
+  item.transcodedFrom = data.original_name || item.transcodedFrom || null;
+}
+
+async function switchVideoCamera(index, opts = {}) {
   if (index < 0 || index >= refVideosList.length) return;
   activeVideoIndex = index;
   const item = refVideosList[index];
@@ -3898,14 +3988,34 @@ function switchVideoCamera(index) {
 
   const wasPlaying = playing;
   const currentMocapTime = trial && trial.rate_hz ? frame / trial.rate_hz : 0;
+  const allowRecover = opts.allowRecover !== false;
 
   if ($("video-mismatch-panel")) $("video-mismatch-panel").hidden = true;
 
+  if (boot.server && item.isServer && !opts.skipEnsure) {
+    try {
+      const ensured = await ensureServerBrowserVideo(item);
+      if (ensured) applyPlayableVideoSource(item, ensured);
+    } catch (err) {
+      status(
+        `Could not prepare "${item.name}" for browser playback. ${err.message || err}`,
+        true
+      );
+    }
+  }
+
   video.onerror = () => {
-    status(
-      `Could not decode "${item.name}". Browsers natively decode MP4/MOV (H.264+AAC) and MKV/WEBM (VP9/H.264).`,
-      true
-    );
+    if (allowRecover && boot.server && item.file) {
+      status(`Browser rejected "${item.name}". Compressing to *_compress.mp4…`);
+      transcodeUploadedVideo(item).then(data => {
+        applyPlayableVideoSource(item, data);
+        switchVideoCamera(index, { allowRecover: false, skipEnsure: true });
+      }).catch(err => {
+        status(`Could not compress "${item.name}": ${err.message || err}`, true);
+      });
+      return;
+    }
+    status(`Could not decode "${item.name}".`, true);
   };
 
   video.onloadedmetadata = () => {
@@ -3931,7 +4041,7 @@ function switchVideoCamera(index) {
   updateCameraSelectorUI();
 }
 
-function loadVideoFiles(fileList) {
+async function loadVideoFiles(fileList) {
   if (!trial) {
     status("Load a trial before loading reference video.", true);
     return;
@@ -3942,6 +4052,33 @@ function loadVideoFiles(fileList) {
   });
   if (!files.length) {
     status("No valid video files selected (.mp4, .mov, .mkv, .webm).", true);
+    return;
+  }
+
+  // In GUI server mode: never play raw blobs — probe/compress on the host and
+  // load the playable URL (writes *_compress.mp4 when needed).
+  if (boot.server) {
+    let firstIdx = -1;
+    for (const f of files) {
+      try {
+        const data = await transcodeUploadedVideo({ name: f.name, file: f });
+        const idx = addVideoSource({
+          name: data.name,
+          url: data.url,
+          file: null,
+          isServer: true,
+          transcodedFrom: data.original_name || f.name,
+        });
+        if (firstIdx === -1) firstIdx = idx;
+        if (data.transcoded) {
+          status(`Saved "${data.name}" and loaded it for playback.`);
+        }
+      } catch (err) {
+        status(`Could not prepare "${f.name}": ${err.message || err}`, true);
+      }
+    }
+    updateCameraSelectorUI();
+    if (firstIdx >= 0) await switchVideoCamera(firstIdx, { skipEnsure: true, allowRecover: false });
     return;
   }
 
@@ -4018,7 +4155,7 @@ async function checkCompanionVideos() {
   }
 }
 
-if ($("action-load-video")) $("action-load-video").onclick = () => $("video-file-input").click();
+if ($("action-load-video")) $("action-load-video").onclick = () => pickAndEnsureVideo();
 if ($("video-file-input")) {
   $("video-file-input").onchange = e => {
     if (e.target.files && e.target.files.length) loadVideoFiles(e.target.files);
@@ -4026,9 +4163,7 @@ if ($("video-file-input")) {
   };
 }
 if ($("btn-add-video")) {
-  $("btn-add-video").onclick = () => {
-    if ($("video-file-input")) $("video-file-input").click();
-  };
+  $("btn-add-video").onclick = () => pickAndEnsureVideo();
 }
 if ($("video-camera-select")) {
   $("video-camera-select").onchange = e => {

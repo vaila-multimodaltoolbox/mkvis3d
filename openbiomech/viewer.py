@@ -34,6 +34,11 @@ from .kinematic_analysis import (
 from .marker_trial import MarkerTrial
 from .project_io import VailaProject, read_vaila_project, vaila_project_bytes
 from .trial_io import load_trial
+from .video_compat import (
+    ensure_browser_video,
+    ffmpeg_suggestion,
+    pick_local_video_path,
+)
 
 
 def get_project_root() -> Path:
@@ -215,6 +220,27 @@ def create_server(
         else None
     ]
     current_project: list[dict | None] = [initial_project]
+    # name -> absolute path; grows when we register H.264 cache outputs / uploads
+    video_registry: dict[str, Path] = {}
+    upload_scratch: list[Path] = []  # session-lived dirs for uploaded video re-encodes
+    if initial_videos:
+        for v in initial_videos:
+            if v.is_file():
+                video_registry[v.name] = v.resolve()
+
+    def resolve_video(video_name: str) -> Path | None:
+        safe = Path(video_name).name
+        if not safe:
+            return None
+        registered = video_registry.get(safe)
+        if registered is not None and registered.is_file():
+            return registered
+        if source_dir and source_dir.is_dir():
+            candidate = source_dir / safe
+            if candidate.is_file():
+                video_registry[safe] = candidate.resolve()
+                return video_registry[safe]
+        return None
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args) -> None:
@@ -279,31 +305,63 @@ def create_server(
 
             if req_path == "/api/companion_videos":
                 videos = []
-                if initial_videos:
-                    for v in initial_videos:
-                        if v.is_file():
-                            videos.append({"name": v.name, "size": v.stat().st_size})
+                seen: set[str] = set()
+                for name, path in list(video_registry.items()):
+                    if path.is_file() and name not in seen:
+                        videos.append({"name": name, "size": path.stat().st_size})
+                        seen.add(name)
                 if source_dir and source_dir.is_dir():
                     for ext in (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"):
                         for f in sorted(source_dir.glob(f"*{ext}")):
-                            if not any(v["name"] == f.name for v in videos):
+                            if f.name not in seen:
+                                video_registry[f.name] = f.resolve()
                                 videos.append({"name": f.name, "size": f.stat().st_size})
+                                seen.add(f.name)
                 self.send_bytes(200, json.dumps({"videos": videos}).encode(), "application/json")
+                return
+
+            if req_path == "/api/ensure_browser_video":
+                query = parse_qs(parsed.query)
+                video_name = Path(query.get("name", [""])[0]).name
+                target_video = resolve_video(video_name)
+                if not target_video:
+                    self.send_bytes(404, b'{"error":"Video not found"}', "application/json")
+                    return
+                try:
+                    playable, info = ensure_browser_video(target_video)
+                    video_registry[playable.name] = playable.resolve()
+                    # Keep original name mapped to playable so /api/video?name=original works.
+                    video_registry[video_name] = playable.resolve()
+                    body = {
+                        "name": playable.name,
+                        "original_name": video_name,
+                        "path": str(playable),
+                        "url": f"/api/video?name={playable.name}",
+                        "transcoded": bool(info.get("transcoded")),
+                        "codec_name": info.get("codec_name"),
+                        "codec_tag_string": info.get("codec_tag_string"),
+                        "suggestion": ffmpeg_suggestion(video_name),
+                    }
+                    self.send_bytes(
+                        200, json.dumps(body, allow_nan=False).encode(), "application/json"
+                    )
+                except Exception as exc:
+                    self.send_bytes(
+                        400,
+                        json.dumps(
+                            {
+                                "error": str(exc),
+                                "suggestion": ffmpeg_suggestion(video_name),
+                            }
+                        ).encode(),
+                        "application/json",
+                    )
                 return
 
             if req_path == "/api/video":
                 query = parse_qs(parsed.query)
                 video_name = Path(query.get("name", [""])[0]).name
-                target_video = None
-                if initial_videos:
-                    for v in initial_videos:
-                        if v.name == video_name and v.is_file():
-                            target_video = v
-                            break
-                if not target_video and source_dir and source_dir.is_dir():
-                    candidate = source_dir / video_name
-                    if candidate.is_file():
-                        target_video = candidate
+                target_video = resolve_video(video_name)
 
                 if not target_video or not target_video.is_file():
                     self.send_bytes(404, b'{"error":"Video not found"}', "application/json")
@@ -446,6 +504,8 @@ def create_server(
                 "/api/analyze/blank_frames",
                 "/api/analyze/convert_monocular",
                 "/api/analyze/dynamics",
+                "/api/transcode_upload",
+                "/api/pick_and_ensure_video",
                 "/api/shutdown",
             ):
                 self.send_bytes(404, b"Not found", "text/plain")
@@ -459,8 +519,87 @@ def create_server(
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
+                if req_path == "/api/pick_and_ensure_video":
+                    # Native dialog on the host — no body required.
+                    if length > 0:
+                        self.rfile.read(length)
+                    chosen = pick_local_video_path()
+                    if chosen is None:
+                        self.send_bytes(
+                            400,
+                            json.dumps(
+                                {
+                                    "error": "No video selected (or zenity/kdialog unavailable)",
+                                    "suggestion": ffmpeg_suggestion("input.mp4"),
+                                }
+                            ).encode(),
+                            "application/json",
+                        )
+                        return
+                    playable, info = ensure_browser_video(chosen)
+                    video_registry[chosen.name] = chosen.resolve()
+                    video_registry[playable.name] = playable.resolve()
+                    # Remap original name to playable so subsequent /api/video hits H.264.
+                    video_registry[chosen.name] = playable.resolve()
+                    body = {
+                        "name": playable.name,
+                        "original_name": chosen.name,
+                        "path": str(playable),
+                        "url": f"/api/video?name={playable.name}",
+                        "transcoded": bool(info.get("transcoded")),
+                        "codec_name": info.get("codec_name"),
+                        "codec_tag_string": info.get("codec_tag_string"),
+                        "suggestion": ffmpeg_suggestion(chosen.name),
+                    }
+                    self.send_bytes(
+                        200, json.dumps(body, allow_nan=False).encode(), "application/json"
+                    )
+                    return
                 if not 0 < length <= 256 * 1024 * 1024:
                     raise ValueError("file must be nonempty and no larger than 256 MiB")
+                if req_path == "/api/transcode_upload":
+                    query = parse_qs(urlsplit(self.path).query)
+                    original_name = Path(query.get("name", ["upload.mp4"])[0]).name or "upload.mp4"
+                    # Optional absolute path on the host (loopback GUI) so we can
+                    # write *_compress.mp4 beside the real file.
+                    local_path_raw = (query.get("local_path", [""])[0] or "").strip()
+                    local_source: Path | None = None
+                    if local_path_raw:
+                        candidate = Path(local_path_raw).expanduser()
+                        if candidate.is_file() and candidate.name == original_name:
+                            local_source = candidate.resolve()
+                    suffix = Path(original_name).suffix.lower() or ".mp4"
+                    if suffix not in (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"):
+                        raise ValueError("expected a video file (.mp4/.mov/.mkv/.webm/.avi/.m4v)")
+                    uploaded = self.rfile.read(length)
+                    if local_source is not None:
+                        playable, info = ensure_browser_video(local_source)
+                        video_registry[local_source.name] = playable.resolve()
+                    else:
+                        scratch = Path(tempfile.mkdtemp(prefix="openbiomech-video-"))
+                        upload_scratch.append(scratch)
+                        source = scratch / original_name
+                        source.write_bytes(uploaded)
+                        # Browser file inputs have no filesystem path — compress in
+                        # scratch and serve via /api/video. Use Load Video (host
+                        # dialog) to write *_compress.mp4 beside the original.
+                        playable, info = ensure_browser_video(source)
+                    video_registry[playable.name] = playable.resolve()
+                    video_registry[original_name] = playable.resolve()
+                    body = {
+                        "name": playable.name,
+                        "original_name": original_name,
+                        "path": str(playable),
+                        "url": f"/api/video?name={playable.name}",
+                        "transcoded": bool(info.get("transcoded")),
+                        "codec_name": info.get("codec_name"),
+                        "codec_tag_string": info.get("codec_tag_string"),
+                        "suggestion": ffmpeg_suggestion(original_name),
+                    }
+                    self.send_bytes(
+                        200, json.dumps(body, allow_nan=False).encode(), "application/json"
+                    )
+                    return
                 if req_path == "/api/export/c3d":
                     payload = json.loads(self.rfile.read(length))
                     if isinstance(payload, dict) and "trial" in payload:
@@ -724,7 +863,7 @@ def create_server(
                 self.send_bytes(
                     200, json.dumps(payload, allow_nan=False).encode(), "application/json"
                 )
-            except (OSError, ValueError, IndexError, KeyError, OverflowError) as exc:
+            except (OSError, ValueError, IndexError, KeyError, OverflowError, RuntimeError) as exc:
                 self.send_bytes(400, json.dumps({"error": str(exc)}).encode(), "application/json")
 
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
