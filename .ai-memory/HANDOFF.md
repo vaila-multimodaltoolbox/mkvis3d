@@ -1,13 +1,11 @@
-# Session Handoff: Browser Video Auto-Compress (mp4v → *_compress.mp4)
+# Session Handoff: Release rp14set26 — awaiting auth/CI evidence
 
-- **Status:** Completed
+- **Status:** In-Progress
 - **Current State:**
-  - MPEG-4 Part 2 (`mp4v`) overlays fail in HTML5 video; H.264 works.
-  - `openbiomech/video_compat.py` probes codecs and re-encodes via ffmpeg (NVENC when available) to `{stem}_compress.mp4` beside the source.
-  - GUI: Load Video uses host zenity dialog (`/api/pick_and_ensure_video`); companion/`--video` use `/api/ensure_browser_video`; file-picker uploads use authenticated `/api/transcode_upload`.
-  - Auth bug fixed: session token from `location.hash`, not `boot.token`.
-  - Debug instrumentation removed after user confirmation.
-  - Tests: `tests/test_video_compat.py` (3).
-- **What Worked:** Auto-compress + sibling `_compress.mp4` + load playable URL.
-- **Failed Approaches:** Suggest-only ffmpeg message; blob playback of mp4v.
-- **Open Questions & Next Steps:** None for this bug.
+  - Commit `348c017` + tag `rp14set26` on `origin` (verified via `git ls-remote`).
+  - Local Linux binary built: `dist/mkvis3d-linux-x86_64` (~79 MB).
+  - GitHub Release assets not yet verified: `gh` unauthenticated; unauthenticated API/HTML scrape shows private-repo 404.
+  - Device login pending: code `3948-64FC` → https://github.com/login/device (process still waiting).
+- **What Worked:** Commit/push/tag/local build.
+- **Failed Approaches:** Cookie scrape without session; API without token.
+- **Open Questions & Next Steps:** User finishes Actions jobs and/or authorizes `gh`; then verify `gh release view rp14set26` lists Linux/Windows/macOS assets and mark goal complete.
