@@ -2114,10 +2114,20 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           </div>
         </div>
 
-        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-          <button type="button" id="btn-trans-center-xy" style="font-size: 10px; padding: 4px 8px;">Center (X=0, Y=0)</button>
-          <button type="button" id="btn-trans-zero-floor" style="font-size: 10px; padding: 4px 8px;">Floor to Z = 0</button>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;">
+          <button type="button" id="btn-trans-zero-floor-frame" style="font-size: 10px; padding: 4px 8px; font-weight: 600; color: #22c55e;" title="Align lowest marker in current frame to Z = 0">Floor Frame to Z = 0</button>
+          <button type="button" id="btn-trans-zero-floor" style="font-size: 10px; padding: 4px 8px;" title="Align lowest marker across entire trial to Z = 0">Floor Trial to Z = 0</button>
+          <button type="button" id="btn-trans-center-xy-frame" style="font-size: 10px; padding: 4px 8px;" title="Center X and Y for current frame">Center Frame (XY=0)</button>
+          <button type="button" id="btn-trans-center-xy" style="font-size: 10px; padding: 4px 8px;" title="Center X and Y across entire trial">Center Trial (XY=0)</button>
           <button type="button" id="btn-trans-reset" style="font-size: 10px; padding: 4px 8px;">Reset Translation</button>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; padding: 5px 8px; background: rgba(0,0,0,0.18); border-radius: 4px; border: 1px solid var(--border-color);">
+          <span style="color: var(--text-muted); font-weight: 500;">Ground Plane:</span>
+          <div style="display: flex; gap: 4px;">
+            <button type="button" id="btn-lcs-floor-origin" style="font-size: 10px; padding: 3px 8px; border-radius: 3px; cursor: pointer;">Origin (Z = 0)</button>
+            <button type="button" id="btn-lcs-floor-auto" style="font-size: 10px; padding: 3px 8px; border-radius: 3px; cursor: pointer;">Auto (Lowest Marker)</button>
+          </div>
         </div>
       </fieldset>
 
@@ -2126,6 +2136,10 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div style="display: flex; justify-content: space-between;">
           <span>System Matrix:</span>
           <strong id="lcs-matrix-summary" style="font-family: monospace; color: var(--accent);">X→+X, Y→+Y, Z→+Z</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+          <span>Translation & Ground:</span>
+          <strong id="lcs-trans-summary" style="font-family: monospace; color: var(--text);">ΔX: 0.00 m, ΔY: 0.00 m, ΔZ: 0.00 m · Floor: Auto</strong>
         </div>
         <div style="display: flex; justify-content: space-between; margin-top: 4px;">
           <span>Handedness / Orientation:</span>

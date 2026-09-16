@@ -6702,6 +6702,24 @@ function updateFilterUI() {
   }
 }
 
+function updateLCSFloorModeUI() {
+  const btnOrig = $("btn-lcs-floor-origin");
+  const btnAuto = $("btn-lcs-floor-auto");
+  const isOrigin = groundLevel === "origin";
+  if (btnOrig) {
+    btnOrig.style.background = isOrigin ? "var(--accent)" : "var(--btn-bg)";
+    btnOrig.style.color = isOrigin ? "#0a0f16" : "var(--text)";
+    btnOrig.style.fontWeight = isOrigin ? "700" : "500";
+    btnOrig.style.border = isOrigin ? "1px solid var(--accent)" : "1px solid var(--border-color)";
+  }
+  if (btnAuto) {
+    btnAuto.style.background = !isOrigin ? "var(--accent)" : "var(--btn-bg)";
+    btnAuto.style.color = !isOrigin ? "#0a0f16" : "var(--text)";
+    btnAuto.style.fontWeight = !isOrigin ? "700" : "500";
+    btnAuto.style.border = !isOrigin ? "1px solid var(--accent)" : "1px solid var(--border-color)";
+  }
+}
+
 function openLCSModal() {
   const modal = $("modal-lcs");
   if (!modal) return;
@@ -6711,6 +6729,13 @@ function openLCSModal() {
   if ($("lcs-trans-x")) $("lcs-trans-x").value = (currentLCS.tx || 0).toFixed(2);
   if ($("lcs-trans-y")) $("lcs-trans-y").value = (currentLCS.ty || 0).toFixed(2);
   if ($("lcs-trans-z")) $("lcs-trans-z").value = (currentLCS.tz || 0).toFixed(2);
+  if ($("btn-trans-zero-floor-frame")) {
+    $("btn-trans-zero-floor-frame").textContent = `Floor Frame ${frame + 1} to Z = 0`;
+  }
+  if ($("btn-trans-center-xy-frame")) {
+    $("btn-trans-center-xy-frame").textContent = `Center Frame ${frame + 1} (XY=0)`;
+  }
+  updateLCSFloorModeUI();
   updateReferenceSystemFeedback();
   modal.hidden = false;
   floatPane("modal-lcs");
@@ -6730,9 +6755,18 @@ function updateReferenceSystemFeedback() {
   const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
 
   const sumEl = $("lcs-matrix-summary");
+  const transEl = $("lcs-trans-summary");
   const detEl = $("lcs-det-result");
   const errEl = $("lcs-error-msg");
   const btnApply = $("btn-apply-lcs");
+
+  const txVal = parseFloat($("lcs-trans-x")?.value) || 0;
+  const tyVal = parseFloat($("lcs-trans-y")?.value) || 0;
+  const tzVal = parseFloat($("lcs-trans-z")?.value) || 0;
+  if (transEl) {
+    const flMode = groundLevel === "origin" ? "Origin (Z=0)" : "Auto (Lowest Marker)";
+    transEl.textContent = `ΔX: ${txVal.toFixed(2)} m, ΔY: ${tyVal.toFixed(2)} m, ΔZ: ${tzVal.toFixed(2)} m · Floor: ${flMode}`;
+  }
 
   if (res.valid) {
     const vx = DIRECTION_VECTORS[xKey];
@@ -6791,12 +6825,17 @@ function applyReferenceSystem(xKey, yKey, zKey, tx = 0, ty = 0, tz = 0) {
     ap: yKey,
     axial: zKey
   };
+  if (Math.abs(currentLCS.tz) > 1e-4) {
+    groundLevel = "origin";
+    syncSceneMenu();
+    updateLCSFloorModeUI();
+  }
   yaw = -0.15;
   pitch = 0.22;
   recomputeTrialXYZ();
   updateLCSUI();
   refresh3DViewport();
-  status(`Reference System applied: X→${xKey}, Y→${yKey}, Z→${zKey}, Offset=[${(currentLCS.tx).toFixed(2)}, ${(currentLCS.ty).toFixed(2)}, ${(currentLCS.tz).toFixed(2)}] m.`);
+  status(`Reference System applied: X→${xKey}, Y→${yKey}, Z→${zKey}, Offset=[${(currentLCS.tx).toFixed(2)}, ${(currentLCS.ty).toFixed(2)}, ${(currentLCS.tz).toFixed(2)}] m. Floor: ${groundLevel === "origin" ? "Origin (Z=0)" : "Auto"}.`);
 }
 
 function applyLCS(apKey, axialKey) {
@@ -7136,7 +7175,36 @@ function initLCSAndFilterControls() {
     applyMonocularToStandardShortcut(true);
   };
 
-  if ($("btn-trans-center-xy")) $("btn-trans-center-xy").onclick = () => {
+  function centerFrameXY() {
+    if (!trial || !rawLoadedXYZ) return;
+    const xKey = $("lcs-axis-x")?.value || "+X";
+    const yKey = $("lcs-axis-y")?.value || "+Y";
+    const zKey = $("lcs-axis-z")?.value || "+Z";
+    const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
+    if (!res.valid) return;
+    const R = res.R;
+    const curFrame = Math.max(0, Math.min(rawLoadedXYZ.length - 1, frame));
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of rawLoadedXYZ[curFrame]) {
+      if (!valid(p)) continue;
+      const rx = R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2];
+      const ry = R[1][0] * p[0] + R[1][1] * p[1] + R[1][2] * p[2];
+      minX = Math.min(minX, rx); maxX = Math.max(maxX, rx);
+      minY = Math.min(minY, ry); maxY = Math.max(maxY, ry);
+    }
+    if (Number.isFinite(minX) && Number.isFinite(maxX)) {
+      const midX = (minX + maxX) / 2;
+      const midY = (minY + maxY) / 2;
+      const vX = Math.abs(midX) < 1e-4 ? "0.00" : (-midX).toFixed(2);
+      const vY = Math.abs(midY) < 1e-4 ? "0.00" : (-midY).toFixed(2);
+      if ($("lcs-trans-x")) $("lcs-trans-x").value = vX;
+      if ($("lcs-trans-y")) $("lcs-trans-y").value = vY;
+      updateReferenceSystemFeedback();
+      status(`Calculated Frame ${curFrame + 1} centering: ΔX = ${vX} m, ΔY = ${vY} m.`);
+    }
+  }
+
+  function centerTrialXY() {
     if (!trial || !rawLoadedXYZ) return;
     const xKey = $("lcs-axis-x")?.value || "+X";
     const yKey = $("lcs-axis-y")?.value || "+Y";
@@ -7145,8 +7213,7 @@ function initLCSAndFilterControls() {
     if (!res.valid) return;
     const R = res.R;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    const stride = Math.max(1, Math.floor(rawLoadedXYZ.length / 50));
-    for (let f = 0; f < rawLoadedXYZ.length; f += stride) {
+    for (let f = 0; f < rawLoadedXYZ.length; f++) {
       for (const p of rawLoadedXYZ[f]) {
         if (!valid(p)) continue;
         const rx = R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2];
@@ -7158,12 +7225,42 @@ function initLCSAndFilterControls() {
     if (Number.isFinite(minX) && Number.isFinite(maxX)) {
       const midX = (minX + maxX) / 2;
       const midY = (minY + maxY) / 2;
-      if ($("lcs-trans-x")) $("lcs-trans-x").value = (-midX).toFixed(2);
-      if ($("lcs-trans-y")) $("lcs-trans-y").value = (-midY).toFixed(2);
+      const vX = Math.abs(midX) < 1e-4 ? "0.00" : (-midX).toFixed(2);
+      const vY = Math.abs(midY) < 1e-4 ? "0.00" : (-midY).toFixed(2);
+      if ($("lcs-trans-x")) $("lcs-trans-x").value = vX;
+      if ($("lcs-trans-y")) $("lcs-trans-y").value = vY;
+      updateReferenceSystemFeedback();
+      status(`Calculated whole trial centering: ΔX = ${vX} m, ΔY = ${vY} m.`);
     }
-  };
+  }
 
-  if ($("btn-trans-zero-floor")) $("btn-trans-zero-floor").onclick = () => {
+  function floorFrameZ() {
+    if (!trial || !rawLoadedXYZ) return;
+    const xKey = $("lcs-axis-x")?.value || "+X";
+    const yKey = $("lcs-axis-y")?.value || "+Y";
+    const zKey = $("lcs-axis-z")?.value || "+Z";
+    const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
+    if (!res.valid) return;
+    const R = res.R;
+    const curFrame = Math.max(0, Math.min(rawLoadedXYZ.length - 1, frame));
+    let minZ = Infinity;
+    for (const p of rawLoadedXYZ[curFrame]) {
+      if (!valid(p)) continue;
+      const rz = R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2];
+      minZ = Math.min(minZ, rz);
+    }
+    if (Number.isFinite(minZ)) {
+      const vZ = Math.abs(minZ) < 1e-4 ? "0.00" : (-minZ).toFixed(2);
+      if ($("lcs-trans-z")) $("lcs-trans-z").value = vZ;
+      groundLevel = "origin";
+      syncSceneMenu();
+      updateLCSFloorModeUI();
+      updateReferenceSystemFeedback();
+      status(`Floored Frame ${curFrame + 1} to Z = 0: ΔZ = ${vZ} m. Ground plane set to Origin (Z = 0). Click Apply to confirm.`);
+    }
+  }
+
+  function floorTrialZ() {
     if (!trial || !rawLoadedXYZ) return;
     const xKey = $("lcs-axis-x")?.value || "+X";
     const yKey = $("lcs-axis-y")?.value || "+Y";
@@ -7172,8 +7269,7 @@ function initLCSAndFilterControls() {
     if (!res.valid) return;
     const R = res.R;
     let minZ = Infinity;
-    const stride = Math.max(1, Math.floor(rawLoadedXYZ.length / 50));
-    for (let f = 0; f < rawLoadedXYZ.length; f += stride) {
+    for (let f = 0; f < rawLoadedXYZ.length; f++) {
       for (const p of rawLoadedXYZ[f]) {
         if (!valid(p)) continue;
         const rz = R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2];
@@ -7181,15 +7277,48 @@ function initLCSAndFilterControls() {
       }
     }
     if (Number.isFinite(minZ)) {
-      if ($("lcs-trans-z")) $("lcs-trans-z").value = (-minZ).toFixed(2);
+      const vZ = Math.abs(minZ) < 1e-4 ? "0.00" : (-minZ).toFixed(2);
+      if ($("lcs-trans-z")) $("lcs-trans-z").value = vZ;
+      groundLevel = "origin";
+      syncSceneMenu();
+      updateLCSFloorModeUI();
+      updateReferenceSystemFeedback();
+      status(`Floored whole trial minimum to Z = 0: ΔZ = ${vZ} m. Ground plane set to Origin (Z = 0). Click Apply to confirm.`);
     }
-  };
+  }
 
-  if ($("btn-trans-reset")) $("btn-trans-reset").onclick = () => {
+  function resetTranslation() {
     if ($("lcs-trans-x")) $("lcs-trans-x").value = "0.00";
     if ($("lcs-trans-y")) $("lcs-trans-y").value = "0.00";
     if ($("lcs-trans-z")) $("lcs-trans-z").value = "0.00";
+    updateReferenceSystemFeedback();
+    status("Reset translation offsets to 0.00 m.");
+  }
+
+  if ($("btn-trans-center-xy-frame")) $("btn-trans-center-xy-frame").onclick = centerFrameXY;
+  if ($("btn-trans-center-xy")) $("btn-trans-center-xy").onclick = centerTrialXY;
+  if ($("btn-trans-zero-floor-frame")) $("btn-trans-zero-floor-frame").onclick = floorFrameZ;
+  if ($("btn-trans-zero-floor")) $("btn-trans-zero-floor").onclick = floorTrialZ;
+  if ($("btn-trans-reset")) $("btn-trans-reset").onclick = resetTranslation;
+
+  if ($("btn-lcs-floor-origin")) $("btn-lcs-floor-origin").onclick = () => {
+    groundLevel = "origin";
+    updateLCSFloorModeUI();
+    syncSceneMenu();
+    updateReferenceSystemFeedback();
+    draw();
   };
+  if ($("btn-lcs-floor-auto")) $("btn-lcs-floor-auto").onclick = () => {
+    groundLevel = "auto";
+    updateLCSFloorModeUI();
+    syncSceneMenu();
+    updateReferenceSystemFeedback();
+    draw();
+  };
+
+  if ($("lcs-trans-x")) $("lcs-trans-x").oninput = updateReferenceSystemFeedback;
+  if ($("lcs-trans-y")) $("lcs-trans-y").oninput = updateReferenceSystemFeedback;
+  if ($("lcs-trans-z")) $("lcs-trans-z").oninput = updateReferenceSystemFeedback;
 
   document.querySelectorAll(".btn-lcs-preset").forEach(btn => {
     btn.onclick = () => {

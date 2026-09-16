@@ -179,9 +179,7 @@ def transcode_to_h264(source: Path, output: Path, *, use_gpu: bool | None = None
     return output
 
 
-def ensure_browser_video(
-    source: Path, *, output_dir: Path | None = None
-) -> tuple[Path, dict]:
+def ensure_browser_video(source: Path, *, output_dir: Path | None = None) -> tuple[Path, dict]:
     """Return a browser-playable path for *source*, re-encoding when needed.
 
     When re-encoding, writes ``{stem}_compress.mp4`` beside the source (or in

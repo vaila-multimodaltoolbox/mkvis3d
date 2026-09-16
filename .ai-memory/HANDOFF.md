@@ -1,11 +1,21 @@
-# Session Handoff: Release rp14set26 — awaiting auth/CI evidence
+# Session Handoff: Fix Origin Translation and Ground Plane Alignment (jiu and General C3D)
 
-- **Status:** In-Progress
+- **Status:** Completed
 - **Current State:**
-  - Commit `348c017` + tag `rp14set26` on `origin` (verified via `git ls-remote`).
-  - Local Linux binary built: `dist/mkvis3d-linux-x86_64` (~79 MB).
-  - GitHub Release assets not yet verified: `gh` unauthenticated; unauthenticated API/HTML scrape shows private-repo 404.
-  - Device login pending: code `3948-64FC` → https://github.com/login/device (process still waiting).
-- **What Worked:** Commit/push/tag/local build.
-- **Failed Approaches:** Cookie scrape without session; API without token.
-- **Open Questions & Next Steps:** User finishes Actions jobs and/or authorizes `gh`; then verify `gh release view rp14set26` lists Linux/Windows/macOS assets and mark goal complete.
+  - Diagnosed why `Floor to Z = 0` and Origin Translations did not align the ground grid with the lowest markers in `jiu_stabilized_id_00_mhr70_rec3d_edited.c3d`.
+  - Added current-frame flooring (`Floor Frame to Z = 0`, `#btn-trans-zero-floor-frame`) and current-frame XY centering (`Center Frame (XY=0)`, `#btn-trans-center-xy-frame`) in `openbiomech/viewer.html` and `openbiomech/viewer.js`.
+  - Fixed mathematical cancellation where `groundLevel = "auto"` was tracking marker translation instead of pinning the lab ground grid: when applying `Floor to Z = 0` or whenever translation `ΔZ != 0`, `groundLevel` is automatically switched to `"origin"` (`Z = 0`), with explicit toggle buttons (`Origin (Z = 0)` vs `Auto (Lowest Marker)`) directly in the Origin Translation dialog.
+  - Added dynamic frame label on modal open (e.g. `Floor Frame 1 to Z = 0`).
+  - Anonymized output files in `outputs/`: renamed `jj_kabuto_csv_viewer.html` → `jiu_csv_viewer.html`, `jj_kabuto_edited_viewer.html` → `jiu_edited_viewer.html`, and `jj_kabuto_viewer.html` → `jiu_viewer.html`, updating embedded trial names to `jiu_*`.
+  - Standalone viewers re-exported via `export_viewer` and app binary rebuilt at `dist/mkvis3d-linux-x86_64`.
+  - Pytest test suite fully passing (255/255 passed, `uv run pytest -m "not browser"`).
+  - Code formatting and linting verified (`uv run ruff check .` and `uv run ruff format --check .`).
+- **What Worked:**
+  - Frame-specific floor computation correctly computed `ΔZ = -0.28 m` for frame 1 where feet were at `+0.284 m` (trial minimum was `-0.0019 m` at frame 235).
+  - Setting `groundLevel = "origin"` fixes the ground plane at `Z = 0`, matching Mokka/Visual3D lab coordinate behavior.
+  - Verified with headless Chrome / Selenium end-to-end automation and visual screenshots (`screenshot_modal_origin_translation_fixed.png`, `screenshot_kabuto_frame0_floored_on_grid.png`, `kabuto_floored_viewport_clean.png`, `kabuto_floored_trial_frame235.png`).
+- **Failed Approaches:**
+  - Relying exclusively on whole-trial minimum Z: in dynamic trials with an outlier or single contact frame, the whole-trial minimum does not ground the subject on frame 0/initial stance.
+  - Keeping `groundLevel = "auto"` after manual Z translation: `auto` recomputes `floorH = min(z_trial) = min(z_raw) + tz`, exactly canceling out `tz` and moving the grid along with the markers.
+- **Open Questions & Next Steps:**
+  - User can manually stage, amend, and commit changes (`git add`, `git commit --amend` or `git commit`) and push to origin per workspace rules.

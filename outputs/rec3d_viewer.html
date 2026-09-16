@@ -2114,10 +2114,20 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           </div>
         </div>
 
-        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-          <button type="button" id="btn-trans-center-xy" style="font-size: 10px; padding: 4px 8px;">Center (X=0, Y=0)</button>
-          <button type="button" id="btn-trans-zero-floor" style="font-size: 10px; padding: 4px 8px;">Floor to Z = 0</button>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;">
+          <button type="button" id="btn-trans-zero-floor-frame" style="font-size: 10px; padding: 4px 8px; font-weight: 600; color: #22c55e;" title="Align lowest marker in current frame to Z = 0">Floor Frame to Z = 0</button>
+          <button type="button" id="btn-trans-zero-floor" style="font-size: 10px; padding: 4px 8px;" title="Align lowest marker across entire trial to Z = 0">Floor Trial to Z = 0</button>
+          <button type="button" id="btn-trans-center-xy-frame" style="font-size: 10px; padding: 4px 8px;" title="Center X and Y for current frame">Center Frame (XY=0)</button>
+          <button type="button" id="btn-trans-center-xy" style="font-size: 10px; padding: 4px 8px;" title="Center X and Y across entire trial">Center Trial (XY=0)</button>
           <button type="button" id="btn-trans-reset" style="font-size: 10px; padding: 4px 8px;">Reset Translation</button>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; padding: 5px 8px; background: rgba(0,0,0,0.18); border-radius: 4px; border: 1px solid var(--border-color);">
+          <span style="color: var(--text-muted); font-weight: 500;">Ground Plane:</span>
+          <div style="display: flex; gap: 4px;">
+            <button type="button" id="btn-lcs-floor-origin" style="font-size: 10px; padding: 3px 8px; border-radius: 3px; cursor: pointer;">Origin (Z = 0)</button>
+            <button type="button" id="btn-lcs-floor-auto" style="font-size: 10px; padding: 3px 8px; border-radius: 3px; cursor: pointer;">Auto (Lowest Marker)</button>
+          </div>
         </div>
       </fieldset>
 
@@ -2126,6 +2136,10 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div style="display: flex; justify-content: space-between;">
           <span>System Matrix:</span>
           <strong id="lcs-matrix-summary" style="font-family: monospace; color: var(--accent);">X→+X, Y→+Y, Z→+Z</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+          <span>Translation & Ground:</span>
+          <strong id="lcs-trans-summary" style="font-family: monospace; color: var(--text);">ΔX: 0.00 m, ΔY: 0.00 m, ΔZ: 0.00 m · Floor: Auto</strong>
         </div>
         <div style="display: flex; justify-content: space-between; margin-top: 4px;">
           <span>Handedness / Orientation:</span>
@@ -7123,7 +7137,97 @@ function addVideoSource(source) {
   return refVideosList.length - 1;
 }
 
-function switchVideoCamera(index) {
+function sessionAuthHeaders() {
+  const headers = {};
+  // Session token lives in location.hash (see `const token` at top), not boot.token.
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function ensureServerBrowserVideo(item) {
+  if (!boot.server || !item || !item.name) return null;
+  status(`Checking browser codec for "${item.name}"…`);
+  const resp = await fetch(`/api/ensure_browser_video?name=${encodeURIComponent(item.name)}`);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data.error || `ensure_browser_video failed (${resp.status})`);
+  }
+  if (data.transcoded) {
+    status(`Saved H.264 as "${data.name}" and loaded it for playback.`);
+  }
+  return data;
+}
+
+async function transcodeUploadedVideo(item) {
+  if (!boot.server || !item || !item.file) return null;
+  status(`Compressing "${item.name}" to H.264 (*_compress.mp4)…`);
+  const localPath = item.file && item.file.path ? String(item.file.path) : "";
+  let url = `/api/transcode_upload?name=${encodeURIComponent(item.name)}`;
+  if (localPath) url += `&local_path=${encodeURIComponent(localPath)}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...sessionAuthHeaders(),
+      "Content-Type": item.file.type || "application/octet-stream",
+    },
+    body: item.file,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data.error || `transcode_upload failed (${resp.status})`);
+  }
+  return data;
+}
+
+async function pickAndEnsureVideo() {
+  if (!boot.server) {
+    if ($("video-file-input")) $("video-file-input").click();
+    return;
+  }
+  if (!trial) {
+    status("Load a trial before loading reference video.", true);
+    return;
+  }
+  status("Choose a reference video (host file dialog)…");
+  try {
+    const resp = await fetch("/api/pick_and_ensure_video", {
+      method: "POST",
+      headers: sessionAuthHeaders(),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(data.error || `pick_and_ensure_video failed (${resp.status})`);
+    }
+    const idx = addVideoSource({
+      name: data.name,
+      url: data.url,
+      file: null,
+      isServer: true,
+      transcodedFrom: data.original_name || null,
+    });
+    updateCameraSelectorUI();
+    if (data.transcoded) {
+      status(`Compressed to "${data.name}" beside the original and loaded it.`);
+    }
+    await switchVideoCamera(idx, { skipEnsure: true, allowRecover: false });
+  } catch (err) {
+    status(`Could not load video: ${err.message || err}`, true);
+  }
+}
+
+function applyPlayableVideoSource(item, data) {
+  if (!data || !data.url) return;
+  if (item.url && String(item.url).startsWith("blob:")) {
+    try { URL.revokeObjectURL(item.url); } catch (_) {}
+  }
+  item.url = data.url;
+  item.name = data.name || item.name;
+  item.isServer = true;
+  item.file = null;
+  item.transcodedFrom = data.original_name || item.transcodedFrom || null;
+}
+
+async function switchVideoCamera(index, opts = {}) {
   if (index < 0 || index >= refVideosList.length) return;
   activeVideoIndex = index;
   const item = refVideosList[index];
@@ -7134,14 +7238,34 @@ function switchVideoCamera(index) {
 
   const wasPlaying = playing;
   const currentMocapTime = trial && trial.rate_hz ? frame / trial.rate_hz : 0;
+  const allowRecover = opts.allowRecover !== false;
 
   if ($("video-mismatch-panel")) $("video-mismatch-panel").hidden = true;
 
+  if (boot.server && item.isServer && !opts.skipEnsure) {
+    try {
+      const ensured = await ensureServerBrowserVideo(item);
+      if (ensured) applyPlayableVideoSource(item, ensured);
+    } catch (err) {
+      status(
+        `Could not prepare "${item.name}" for browser playback. ${err.message || err}`,
+        true
+      );
+    }
+  }
+
   video.onerror = () => {
-    status(
-      `Could not decode "${item.name}". Browsers natively decode MP4/MOV (H.264+AAC) and MKV/WEBM (VP9/H.264).`,
-      true
-    );
+    if (allowRecover && boot.server && item.file) {
+      status(`Browser rejected "${item.name}". Compressing to *_compress.mp4…`);
+      transcodeUploadedVideo(item).then(data => {
+        applyPlayableVideoSource(item, data);
+        switchVideoCamera(index, { allowRecover: false, skipEnsure: true });
+      }).catch(err => {
+        status(`Could not compress "${item.name}": ${err.message || err}`, true);
+      });
+      return;
+    }
+    status(`Could not decode "${item.name}".`, true);
   };
 
   video.onloadedmetadata = () => {
@@ -7167,7 +7291,7 @@ function switchVideoCamera(index) {
   updateCameraSelectorUI();
 }
 
-function loadVideoFiles(fileList) {
+async function loadVideoFiles(fileList) {
   if (!trial) {
     status("Load a trial before loading reference video.", true);
     return;
@@ -7178,6 +7302,33 @@ function loadVideoFiles(fileList) {
   });
   if (!files.length) {
     status("No valid video files selected (.mp4, .mov, .mkv, .webm).", true);
+    return;
+  }
+
+  // In GUI server mode: never play raw blobs — probe/compress on the host and
+  // load the playable URL (writes *_compress.mp4 when needed).
+  if (boot.server) {
+    let firstIdx = -1;
+    for (const f of files) {
+      try {
+        const data = await transcodeUploadedVideo({ name: f.name, file: f });
+        const idx = addVideoSource({
+          name: data.name,
+          url: data.url,
+          file: null,
+          isServer: true,
+          transcodedFrom: data.original_name || f.name,
+        });
+        if (firstIdx === -1) firstIdx = idx;
+        if (data.transcoded) {
+          status(`Saved "${data.name}" and loaded it for playback.`);
+        }
+      } catch (err) {
+        status(`Could not prepare "${f.name}": ${err.message || err}`, true);
+      }
+    }
+    updateCameraSelectorUI();
+    if (firstIdx >= 0) await switchVideoCamera(firstIdx, { skipEnsure: true, allowRecover: false });
     return;
   }
 
@@ -7254,7 +7405,7 @@ async function checkCompanionVideos() {
   }
 }
 
-if ($("action-load-video")) $("action-load-video").onclick = () => $("video-file-input").click();
+if ($("action-load-video")) $("action-load-video").onclick = () => pickAndEnsureVideo();
 if ($("video-file-input")) {
   $("video-file-input").onchange = e => {
     if (e.target.files && e.target.files.length) loadVideoFiles(e.target.files);
@@ -7262,9 +7413,7 @@ if ($("video-file-input")) {
   };
 }
 if ($("btn-add-video")) {
-  $("btn-add-video").onclick = () => {
-    if ($("video-file-input")) $("video-file-input").click();
-  };
+  $("btn-add-video").onclick = () => pickAndEnsureVideo();
 }
 if ($("video-camera-select")) {
   $("video-camera-select").onchange = e => {
@@ -9803,6 +9952,24 @@ function updateFilterUI() {
   }
 }
 
+function updateLCSFloorModeUI() {
+  const btnOrig = $("btn-lcs-floor-origin");
+  const btnAuto = $("btn-lcs-floor-auto");
+  const isOrigin = groundLevel === "origin";
+  if (btnOrig) {
+    btnOrig.style.background = isOrigin ? "var(--accent)" : "var(--btn-bg)";
+    btnOrig.style.color = isOrigin ? "#0a0f16" : "var(--text)";
+    btnOrig.style.fontWeight = isOrigin ? "700" : "500";
+    btnOrig.style.border = isOrigin ? "1px solid var(--accent)" : "1px solid var(--border-color)";
+  }
+  if (btnAuto) {
+    btnAuto.style.background = !isOrigin ? "var(--accent)" : "var(--btn-bg)";
+    btnAuto.style.color = !isOrigin ? "#0a0f16" : "var(--text)";
+    btnAuto.style.fontWeight = !isOrigin ? "700" : "500";
+    btnAuto.style.border = !isOrigin ? "1px solid var(--accent)" : "1px solid var(--border-color)";
+  }
+}
+
 function openLCSModal() {
   const modal = $("modal-lcs");
   if (!modal) return;
@@ -9812,6 +9979,13 @@ function openLCSModal() {
   if ($("lcs-trans-x")) $("lcs-trans-x").value = (currentLCS.tx || 0).toFixed(2);
   if ($("lcs-trans-y")) $("lcs-trans-y").value = (currentLCS.ty || 0).toFixed(2);
   if ($("lcs-trans-z")) $("lcs-trans-z").value = (currentLCS.tz || 0).toFixed(2);
+  if ($("btn-trans-zero-floor-frame")) {
+    $("btn-trans-zero-floor-frame").textContent = `Floor Frame ${frame + 1} to Z = 0`;
+  }
+  if ($("btn-trans-center-xy-frame")) {
+    $("btn-trans-center-xy-frame").textContent = `Center Frame ${frame + 1} (XY=0)`;
+  }
+  updateLCSFloorModeUI();
   updateReferenceSystemFeedback();
   modal.hidden = false;
   floatPane("modal-lcs");
@@ -9831,9 +10005,18 @@ function updateReferenceSystemFeedback() {
   const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
 
   const sumEl = $("lcs-matrix-summary");
+  const transEl = $("lcs-trans-summary");
   const detEl = $("lcs-det-result");
   const errEl = $("lcs-error-msg");
   const btnApply = $("btn-apply-lcs");
+
+  const txVal = parseFloat($("lcs-trans-x")?.value) || 0;
+  const tyVal = parseFloat($("lcs-trans-y")?.value) || 0;
+  const tzVal = parseFloat($("lcs-trans-z")?.value) || 0;
+  if (transEl) {
+    const flMode = groundLevel === "origin" ? "Origin (Z=0)" : "Auto (Lowest Marker)";
+    transEl.textContent = `ΔX: ${txVal.toFixed(2)} m, ΔY: ${tyVal.toFixed(2)} m, ΔZ: ${tzVal.toFixed(2)} m · Floor: ${flMode}`;
+  }
 
   if (res.valid) {
     const vx = DIRECTION_VECTORS[xKey];
@@ -9892,12 +10075,17 @@ function applyReferenceSystem(xKey, yKey, zKey, tx = 0, ty = 0, tz = 0) {
     ap: yKey,
     axial: zKey
   };
+  if (Math.abs(currentLCS.tz) > 1e-4) {
+    groundLevel = "origin";
+    syncSceneMenu();
+    updateLCSFloorModeUI();
+  }
   yaw = -0.15;
   pitch = 0.22;
   recomputeTrialXYZ();
   updateLCSUI();
   refresh3DViewport();
-  status(`Reference System applied: X→${xKey}, Y→${yKey}, Z→${zKey}, Offset=[${(currentLCS.tx).toFixed(2)}, ${(currentLCS.ty).toFixed(2)}, ${(currentLCS.tz).toFixed(2)}] m.`);
+  status(`Reference System applied: X→${xKey}, Y→${yKey}, Z→${zKey}, Offset=[${(currentLCS.tx).toFixed(2)}, ${(currentLCS.ty).toFixed(2)}, ${(currentLCS.tz).toFixed(2)}] m. Floor: ${groundLevel === "origin" ? "Origin (Z=0)" : "Auto"}.`);
 }
 
 function applyLCS(apKey, axialKey) {
@@ -10237,7 +10425,36 @@ function initLCSAndFilterControls() {
     applyMonocularToStandardShortcut(true);
   };
 
-  if ($("btn-trans-center-xy")) $("btn-trans-center-xy").onclick = () => {
+  function centerFrameXY() {
+    if (!trial || !rawLoadedXYZ) return;
+    const xKey = $("lcs-axis-x")?.value || "+X";
+    const yKey = $("lcs-axis-y")?.value || "+Y";
+    const zKey = $("lcs-axis-z")?.value || "+Z";
+    const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
+    if (!res.valid) return;
+    const R = res.R;
+    const curFrame = Math.max(0, Math.min(rawLoadedXYZ.length - 1, frame));
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of rawLoadedXYZ[curFrame]) {
+      if (!valid(p)) continue;
+      const rx = R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2];
+      const ry = R[1][0] * p[0] + R[1][1] * p[1] + R[1][2] * p[2];
+      minX = Math.min(minX, rx); maxX = Math.max(maxX, rx);
+      minY = Math.min(minY, ry); maxY = Math.max(maxY, ry);
+    }
+    if (Number.isFinite(minX) && Number.isFinite(maxX)) {
+      const midX = (minX + maxX) / 2;
+      const midY = (minY + maxY) / 2;
+      const vX = Math.abs(midX) < 1e-4 ? "0.00" : (-midX).toFixed(2);
+      const vY = Math.abs(midY) < 1e-4 ? "0.00" : (-midY).toFixed(2);
+      if ($("lcs-trans-x")) $("lcs-trans-x").value = vX;
+      if ($("lcs-trans-y")) $("lcs-trans-y").value = vY;
+      updateReferenceSystemFeedback();
+      status(`Calculated Frame ${curFrame + 1} centering: ΔX = ${vX} m, ΔY = ${vY} m.`);
+    }
+  }
+
+  function centerTrialXY() {
     if (!trial || !rawLoadedXYZ) return;
     const xKey = $("lcs-axis-x")?.value || "+X";
     const yKey = $("lcs-axis-y")?.value || "+Y";
@@ -10246,8 +10463,7 @@ function initLCSAndFilterControls() {
     if (!res.valid) return;
     const R = res.R;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    const stride = Math.max(1, Math.floor(rawLoadedXYZ.length / 50));
-    for (let f = 0; f < rawLoadedXYZ.length; f += stride) {
+    for (let f = 0; f < rawLoadedXYZ.length; f++) {
       for (const p of rawLoadedXYZ[f]) {
         if (!valid(p)) continue;
         const rx = R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2];
@@ -10259,12 +10475,42 @@ function initLCSAndFilterControls() {
     if (Number.isFinite(minX) && Number.isFinite(maxX)) {
       const midX = (minX + maxX) / 2;
       const midY = (minY + maxY) / 2;
-      if ($("lcs-trans-x")) $("lcs-trans-x").value = (-midX).toFixed(2);
-      if ($("lcs-trans-y")) $("lcs-trans-y").value = (-midY).toFixed(2);
+      const vX = Math.abs(midX) < 1e-4 ? "0.00" : (-midX).toFixed(2);
+      const vY = Math.abs(midY) < 1e-4 ? "0.00" : (-midY).toFixed(2);
+      if ($("lcs-trans-x")) $("lcs-trans-x").value = vX;
+      if ($("lcs-trans-y")) $("lcs-trans-y").value = vY;
+      updateReferenceSystemFeedback();
+      status(`Calculated whole trial centering: ΔX = ${vX} m, ΔY = ${vY} m.`);
     }
-  };
+  }
 
-  if ($("btn-trans-zero-floor")) $("btn-trans-zero-floor").onclick = () => {
+  function floorFrameZ() {
+    if (!trial || !rawLoadedXYZ) return;
+    const xKey = $("lcs-axis-x")?.value || "+X";
+    const yKey = $("lcs-axis-y")?.value || "+Y";
+    const zKey = $("lcs-axis-z")?.value || "+Z";
+    const res = computeReferenceSystemMatrix(xKey, yKey, zKey);
+    if (!res.valid) return;
+    const R = res.R;
+    const curFrame = Math.max(0, Math.min(rawLoadedXYZ.length - 1, frame));
+    let minZ = Infinity;
+    for (const p of rawLoadedXYZ[curFrame]) {
+      if (!valid(p)) continue;
+      const rz = R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2];
+      minZ = Math.min(minZ, rz);
+    }
+    if (Number.isFinite(minZ)) {
+      const vZ = Math.abs(minZ) < 1e-4 ? "0.00" : (-minZ).toFixed(2);
+      if ($("lcs-trans-z")) $("lcs-trans-z").value = vZ;
+      groundLevel = "origin";
+      syncSceneMenu();
+      updateLCSFloorModeUI();
+      updateReferenceSystemFeedback();
+      status(`Floored Frame ${curFrame + 1} to Z = 0: ΔZ = ${vZ} m. Ground plane set to Origin (Z = 0). Click Apply to confirm.`);
+    }
+  }
+
+  function floorTrialZ() {
     if (!trial || !rawLoadedXYZ) return;
     const xKey = $("lcs-axis-x")?.value || "+X";
     const yKey = $("lcs-axis-y")?.value || "+Y";
@@ -10273,8 +10519,7 @@ function initLCSAndFilterControls() {
     if (!res.valid) return;
     const R = res.R;
     let minZ = Infinity;
-    const stride = Math.max(1, Math.floor(rawLoadedXYZ.length / 50));
-    for (let f = 0; f < rawLoadedXYZ.length; f += stride) {
+    for (let f = 0; f < rawLoadedXYZ.length; f++) {
       for (const p of rawLoadedXYZ[f]) {
         if (!valid(p)) continue;
         const rz = R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2];
@@ -10282,15 +10527,48 @@ function initLCSAndFilterControls() {
       }
     }
     if (Number.isFinite(minZ)) {
-      if ($("lcs-trans-z")) $("lcs-trans-z").value = (-minZ).toFixed(2);
+      const vZ = Math.abs(minZ) < 1e-4 ? "0.00" : (-minZ).toFixed(2);
+      if ($("lcs-trans-z")) $("lcs-trans-z").value = vZ;
+      groundLevel = "origin";
+      syncSceneMenu();
+      updateLCSFloorModeUI();
+      updateReferenceSystemFeedback();
+      status(`Floored whole trial minimum to Z = 0: ΔZ = ${vZ} m. Ground plane set to Origin (Z = 0). Click Apply to confirm.`);
     }
-  };
+  }
 
-  if ($("btn-trans-reset")) $("btn-trans-reset").onclick = () => {
+  function resetTranslation() {
     if ($("lcs-trans-x")) $("lcs-trans-x").value = "0.00";
     if ($("lcs-trans-y")) $("lcs-trans-y").value = "0.00";
     if ($("lcs-trans-z")) $("lcs-trans-z").value = "0.00";
+    updateReferenceSystemFeedback();
+    status("Reset translation offsets to 0.00 m.");
+  }
+
+  if ($("btn-trans-center-xy-frame")) $("btn-trans-center-xy-frame").onclick = centerFrameXY;
+  if ($("btn-trans-center-xy")) $("btn-trans-center-xy").onclick = centerTrialXY;
+  if ($("btn-trans-zero-floor-frame")) $("btn-trans-zero-floor-frame").onclick = floorFrameZ;
+  if ($("btn-trans-zero-floor")) $("btn-trans-zero-floor").onclick = floorTrialZ;
+  if ($("btn-trans-reset")) $("btn-trans-reset").onclick = resetTranslation;
+
+  if ($("btn-lcs-floor-origin")) $("btn-lcs-floor-origin").onclick = () => {
+    groundLevel = "origin";
+    updateLCSFloorModeUI();
+    syncSceneMenu();
+    updateReferenceSystemFeedback();
+    draw();
   };
+  if ($("btn-lcs-floor-auto")) $("btn-lcs-floor-auto").onclick = () => {
+    groundLevel = "auto";
+    updateLCSFloorModeUI();
+    syncSceneMenu();
+    updateReferenceSystemFeedback();
+    draw();
+  };
+
+  if ($("lcs-trans-x")) $("lcs-trans-x").oninput = updateReferenceSystemFeedback;
+  if ($("lcs-trans-y")) $("lcs-trans-y").oninput = updateReferenceSystemFeedback;
+  if ($("lcs-trans-z")) $("lcs-trans-z").oninput = updateReferenceSystemFeedback;
 
   document.querySelectorAll(".btn-lcs-preset").forEach(btn => {
     btn.onclick = () => {
