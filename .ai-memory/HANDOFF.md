@@ -1,21 +1,35 @@
-# Session Handoff: Fix Origin Translation and Ground Plane Alignment (jiu and General C3D)
+# Session Handoff: Anatomical Left/Right/Center Skeleton & Joint Coloring (vailá sam3dinov3 parity across all templates)
 
 - **Status:** Completed
 - **Current State:**
-  - Diagnosed why `Floor to Z = 0` and Origin Translations did not align the ground grid with the lowest markers in `jiu_stabilized_id_00_mhr70_rec3d_edited.c3d`.
-  - Added current-frame flooring (`Floor Frame to Z = 0`, `#btn-trans-zero-floor-frame`) and current-frame XY centering (`Center Frame (XY=0)`, `#btn-trans-center-xy-frame`) in `openbiomech/viewer.html` and `openbiomech/viewer.js`.
-  - Fixed mathematical cancellation where `groundLevel = "auto"` was tracking marker translation instead of pinning the lab ground grid: when applying `Floor to Z = 0` or whenever translation `ΔZ != 0`, `groundLevel` is automatically switched to `"origin"` (`Z = 0`), with explicit toggle buttons (`Origin (Z = 0)` vs `Auto (Lowest Marker)`) directly in the Origin Translation dialog.
-  - Added dynamic frame label on modal open (e.g. `Floor Frame 1 to Z = 0`).
-  - Anonymized output files in `outputs/`: renamed `jj_kabuto_csv_viewer.html` → `jiu_csv_viewer.html`, `jj_kabuto_edited_viewer.html` → `jiu_edited_viewer.html`, and `jj_kabuto_viewer.html` → `jiu_viewer.html`, updating embedded trial names to `jiu_*`.
-  - Standalone viewers re-exported via `export_viewer` and app binary rebuilt at `dist/mkvis3d-linux-x86_64`.
-  - Pytest test suite fully passing (255/255 passed, `uv run pytest -m "not browser"`).
-  - Code formatting and linting verified (`uv run ruff check .` and `uv run ruff format --check .`).
+  - Implemented anatomical lateralization and side-specific color palette for human body skeletons matching `/home/preto/data/vaila/vaila/sam3dinov3_visualize.py` and `sam3dinov3.py`:
+    - **Left side:** Green `(0, 255, 0)` / `#00ff00`
+    - **Right side:** Orange `(255, 128, 0)` / `#ff8000`
+    - **Center / Midline / Cross-side:** Light Blue `(51, 153, 255)` / `#3399ff`
+  - Created [`openbiomech/skeleton.py`](openbiomech/skeleton.py) with functions `get_marker_side()`, `get_bone_side()`, `get_side_color_rgb()`, `get_side_color_hex()`, and `classify_template_connections()`.
+  - Updated [`openbiomech/viewer.js`](openbiomech/viewer.js):
+    - Added `SKELETON_SIDE_COLORS`, `getMarkerSide()`, `getBoneSide()`, `getMarkerAnatomicalSide()`, and `getBoneColor()`.
+    - Updated `applySkeletonTemplate()` and `toggleCustomSegment()` to attach `[idxA, idxB, boneSide, boneColor]` to `skeletonPairs`.
+    - Updated `drawSkeleton()`: when `skeletonColor === "auto"` (Default), draws each bone in its anatomical side color. Custom monochrome colors remain supported if explicitly selected by the user.
+    - Updated `draw()` (marker rendering): when `markerColor === "auto"` and a skeleton is active, markers automatically display their anatomical side color (Left=Green, Right=Orange, Center=Blue).
+    - Updated `initSkeletonStyleControls()`: Default auto swatch displays a tri-color gradient `linear-gradient(135deg, #00ff00 0%, #3399ff 50%, #ff8000 100%)`.
+  - Updated [`openbiomech/viewer.html`](openbiomech/viewer.html):
+    - Added visual side legend under Skeleton Color: `● Left (Green)  ● Right (Orange)  ● Center (Blue)`.
+  - Updated [`openbiomech/blender_io.py`](openbiomech/blender_io.py):
+    - Supports both `connections` and `bones` keys across templates, sets anatomical bone side colors in Blender pose mode.
+  - Added comprehensive test suite in [`tests/test_skeleton_templates.py`](tests/test_skeleton_templates.py) verifying perfect Left/Right symmetry and color mappings across all templates (`sam3dinov3_mhr70`, `sapiens2_goliath308`, `yolo_coco17`, `fifa_body15`, `openpose_body25`, `halpe26`, `mediapipe_pose33`, `mediapipe_hands42`, `mediapipe_holistic75`, `coco_wholebody133`, and `vicon_squat`).
+  - Standalone viewers re-exported to `outputs/*.html`.
+  - Standalone app binary rebuilt at `dist/mkvis3d-linux-x86_64`.
+  - Pytest: 267/267 passed (`uv run pytest -m "not browser"`).
+  - Code formatting: 100% compliant (`uv run ruff check .` and `uv run ruff format --check .`).
 - **What Worked:**
-  - Frame-specific floor computation correctly computed `ΔZ = -0.28 m` for frame 1 where feet were at `+0.284 m` (trial minimum was `-0.0019 m` at frame 235).
-  - Setting `groundLevel = "origin"` fixes the ground plane at `Z = 0`, matching Mokka/Visual3D lab coordinate behavior.
-  - Verified with headless Chrome / Selenium end-to-end automation and visual screenshots (`screenshot_modal_origin_translation_fixed.png`, `screenshot_kabuto_frame0_floored_on_grid.png`, `kabuto_floored_viewport_clean.png`, `kabuto_floored_trial_frame235.png`).
+  - Automated browser Selenium tests confirmed Left=Green, Right=Orange, Center=Blue rendering on `sam3dinov3_mhr70`, `vicon_squat`, and `yolo_coco17`.
+  - Visual verification confirmed with screenshots:
+    - `screenshot_jiu_mhr70_colored_skeleton.png`
+    - `screenshot_squat_vicon_colored_skeleton.png`
+    - `screenshot_yolo_coco17_colored_skeleton.png`
+    - `screenshot_skeleton_sidebar_palette.png`
 - **Failed Approaches:**
-  - Relying exclusively on whole-trial minimum Z: in dynamic trials with an outlier or single contact frame, the whole-trial minimum does not ground the subject on frame 0/initial stance.
-  - Keeping `groundLevel = "auto"` after manual Z translation: `auto` recomputes `floorH = min(z_trial) = min(z_raw) + tz`, exactly canceling out `tz` and moving the grid along with the markers.
+  - None; backward compatibility with existing tests (`browser_smoke.mjs` expecting `"Default"` badge text) was preserved.
 - **Open Questions & Next Steps:**
-  - User can manually stage, amend, and commit changes (`git add`, `git commit --amend` or `git commit`) and push to origin per workspace rules.
+  - User can perform `git add`, `git commit`, `git push` manually per workspace guidelines.

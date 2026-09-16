@@ -201,7 +201,7 @@ function setTheme(theme) {
   }
   const skeletonAutoSwatch = document.querySelector('#skeleton-color-swatches .color-swatch-btn[data-color="auto"]');
   if (skeletonAutoSwatch) {
-    skeletonAutoSwatch.style.background = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
+    skeletonAutoSwatch.style.background = "linear-gradient(135deg, #00ff00 0%, #3399ff 50%, #ff8000 100%)";
   }
 
   // Synchronize detached/popout windows
@@ -407,6 +407,69 @@ const VICON_SQUAT_TEMPLATE = {
   ]
 };
 
+// Anatomical skeleton color palette matching vaila/sam3dinov3.py & vaila/sam3dinov3_visualize.py:
+// Left side: Green (#00ff00 / rgb(0, 255, 0))
+// Right side: Orange (#ff8000 / rgb(255, 128, 0))
+// Center / Midline / Cross-side: Light Blue (#3399ff / rgb(51, 153, 255))
+const SKELETON_SIDE_COLORS = {
+  left: "#00ff00",
+  right: "#ff8000",
+  center: "#3399ff"
+};
+
+function getMarkerSide(name) {
+  if (!name || typeof name !== "string") return "center";
+  const clean = name.trim();
+
+  // 1. Explicit prefixes (English & Portuguese)
+  if (/^(left[-_.]|l[-_.]|e[-_]|esq[-_]|esquerdo[-_]|esquerda[-_])/i.test(clean)) return "left";
+  if (/^(right[-_.]|r[-_.]|d[-_]|dir[-_]|direito[-_]|direita[-_])/i.test(clean)) return "right";
+
+  // 2. Explicit suffixes
+  if (/[-_.](left|l|esq|esquerdo|esquerda)$/i.test(clean)) return "left";
+  if (/[-_.](right|r|dir|direito|direita)$/i.test(clean)) return "right";
+
+  // 3. Explicit infixes (e.g. of_l_eyebrow, of_r_eyebrow, corner_of_l_nostril)
+  if (/[-_.](left|l|esq)[-_.]/i.test(clean)) return "left";
+  if (/[-_.](right|r|dir)[-_.]/i.test(clean)) return "right";
+
+  // 4. Standalone words
+  if (/\b(left|esquerdo|esquerda)\b/i.test(clean)) return "left";
+  if (/\b(right|direito|direita)\b/i.test(clean)) return "right";
+
+  // 5. Mocap uppercase acronyms: LASI, RASI, LKNE, RKNE, etc.
+  if (/^L[A-Z0-9]{2,5}$/.test(clean) && !/^(LIP|LOW|LEG|LUM)/i.test(clean)) return "left";
+  if (/^R[A-Z0-9]{2,5}$/.test(clean) && !/^(RIB|ROOT|REAR)/i.test(clean)) return "right";
+
+  return "center";
+}
+
+function getBoneSide(sideA, sideB) {
+  if (sideA === "left" && sideB === "left") return "left";
+  if (sideA === "right" && sideB === "right") return "right";
+  return "center";
+}
+
+function getMarkerAnatomicalSide(idx) {
+  if (!trial || idx < 0 || idx >= trial.labels.length) return "center";
+  const label = trial.labels[idx] || "";
+  let side = getMarkerSide(label);
+  if (side === "center" && activeSkeletonTemplate !== "none" && embeddedTemplates[activeSkeletonTemplate]) {
+    const tpl = embeddedTemplates[activeSkeletonTemplate];
+    if (Array.isArray(tpl.keypoints) && idx < tpl.keypoints.length) {
+      side = getMarkerSide(tpl.keypoints[idx]);
+    }
+  }
+  return side;
+}
+
+function getBoneColor(i, j) {
+  const sideA = getMarkerAnatomicalSide(i);
+  const sideB = getMarkerAnatomicalSide(j);
+  const boneSide = getBoneSide(sideA, sideB);
+  return SKELETON_SIDE_COLORS[boneSide] || SKELETON_SIDE_COLORS.center;
+}
+
 // Skeleton initialization - does NOT auto-load pairs, user loads explicitly
 function initSkeleton(labels) {
   skeletonPairs = [];
@@ -465,7 +528,13 @@ function applySkeletonTemplate(templateObj) {
     }
 
     if (idxA >= 0 && idxB >= 0 && idxA < trial.labels.length && idxB < trial.labels.length && idxA !== idxB) {
-      skeletonPairs.push([idxA, idxB]);
+      const nameA = (!/^p\d+$/i.test(aStr)) ? aStr : (tKeypoints[parseInt(aStr.slice(1)) - 1] || trial.labels[idxA] || aStr);
+      const nameB = (!/^p\d+$/i.test(bStr)) ? bStr : (tKeypoints[parseInt(bStr.slice(1)) - 1] || trial.labels[idxB] || bStr);
+      const sideA = getMarkerSide(nameA);
+      const sideB = getMarkerSide(nameB);
+      const boneSide = getBoneSide(sideA, sideB);
+      const boneColor = SKELETON_SIDE_COLORS[boneSide] || SKELETON_SIDE_COLORS.center;
+      skeletonPairs.push([idxA, idxB, boneSide, boneColor]);
     }
   }
 
@@ -478,7 +547,13 @@ function applySkeletonTemplate(templateObj) {
       const idxB = labelMap.get(bStr);
       if (idxA !== undefined && idxB !== undefined && idxA !== idxB) {
         if (!skeletonPairs.some(p => (p[0] === idxA && p[1] === idxB) || (p[0] === idxB && p[1] === idxA))) {
-          skeletonPairs.push([Math.min(idxA, idxB), Math.max(idxA, idxB)]);
+          const nameA = trial.labels[idxA] || aStr;
+          const nameB = trial.labels[idxB] || bStr;
+          const sideA = getMarkerSide(nameA);
+          const sideB = getMarkerSide(nameB);
+          const boneSide = getBoneSide(sideA, sideB);
+          const boneColor = SKELETON_SIDE_COLORS[boneSide] || SKELETON_SIDE_COLORS.center;
+          skeletonPairs.push([Math.min(idxA, idxB), Math.max(idxA, idxB), boneSide, boneColor]);
         }
       }
     }
@@ -612,11 +687,12 @@ function createDeLevaCOM() {
 
 function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
   if (!$("bones") || !$("bones").checked || !skeletonPairs.length || !pts) return;
-  const themeDefaultColor = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
-  const boneColor = skeletonColor === "auto" ? themeDefaultColor : skeletonColor;
-  for (const [i, j] of skeletonPairs) {
+  const isAuto = skeletonColor === "auto";
+  for (const pair of skeletonPairs) {
+    const i = pair[0], j = pair[1];
     if (valid(pts[i]) && valid(pts[j])) {
-      line(pts[i], pts[j], boneColor, 2, targetCtx, w, h);
+      const color = isAuto ? (pair[3] || getBoneColor(i, j)) : skeletonColor;
+      line(pts[i], pts[j], color, 2, targetCtx, w, h);
     }
   }
 }
@@ -855,7 +931,16 @@ function drawSceneToContext(targetCtx, w, h) {
     targetCtx.beginPath();
     const radius = isAct || isCOM ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
     targetCtx.arc(q[0], q[1], radius, 0, Math.PI * 2);
-    targetCtx.fillStyle = isCOM ? "#ec4899" : (isAct ? actColor : (isA ? actColor : (isB ? bColor : regularColor)));
+
+    let ptColor = regularColor;
+    if (markerColor === "auto" && (skeletonPairs.length > 0 || activeSkeletonTemplate !== "none")) {
+      const mSide = getMarkerAnatomicalSide(i);
+      if (mSide === "left") ptColor = SKELETON_SIDE_COLORS.left;
+      else if (mSide === "right") ptColor = SKELETON_SIDE_COLORS.right;
+      else if (mSide === "center") ptColor = SKELETON_SIDE_COLORS.center;
+    }
+
+    targetCtx.fillStyle = isCOM ? "#ec4899" : (isAct ? actColor : (isA ? actColor : (isB ? bColor : ptColor)));
     targetCtx.fill();
 
     // Group highlight halo for selected markers that are not the single active marker
@@ -4457,7 +4542,11 @@ function createSegmentFromSelected(customName = null) {
   }
   const exists = skeletonPairs.some(p => (p[0] === iA && p[1] === iB) || (p[0] === iB && p[1] === iA));
   if (!exists) {
-    skeletonPairs.push([Math.min(iA, iB), Math.max(iA, iB)]);
+    const sideA = getMarkerAnatomicalSide(iA);
+    const sideB = getMarkerAnatomicalSide(iB);
+    const boneSide = getBoneSide(sideA, sideB);
+    const boneColor = SKELETON_SIDE_COLORS[boneSide] || SKELETON_SIDE_COLORS.center;
+    skeletonPairs.push([Math.min(iA, iB), Math.max(iA, iB), boneSide, boneColor]);
     customSegments.push([lblA, lblB, segName]);
   }
   if ($("bones")) $("bones").checked = true;
@@ -4883,9 +4972,9 @@ function initSkeletonStyleControls() {
     autoBtn.type = "button";
     autoBtn.className = "color-swatch-btn" + (skeletonColor === "auto" ? " selected" : "");
     autoBtn.dataset.color = "auto";
-    autoBtn.title = "Default (Theme Color)";
-    autoBtn.style.background = currentTheme === "light" ? "rgba(30, 80, 140, 0.85)" : "rgba(110, 160, 205, 0.75)";
-    autoBtn.onclick = () => setSkeletonColor("auto", "Default (Theme)");
+    autoBtn.title = "Default (Left=Green, Right=Orange, Center=Blue)";
+    autoBtn.style.background = "linear-gradient(135deg, #00ff00 0%, #3399ff 50%, #ff8000 100%)";
+    autoBtn.onclick = () => setSkeletonColor("auto", "Default");
     swatchesContainer.appendChild(autoBtn);
 
     for (const item of MARKER_PALETTE) {
