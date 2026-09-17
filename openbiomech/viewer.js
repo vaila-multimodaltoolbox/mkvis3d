@@ -491,13 +491,20 @@ function applySkeletonTemplate(templateObj) {
     draw();
     return 0;
   }
+  const isZeroBased = (templateObj && typeof templateObj.note === "string" && templateObj.note.includes("0-based"))
+    || (Array.isArray(templateObj.connections) && templateObj.connections.some(c => Array.isArray(c) && (String(c[0]).toLowerCase() === "p0" || String(c[1]).toLowerCase() === "p0")));
+
   const labelMap = new Map();
   trial.labels.forEach((lbl, idx) => {
     const clean = lbl.toLowerCase().trim();
     labelMap.set(clean, idx);
     labelMap.set(clean.replace(/_/g, "-"), idx);
     labelMap.set(clean.replace(/-/g, "_"), idx);
-    labelMap.set(`p${idx + 1}`, idx);
+    if (isZeroBased) {
+      labelMap.set(`p${idx}`, idx);
+    } else {
+      labelMap.set(`p${idx + 1}`, idx);
+    }
   });
 
   const tKeypoints = Array.isArray(templateObj.keypoints) ? templateObj.keypoints : [];
@@ -529,8 +536,14 @@ function applySkeletonTemplate(templateObj) {
     }
 
     if (idxA >= 0 && idxB >= 0 && idxA < trial.labels.length && idxB < trial.labels.length && idxA !== idxB) {
-      const nameA = (!/^p\d+$/i.test(aStr)) ? aStr : (tKeypoints[parseInt(aStr.slice(1)) - 1] || trial.labels[idxA] || aStr);
-      const nameB = (!/^p\d+$/i.test(bStr)) ? bStr : (tKeypoints[parseInt(bStr.slice(1)) - 1] || trial.labels[idxB] || bStr);
+      const getKpName = (str, idx) => {
+        if (!/^p\d+$/i.test(str)) return str;
+        const pNum = parseInt(str.slice(1), 10);
+        const kpIdx = isZeroBased ? pNum : pNum - 1;
+        return (tKeypoints[kpIdx] || trial.labels[idx] || str);
+      };
+      const nameA = getKpName(aStr, idxA);
+      const nameB = getKpName(bStr, idxB);
       const sideA = getMarkerSide(nameA);
       const sideB = getMarkerSide(nameB);
       const boneSide = getBoneSide(sideA, sideB);

@@ -2,7 +2,7 @@
 
 **Package version:** `0.0.1` (see `[project].version` in `pyproject.toml`). **Python:** 3.12.x (pinned in-repo for `uv`).
 
-**Last updated:** 2026-09-08
+**Last updated:** 2026-09-17 | **Full Guide:** [INSTRUCTIONS.md](INSTRUCTIONS.md)
 
 <div align="center">
   <table>
@@ -36,14 +36,11 @@ git clone https://github.com/paulopreto/mkvis3d
 cd mkvis3d
 uv sync
 uv run mkvis3d gui
+# Or use the direct script:
+python mkvis3d.py
 ```
 
-That's the whole install: `mkvis3d` is a pure-Python prototype (NumPy/SciPy/
-pandas/`ezc3d`), so there is no separate `install_*.sh` step like a
-GPU-enabled project needs — `uv sync` resolves and locks everything from
-`pyproject.toml`/`uv.lock`. See
-[Installation and Setup](#installation-and-setup) below for double-click
-launchers and standalone-binary builds.
+See [INSTRUCTIONS.md](INSTRUCTIONS.md) for complete operational guides, CLI commands, and integration with **vailá**.
 
 ## Introduction
 

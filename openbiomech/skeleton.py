@@ -113,6 +113,16 @@ def classify_template_connections(
     connections = template.get("connections", [])
     results = []
 
+    is_zero_based = (
+        "0-based" in str(template.get("note", ""))
+        or any(
+            isinstance(c, (list, tuple))
+            and len(c) >= 2
+            and (str(c[0]).lower() == "p0" or str(c[1]).lower() == "p0")
+            for c in connections
+        )
+    )
+
     for conn in connections:
         if not isinstance(conn, (list, tuple)) or len(conn) < 2:
             continue
@@ -120,18 +130,18 @@ def classify_template_connections(
 
         name_a = a_str
         if a_str.lower().startswith("p") and a_str[1:].isdigit():
-            p_idx = int(a_str[1:]) - 1
-            if p_idx < len(keypoints):
+            p_idx = int(a_str[1:]) if is_zero_based else int(a_str[1:]) - 1
+            if 0 <= p_idx < len(keypoints):
                 name_a = keypoints[p_idx]
-            elif trial_labels and p_idx < len(trial_labels):
+            elif trial_labels and 0 <= p_idx < len(trial_labels):
                 name_a = trial_labels[p_idx]
 
         name_b = b_str
         if b_str.lower().startswith("p") and b_str[1:].isdigit():
-            p_idx = int(b_str[1:]) - 1
-            if p_idx < len(keypoints):
+            p_idx = int(b_str[1:]) if is_zero_based else int(b_str[1:]) - 1
+            if 0 <= p_idx < len(keypoints):
                 name_b = keypoints[p_idx]
-            elif trial_labels and p_idx < len(trial_labels):
+            elif trial_labels and 0 <= p_idx < len(trial_labels):
                 name_b = trial_labels[p_idx]
 
         side_a = get_marker_side(name_a)
