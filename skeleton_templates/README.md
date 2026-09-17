@@ -21,6 +21,7 @@ vailá tests, markerless 2D/3D tracking pipelines, and DLT reconstructions:
 | halpe26.json | halpe_26 | 26 | 29 | Halpe 26 Body+Feet (AlphaPose / YOLO-Pose) |
 | soccerfield_calib29.json | soccerfield_calib_29 | 29 | 23 | Soccer Field 29 FIFA Calib Ref |
 | soccerfield_pitch32.json | soccerfield_pitch_32 | 32 | 37 | Soccer Field 32 Canonical Pitch Keypoints |
+| soccerfield_kiki49.json | soccerfield_kiki_49 | 49 | 49 | Soccer Field Kiki (pitch + goals + nets + flags; circle/arcs procedural) |
 | mediapipe_pose33.json | mediapipe_pose_33_pn | 33 | 32 | MediaPipe BlazePose (33 keypoints) |
 | mediapipe_hands42.json | mediapipe_hands_42 | 42 | 42 | MediaPipe Both Hands (Left 21 + Right 21) |
 | sam3dinov3_mhr70.json | sam3dinov3_mhr70 | 70 | 30 | SAM3+DINOv3 (SAM 3D Body MHR-70) |

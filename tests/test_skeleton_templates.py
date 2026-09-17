@@ -165,3 +165,51 @@ def test_vicon_squat_and_mocap_lateralization():
     assert get_marker_side("LANK") == "left"
     assert get_marker_side("RANK") == "right"
     assert get_marker_side("CLAV") == "center"
+
+
+def test_soccerfield_kiki49_connections_are_valid():
+    template = json.loads((TEMPLATES / "soccerfield_kiki49.json").read_text())
+    assert template["num_keypoints"] == 49
+    assert len(template["keypoints"]) == 49
+    connections = [tuple(pair) for pair in template["connections"]]
+    assert len(connections) == len({frozenset(p) for p in connections})
+    for pair in connections:
+        assert len(pair) == 2
+        assert all(1 <= int(point.removeprefix("p")) <= 49 for point in pair)
+
+    edges = {frozenset(pair) for pair in connections}
+    # Goal posts, crossbar, net depth, corner flag masts
+    required = [
+        ("p33", "p35"),
+        ("p34", "p36"),
+        ("p35", "p36"),
+        ("p33", "p37"),
+        ("p34", "p38"),
+        ("p37", "p38"),
+        ("p41", "p43"),
+        ("p42", "p44"),
+        ("p43", "p44"),
+        ("p41", "p45"),
+        ("p42", "p46"),
+        ("p45", "p46"),
+        ("p1", "p39"),
+        ("p6", "p40"),
+        ("p25", "p47"),
+        ("p30", "p48"),
+    ]
+    assert all(frozenset(pair) in edges for pair in required)
+    # No diamond approximation of the center circle (drawn procedurally)
+    for diamond in (("p15", "p31"), ("p31", "p16"), ("p16", "p32"), ("p32", "p15")):
+        assert frozenset(diamond) not in edges
+
+
+def test_soccerfield_kiki49_matches_custom_c3d_labels():
+    from openbiomech.c3d_io import read_c3d_native
+
+    c3d_path = Path(__file__).parent.parent / "data" / "soccerfield_kiki_custom.c3d"
+    if not c3d_path.is_file():
+        pytest.skip(f"missing fixture {c3d_path}")
+    template = json.loads((TEMPLATES / "soccerfield_kiki49.json").read_text())
+    trial = read_c3d_native(c3d_path)
+    assert list(trial.labels) == template["keypoints"]
+

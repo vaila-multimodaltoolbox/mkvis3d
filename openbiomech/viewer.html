@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>mkvis3d · Motion Analysis & 3D Viewer</title>
+<title>mkvis3d v__APP_VERSION__ · Motion Analysis & 3D Viewer</title>
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <script>
 try {
@@ -109,7 +109,7 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
 }
 .brand-badge {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 4px;
   font-weight: 800;
   font-size: 16px;
@@ -117,8 +117,21 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
   margin-right: 14px;
   letter-spacing: -0.5px;
 }
-.brand-badge span { color: var(--accent); }
-.brand-sub { font-size: 10px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-left: 2px; }
+.brand-badge > span.brand-mark { color: var(--accent); }
+.brand-version {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 2px;
+  white-space: nowrap;
+}
+.brand-sub { font-size: 10px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-left: 4px; }
 .brand-sub em { font-style: italic; text-transform: lowercase; }
 
 .menu-item { position: relative; }
@@ -1124,7 +1137,8 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
 <nav class="menubar" aria-label="Application menu">
   <div class="brand-badge">
     <img src="/favicon.ico" alt="" style="width: 18px; height: 18px; vertical-align: middle; margin-right: 4px; border-radius: 3px;" onerror="this.style.display='none'">
-    mkvis<span>3d</span>
+    mkvis<span class="brand-mark">3d</span>
+    <span class="brand-version" id="app-version" title="mkvis3d package version">v__APP_VERSION__</span>
     <span class="brand-sub">OpenBiomech · <em>vailá</em> Multimodal Toolbox</span>
   </div>
 
@@ -1512,6 +1526,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <option value="halpe26">Halpe-26 (26 keypoints)</option>
         <option value="soccerfield_calib29">Soccer Field Calib (29 keypoints)</option>
         <option value="soccerfield_pitch32">Soccer Field Pitch (32 keypoints)</option>
+        <option value="soccerfield_kiki49">Soccer Field Kiki (49 keypoints)</option>
         <option value="coco_wholebody133">COCO WholeBody (133 keypoints)</option>
         <option value="sapiens2_goliath308">Sapiens2 Goliath (308 keypoints)</option>
         <option value="custom">Upload Custom JSON...</option>

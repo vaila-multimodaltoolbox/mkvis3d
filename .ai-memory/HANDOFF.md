@@ -1,35 +1,16 @@
-# Session Handoff: Anatomical Left/Right/Center Skeleton & Joint Coloring (vailá sam3dinov3 parity across all templates)
+# Session Handoff: Soccer Field Kiki 49 (goals, flags, circle, arcs)
 
 - **Status:** Completed
 - **Current State:**
-  - Implemented anatomical lateralization and side-specific color palette for human body skeletons matching `/home/preto/data/vaila/vaila/sam3dinov3_visualize.py` and `sam3dinov3.py`:
-    - **Left side:** Green `(0, 255, 0)` / `#00ff00`
-    - **Right side:** Orange `(255, 128, 0)` / `#ff8000`
-    - **Center / Midline / Cross-side:** Light Blue `(51, 153, 255)` / `#3399ff`
-  - Created [`openbiomech/skeleton.py`](openbiomech/skeleton.py) with functions `get_marker_side()`, `get_bone_side()`, `get_side_color_rgb()`, `get_side_color_hex()`, and `classify_template_connections()`.
-  - Updated [`openbiomech/viewer.js`](openbiomech/viewer.js):
-    - Added `SKELETON_SIDE_COLORS`, `getMarkerSide()`, `getBoneSide()`, `getMarkerAnatomicalSide()`, and `getBoneColor()`.
-    - Updated `applySkeletonTemplate()` and `toggleCustomSegment()` to attach `[idxA, idxB, boneSide, boneColor]` to `skeletonPairs`.
-    - Updated `drawSkeleton()`: when `skeletonColor === "auto"` (Default), draws each bone in its anatomical side color. Custom monochrome colors remain supported if explicitly selected by the user.
-    - Updated `draw()` (marker rendering): when `markerColor === "auto"` and a skeleton is active, markers automatically display their anatomical side color (Left=Green, Right=Orange, Center=Blue).
-    - Updated `initSkeletonStyleControls()`: Default auto swatch displays a tri-color gradient `linear-gradient(135deg, #00ff00 0%, #3399ff 50%, #ff8000 100%)`.
-  - Updated [`openbiomech/viewer.html`](openbiomech/viewer.html):
-    - Added visual side legend under Skeleton Color: `● Left (Green)  ● Right (Orange)  ● Center (Blue)`.
-  - Updated [`openbiomech/blender_io.py`](openbiomech/blender_io.py):
-    - Supports both `connections` and `bones` keys across templates, sets anatomical bone side colors in Blender pose mode.
-  - Added comprehensive test suite in [`tests/test_skeleton_templates.py`](tests/test_skeleton_templates.py) verifying perfect Left/Right symmetry and color mappings across all templates (`sam3dinov3_mhr70`, `sapiens2_goliath308`, `yolo_coco17`, `fifa_body15`, `openpose_body25`, `halpe26`, `mediapipe_pose33`, `mediapipe_hands42`, `mediapipe_holistic75`, `coco_wholebody133`, and `vicon_squat`).
-  - Standalone viewers re-exported to `outputs/*.html`.
-  - Standalone app binary rebuilt at `dist/mkvis3d-linux-x86_64`.
-  - Pytest: 267/267 passed (`uv run pytest -m "not browser"`).
-  - Code formatting: 100% compliant (`uv run ruff check .` and `uv run ruff format --check .`).
+  - New template `skeleton_templates/soccerfield_kiki49.json` (49 keypoints): pitch lines + 3D goals (posts/crossbar/net depth) + corner flag masts; no center-circle diamond bones.
+  - Viewer option `soccerfield_kiki49` in `viewer.html`; README table updated.
+  - `drawSoccerFieldCurves()` in `viewer.js` draws center circle + penalty arcs (meia-lua ≈1/3) when Kiki template is loaded; math mirrors vailá `drawsportsfields.py` fallback.
+  - `drawGroundGrid` count cap raised from 20 → 200 so FIFA-scale spans get a full floor grid.
+  - Tests: `test_soccerfield_kiki49_connections_are_valid`, `test_soccerfield_kiki49_matches_custom_c3d_labels`.
 - **What Worked:**
-  - Automated browser Selenium tests confirmed Left=Green, Right=Orange, Center=Blue rendering on `sam3dinov3_mhr70`, `vicon_squat`, and `yolo_coco17`.
-  - Visual verification confirmed with screenshots:
-    - `screenshot_jiu_mhr70_colored_skeleton.png`
-    - `screenshot_squat_vicon_colored_skeleton.png`
-    - `screenshot_yolo_coco17_colored_skeleton.png`
-    - `screenshot_skeleton_sidebar_palette.png`
+  - C3D labels in `data/soccerfield_kiki_custom.c3d` match template keypoints order bit-for-bit.
+  - Verification: `uv run pytest tests/test_skeleton_templates.py::test_soccerfield_kiki49_connections_are_valid tests/test_skeleton_templates.py::test_soccerfield_kiki49_matches_custom_c3d_labels -v` passed; `node --check openbiomech/viewer.js` OK.
 - **Failed Approaches:**
-  - None; backward compatibility with existing tests (`browser_smoke.mjs` expecting `"Default"` badge text) was preserved.
+  - None.
 - **Open Questions & Next Steps:**
-  - User can perform `git add`, `git commit`, `git push` manually per workspace guidelines.
+  - User commits manually (including optional `data/soccerfield_kiki_custom.c3d` ~4 KB). Manual GUI check: `uv run openbiomech gui data/soccerfield_kiki_custom.c3d` → Load Skeleton → Soccer Field Kiki (49).

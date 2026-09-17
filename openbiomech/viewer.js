@@ -341,7 +341,8 @@ function drawGroundGrid(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clie
   const floorH = getFloorHeight();
   const gridSize = Math.max(span * 1.5, 2.0);
   const step = gridSize > 5 ? 1.0 : gridSize > 2 ? 0.5 : 0.2;
-  const count = Math.min(20, Math.ceil(gridSize / step));
+  // Cap high enough for FIFA pitch (~105×68 m); old min(20) only covered ~40 m.
+  const count = Math.min(200, Math.ceil(gridSize / step));
   const extent = count * step;
   const isLight = currentTheme === "light";
 
@@ -697,6 +698,104 @@ function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.c
   }
 }
 
+/** Resolve marker index by label (case/underscore insensitive). */
+function markerIndexByLabel(name) {
+  if (!trial || !name) return -1;
+  const want = String(name).toLowerCase().trim().replace(/-/g, "_");
+  for (let i = 0; i < trial.labels.length; i++) {
+    const lbl = String(trial.labels[i] || "").toLowerCase().trim().replace(/-/g, "_");
+    if (lbl === want) return i;
+  }
+  return -1;
+}
+
+function markerAt(pts, name) {
+  const idx = markerIndexByLabel(name);
+  if (idx < 0 || !pts || !valid(pts[idx])) return null;
+  return pts[idx];
+}
+
+/** Project and stroke a closed or open polyline in world XYZ. */
+function drawWorldPolyline(worldPts, color, width, targetCtx, w, h, closed = false) {
+  if (!worldPts || worldPts.length < 2) return;
+  const projected = [];
+  for (const p of worldPts) {
+    if (!valid(p)) return;
+    projected.push(projectOriented(p, w, h));
+  }
+  targetCtx.beginPath();
+  targetCtx.moveTo(projected[0][0], projected[0][1]);
+  for (let i = 1; i < projected.length; i++) {
+    targetCtx.lineTo(projected[i][0], projected[i][1]);
+  }
+  if (closed) targetCtx.closePath();
+  targetCtx.strokeStyle = color;
+  targetCtx.lineWidth = width;
+  targetCtx.stroke();
+}
+
+/**
+ * Procedural center circle + penalty arcs for soccerfield_kiki49.
+ * Mirrors vaila/drawsportsfields.py fallback (R from center circle; θ = acos(dx/R)).
+ */
+function drawSoccerFieldCurves(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
+  if (!$("bones") || !$("bones").checked || !pts) return;
+  if (activeSkeletonTemplate !== "soccerfield_kiki49") return;
+
+  const isLight = currentTheme === "light";
+  const lineColor = isLight ? "rgba(148, 163, 184, 0.95)" : "rgba(226, 232, 240, 0.9)";
+  const floorZ = getFloorHeight();
+  const nSeg = 64;
+
+  const center = markerAt(pts, "center_field");
+  const circleTop = markerAt(pts, "center_circle_top");
+  let radius = 9.15;
+  if (center && circleTop) {
+    radius = Math.hypot(circleTop[0] - center[0], circleTop[1] - center[1]) || 9.15;
+  }
+
+  if (center && radius > 0) {
+    const ring = [];
+    for (let i = 0; i <= nSeg; i++) {
+      const a = (i / nSeg) * Math.PI * 2;
+      ring.push([
+        center[0] + radius * Math.cos(a),
+        center[1] + radius * Math.sin(a),
+        floorZ,
+      ]);
+    }
+    drawWorldPolyline(ring, lineColor, 2, targetCtx, w, h, false);
+  }
+
+  // Penalty arcs (~1/3 circumference outside the box), same math as drawsportsfields.py
+  const drawPenaltyArc = (spotName, boxInnerName, towardPositiveX) => {
+    const spot = markerAt(pts, spotName);
+    const boxInner = markerAt(pts, boxInnerName);
+    if (!spot) return;
+    const R = radius > 0 ? radius : 9.15;
+    const dx = boxInner ? (boxInner[0] - spot[0]) : (towardPositiveX ? 5.5 : -5.5);
+    const absDx = Math.abs(dx);
+    if (!(absDx > 0 && absDx < R)) return;
+    const theta = Math.acos(Math.min(1, Math.max(-1, absDx / R)));
+    // Left (field +x): angles −θ..+θ. Right (field −x): π−θ..π+θ via π+t for t∈[−θ,+θ].
+    const steps = Math.max(16, Math.ceil(nSeg * (2 * theta) / (Math.PI * 2)));
+    const arc = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = -theta + (2 * theta) * (i / steps);
+      const ang = towardPositiveX ? t : (Math.PI + t);
+      arc.push([
+        spot[0] + R * Math.cos(ang),
+        spot[1] + R * Math.sin(ang),
+        floorZ,
+      ]);
+    }
+    drawWorldPolyline(arc, lineColor, 2, targetCtx, w, h, false);
+  };
+
+  drawPenaltyArc("left_penalty_spot", "left_pen_box_top_inner", true);
+  drawPenaltyArc("right_penalty_spot", "right_pen_box_top_inner", false);
+}
+
 // Draw 3D Physical Force Platforms on Floor
 function drawForcePlates(targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
   if (!trial || !trial.force_plates || !trial.force_plates.length || !showForcePlates) return;
@@ -892,6 +991,8 @@ function drawSceneToContext(targetCtx, w, h) {
 
   // Draw Skeleton Bones
   drawSkeleton(pts, targetCtx, w, h);
+  // Kiki pitch: procedural center circle + penalty arcs (meia-lua)
+  drawSoccerFieldCurves(pts, targetCtx, w, h);
 
   // Trajectory Trail of active marker
   if ($("trail") && $("trail").checked && activeIdx >= 0 && activeIdx < trial.labels.length) {
@@ -5118,7 +5219,14 @@ if (shortcutsModalEl) {
 
 if ($("action-help-about")) {
   $("action-help-about").onclick = () => {
-    alert("OpenBiomech · vailá Multimodal Toolbox (mkvis3d)\nGitHub: https://github.com/paulopreto/mkvis3d\nModern biomechanical motion viewer & analysis suite\nCompatible with standard C3D, CSV, BVH, and .3d formats.");
+    const ver = ($("app-version") && $("app-version").textContent || "").trim();
+    const verLine = ver ? `Version: ${ver}\n` : "";
+    alert(
+      `OpenBiomech · vailá Multimodal Toolbox (mkvis3d)\n${verLine}` +
+      "GitHub: https://github.com/paulopreto/mkvis3d\n" +
+      "Modern biomechanical motion viewer & analysis suite\n" +
+      "Compatible with standard C3D, CSV, BVH, and .3d formats."
+    );
   };
 }
 if ($("action-help-github")) {

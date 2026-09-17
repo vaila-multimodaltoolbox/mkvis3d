@@ -176,6 +176,8 @@ def render_viewer(
     skeleton_templates: dict[str, dict] | None = None,
     project: dict | None = None,
 ) -> str:
+    from openbiomech import __version__
+
     directory = Path(__file__).parent
     if skeleton_templates is None:
         skeleton_templates = load_all_skeleton_templates()
@@ -189,6 +191,7 @@ def render_viewer(
     return (
         (directory / "viewer.html")
         .read_text(encoding="utf-8")
+        .replace("__APP_VERSION__", __version__)
         .replace("__TRIAL_DATA__", data)
         .replace("__SKELETON_TEMPLATES__", templates_json)
         .replace("__VIEWER_SCRIPT__", (directory / "viewer.js").read_text(encoding="utf-8"))

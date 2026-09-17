@@ -91,6 +91,16 @@ def test_viewer_preserves_gaps_and_escapes_user_labels():
     assert "__VIEWER_SCRIPT__" not in html
 
 
+def test_viewer_header_shows_package_version():
+    from openbiomech import __version__
+
+    html = render_viewer()
+    assert "__APP_VERSION__" not in html
+    assert 'id="app-version"' in html
+    assert f">v{__version__}<" in html
+    assert f"<title>mkvis3d v{__version__}" in html
+
+
 def test_view_cli_exports_golden_trial(tmp_path):
     fixture = Path(__file__).parent.parent / "data/rec3d_20260826_121305_m.c3d"
     output = tmp_path / "motion.html"
