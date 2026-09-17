@@ -55,6 +55,7 @@ python mkvis3d.py
 3. **Soccer Pitch & 3D Goal Geometry**:
    - For stadium and sports field calibration, load `data/soccerfield_kiki_custom.c3d` or `vaila/models/soccerfield_kiki.csv`.
    - Choose `Soccer Field Kiki (49)` in the viewer dropdown to render pitch lines, 3D goal posts, crossbars, net depth ground points, corner flags ($z = 1.5$ m), center circle, and penalty arcs.
+   - Center circle and penalty arcs ("meia-lua") are **procedural** (not skeleton bones). Geometry follows FIFA Law 1 / vailá `drawsportsfields.penalty_arc_geometry`: radius from stored arc intersections or the centre-circle Y span (fallback 9.15 m); arc clipped to the penalty-area line and drawn only outside the box toward midfield.
 
 ---
 

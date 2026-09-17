@@ -1199,7 +1199,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <button type="button" class="dropdown-item" id="action-toggle-labels">✓ Marker Labels <span class="shortcut-hint">L</span></button>
       <button type="button" class="dropdown-item" id="action-toggle-trails">✓ Trajectory Trails <span class="shortcut-hint">T</span></button>
       <button type="button" class="dropdown-item" id="action-toggle-bones">✓ Skeleton Bones <span class="shortcut-hint">B</span></button>
-      <button type="button" class="dropdown-item" id="action-toggle-distance">✓ Distance Line (A–B) <span class="shortcut-hint">D</span></button>
+      <button type="button" class="dropdown-item" id="action-toggle-distance">  Distance Line (A–B) <span class="shortcut-hint">D</span></button>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Color Theme</div>
       <button type="button" class="dropdown-item" id="action-theme-dark">✓ Dark Mode</button>
@@ -1356,8 +1356,8 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div class="sidebar-header">
           <span>Distance Measurement</span>
           <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; text-transform: none; font-weight: normal; margin: 0;">
-            <input type="checkbox" id="chk-show-distance" checked>
-            <span id="txt-show-distance" style="color: var(--accent);">Shown</span>
+            <input type="checkbox" id="chk-show-distance">
+            <span id="txt-show-distance" style="color: var(--text-muted);">Hidden</span>
           </label>
         </div>
         <label for="marker-a">Marker A</label>
@@ -1369,7 +1369,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
         <div class="metric-card" id="card-distance-metric">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
             <label style="margin: 0 0 2px;">Distance</label>
-            <button id="btn-toggle-distance" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Disable</button>
+            <button id="btn-toggle-distance" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Enable</button>
           </div>
           <div id="distance" class="metric-val">— m</div>
         </div>

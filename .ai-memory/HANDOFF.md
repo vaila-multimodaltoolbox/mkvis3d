@@ -1,13 +1,13 @@
-# Session Handoff: Dual-mode 0-based & 1-based Skeleton Engine + Instructions
+# Session Handoff: run tests and fix LCS apply modal
 - **Status:** Completed
 - **Current State:**
-  - `openbiomech/skeleton.py` and `openbiomech/viewer.js` now dynamically support both **0-based** (`p0..pN-1`) and **1-based** (`p1..pN`) templates and trials.
-  - Native templates in `skeleton_templates/` retain 1-based indexing for internal golden compatibility, while seamlessly rendering 0-based vailá templates and wide CSVs.
-  - Created `INSTRUCTIONS.md` with complete CLI reference, vailá integration workflows, skeleton presets catalog, and keyboard shortcuts.
-  - Synchronized `soccerfield_kiki49.json` model with vailá (`vaila/models/soccerfield_kiki.csv` and `data/soccerfield_kiki_custom.c3d`).
+  - Full suite green: `uv run pytest -q` → **278 passed**.
+  - Bug fixed in `openbiomech/viewer.js`: **Apply Reference System** now closes the LCS modal on success (same pattern as Filter Apply / LCS Reset). `applyReferenceSystem` returns `false` on invalid basis so the modal stays open for correction.
 - **What Worked:**
-  - Dual resolver tests in `openbiomech/skeleton.py` and `viewer.js` passed 100%.
-  - `mkvis3d` full unit/integration test suite passed (271 passed).
-  - All 14 skeleton presets verified across both projects.
+  - Failures were only `tests/test_cross_browser.py` (chrome/chromium/firefox): `AssertionError: LCS modal should close after apply`.
+  - Root cause: `btn-apply-lcs` called `applyReferenceSystem` but never `closeLCSModal()`.
+- **Failed Approaches:**
+  - None beyond the initial failing run.
 - **Open Questions & Next Steps:**
-  - Ready for production use and release.
+  - User commits manually (no agent commit/push).
+  - Prior uncommitted work still present (venv rename, distance-hidden default, soccerfield curves, etc.).

@@ -287,6 +287,12 @@ assert.equal(await evaluate('activeFilterConfig.cutoff'), 8.0);
 await evaluate('document.getElementById("btn-revert-filter").click()');
 assert.equal(await evaluate('activeFilterConfig'), null);
 
+// Test Distance starting disabled / hidden (same default as Angle)
+assert.equal(await evaluate('showDistance'), false);
+assert.equal(await evaluate('document.getElementById("chk-show-distance").checked'), false);
+assert.equal(await evaluate('document.getElementById("txt-show-distance").textContent'), "Hidden");
+assert.equal(await evaluate('document.getElementById("btn-toggle-distance").textContent'), "Enable");
+
 // Test Angles starting disabled / hidden, and Absolute Angle mode
 assert.equal(await evaluate('showAngle'), false);
 assert.equal(await evaluate('document.getElementById("chk-show-angle").checked'), false);
@@ -422,6 +428,8 @@ await evaluate('document.getElementById("next").click()');
 assert.match(await evaluate('document.getElementById("frame").textContent'),/^2 \/ 631/);
 await evaluate('document.getElementById("timeline").value="100";document.getElementById("timeline").dispatchEvent(new Event("input"))');
 assert.match(await evaluate('document.getElementById("frame").textContent'),/^101 \/ 631/);
+await evaluate('document.getElementById("btn-toggle-distance").click()');
+assert.equal(await evaluate('showDistance'), true);
 const before=await evaluate('document.getElementById("distance").textContent');
 await evaluate('document.getElementById("marker-b").value="0";document.getElementById("marker-b").dispatchEvent(new Event("change"))');
 assert.equal(await evaluate('document.getElementById("distance").textContent'),"0.0000 m");
