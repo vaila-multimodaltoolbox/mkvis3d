@@ -770,3 +770,193 @@ def blank_marker_frames(
         trial.residuals[valid_frames, idx] = np.nan
 
     return trial
+
+
+def compute_distance_series(
+    trial: MarkerTrial,
+    marker_a: str,
+    marker_b: str,
+) -> np.ndarray:
+    """Compute per-frame Euclidean distance in meters between two markers."""
+    pa = trial.marker(marker_a)
+    pb = trial.marker(marker_b)
+    diff = pa - pb
+    valid = np.isfinite(pa).all(axis=1) & np.isfinite(pb).all(axis=1)
+    dist = np.full(trial.n_frames, np.nan, dtype=np.float64)
+    if valid.any():
+        dist[valid] = np.linalg.norm(diff[valid], axis=1)
+    return dist
+
+
+def export_distance_csv(
+    trial: MarkerTrial,
+    marker_a: str,
+    marker_b: str,
+    filepath: str | Path | None = None,
+) -> str:
+    """Export distance time-series between two markers to standard CSV (frame,time_s,distance_m)."""
+    dist = compute_distance_series(trial, marker_a, marker_b)
+    rate = float(trial.rate_hz) if trial.rate_hz > 0 else 100.0
+    lines = ["frame,time_s,distance_m"]
+    for f in range(trial.n_frames):
+        t = f / rate
+        d = dist[f]
+        d_str = f"{d:.6f}" if np.isfinite(d) else ""
+        lines.append(f"{f},{t:.5f},{d_str}")
+
+    content = "\n".join(lines) + "\n"
+    if filepath is not None:
+        Path(filepath).write_text(content, encoding="utf-8")
+    return content
+
+
+def _get_abs_axis_vector(axis_key: str, u: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Helper for absolute angle against global coordinate system or projection planes."""
+    axis = axis_key.strip()
+    n_frames = u.shape[0]
+    ref_vec = np.zeros((n_frames, 3), dtype=np.float64)
+    u_proj = u.copy()
+
+    if axis == "+Z":
+        ref_vec[:, 2] = 1.0
+    elif axis == "-Z":
+        ref_vec[:, 2] = -1.0
+    elif axis == "+Y":
+        ref_vec[:, 1] = 1.0
+    elif axis == "-Y":
+        ref_vec[:, 1] = -1.0
+    elif axis == "+X":
+        ref_vec[:, 0] = 1.0
+    elif axis == "-X":
+        ref_vec[:, 0] = -1.0
+    elif axis.lower() == "sagittal":  # YZ plane projection against +Z
+        u_proj[:, 0] = 0.0
+        ref_vec[:, 2] = 1.0
+    elif axis.lower() == "frontal":  # XZ plane projection against +Z
+        u_proj[:, 1] = 0.0
+        ref_vec[:, 2] = 1.0
+    elif axis.lower() == "transverse":  # XY plane projection against +Y
+        u_proj[:, 2] = 0.0
+        ref_vec[:, 1] = 1.0
+    else:
+        ref_vec[:, 2] = 1.0
+
+    return u_proj, ref_vec
+
+
+def compute_vector_angle_series(
+    trial: MarkerTrial,
+    mode: str,
+    markers: tuple[str, ...],
+    *,
+    axis: str = "+Z",
+) -> np.ndarray:
+    """Compute per-frame 3D vector angle in degrees.
+
+    Supported modes:
+        - '3pt': markers=(mA, mB, mC), angle at vertex mB between (mA - mB) and (mC - mB).
+        - '4pt': markers=(v1a, v1b, v2c, v2d), angle between (v1b - v1a) and (v2d - v2c).
+        - 'abs': markers=(mA, mB), angle between segment (mB - mA) and global axis or plane.
+    """
+    n_frames = trial.n_frames
+    angles = np.full(n_frames, np.nan, dtype=np.float64)
+
+    if mode == "3pt":
+        if len(markers) != 3:
+            raise ValueError(f"3pt mode requires exactly 3 markers, got {len(markers)}")
+        pa = trial.marker(markers[0])
+        pb = trial.marker(markers[1])
+        pc = trial.marker(markers[2])
+        u = pa - pb
+        v = pc - pb
+    elif mode == "4pt":
+        if len(markers) != 4:
+            raise ValueError(f"4pt mode requires exactly 4 markers, got {len(markers)}")
+        p1 = trial.marker(markers[0])
+        p2 = trial.marker(markers[1])
+        p3 = trial.marker(markers[2])
+        p4 = trial.marker(markers[3])
+        u = p2 - p1
+        v = p4 - p3
+    elif mode == "abs":
+        if len(markers) != 2:
+            raise ValueError(f"abs mode requires exactly 2 markers, got {len(markers)}")
+        pa = trial.marker(markers[0])
+        pb = trial.marker(markers[1])
+        seg = pb - pa
+        u, v = _get_abs_axis_vector(axis, seg)
+    else:
+        raise ValueError(f"Unsupported angle mode: {mode}")
+
+    norm_u = np.linalg.norm(u, axis=1)
+    norm_v = np.linalg.norm(v, axis=1)
+    valid = np.isfinite(norm_u) & np.isfinite(norm_v) & (norm_u > 1e-9) & (norm_v > 1e-9)
+
+    if valid.any():
+        dot = np.sum(u[valid] * v[valid], axis=1)
+        cos_val = np.clip(dot / (norm_u[valid] * norm_v[valid]), -1.0, 1.0)
+        angles[valid] = np.degrees(np.arccos(cos_val))
+
+    return angles
+
+
+def export_angle_csv(
+    trial: MarkerTrial,
+    mode: str,
+    markers: tuple[str, ...],
+    *,
+    axis: str = "+Z",
+    filepath: str | Path | None = None,
+) -> str:
+    """Export angle time-series to standard CSV (frame,time_s,angle_deg)."""
+    angles = compute_vector_angle_series(trial, mode, markers, axis=axis)
+    rate = float(trial.rate_hz) if trial.rate_hz > 0 else 100.0
+    lines = ["frame,time_s,angle_deg"]
+    for f in range(trial.n_frames):
+        t = f / rate
+        ang = angles[f]
+        ang_str = f"{ang:.4f}" if np.isfinite(ang) else ""
+        lines.append(f"{f},{t:.5f},{ang_str}")
+
+    content = "\n".join(lines) + "\n"
+    if filepath is not None:
+        Path(filepath).write_text(content, encoding="utf-8")
+    return content
+
+
+def export_analyses_csv(
+    trial: MarkerTrial,
+    *,
+    distance_markers: tuple[str, str] | None = None,
+    angle_def: dict | None = None,
+    filepath: str | Path | None = None,
+) -> str:
+    """Export combined analyses (distance, angle) to synchronized CSV (frame,time_s,...)."""
+    rate = float(trial.rate_hz) if trial.rate_hz > 0 else 100.0
+    headers = ["frame", "time_s"]
+    cols: list[np.ndarray] = []
+
+    if distance_markers is not None:
+        headers.append("distance_m")
+        cols.append(compute_distance_series(trial, distance_markers[0], distance_markers[1]))
+
+    if angle_def is not None:
+        headers.append("angle_deg")
+        mode = angle_def.get("mode", "3pt")
+        markers = tuple(angle_def.get("markers", ()))
+        axis = angle_def.get("axis", "+Z")
+        cols.append(compute_vector_angle_series(trial, mode, markers, axis=axis))
+
+    lines = [",".join(headers)]
+    for f in range(trial.n_frames):
+        t = f / rate
+        row = [str(f), f"{t:.5f}"]
+        for c in cols:
+            val = c[f]
+            row.append(f"{val:.6f}" if np.isfinite(val) else "")
+        lines.append(",".join(row))
+
+    content = "\n".join(lines) + "\n"
+    if filepath is not None:
+        Path(filepath).write_text(content, encoding="utf-8")
+    return content

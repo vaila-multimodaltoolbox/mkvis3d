@@ -3132,9 +3132,12 @@ document.addEventListener("click", closeMenus);
 
 // File Menu Actions
 if ($("action-open-file")) $("action-open-file").onclick = () => $("file").click();
-if ($("action-export-plot")) $("action-export-plot").onclick = () => exportDistanceCsv();
+if ($("action-export-distance-csv")) $("action-export-distance-csv").onclick = () => exportDistanceCsv();
+if ($("action-export-angle-csv")) $("action-export-angle-csv").onclick = () => exportAngleCsv();
+if ($("action-export-combined-analyses-csv")) $("action-export-combined-analyses-csv").onclick = () => exportCombinedAnalysesCsv();
+if ($("action-export-plot")) $("action-export-plot").onclick = () => exportPlotCsv("plot1");
 if ($("action-export-html")) $("action-export-html").onclick = () => saveStandaloneHtmlSnapshot();
-if ($("export")) $("export").onclick = () => exportDistanceCsv();
+if ($("export")) $("export").onclick = () => exportPlotCsv("plot1");
 if ($("snapshot")) $("snapshot").onclick = () => saveStandaloneHtmlSnapshot();
 if (boot.server && $("action-shutdown")) {
   $("shutdown-divider").hidden = false;
@@ -3277,6 +3280,10 @@ if ($("action-toggle-distance")) {
   $("action-toggle-distance").onclick = () => setDistanceVisible(!showDistance);
 }
 
+if ($("btn-distance-export-csv")) {
+  $("btn-distance-export-csv").onclick = () => exportDistanceCsv();
+}
+
 // Vector Angle Measurement (Dot Product) Toggle & Mode
 function setAngleVisible(visible) {
   showAngle = Boolean(visible);
@@ -3341,6 +3348,15 @@ if ($("btn-plot-angle-curve")) {
       status("Plotted Vector Angle (Dot Product °) on Plot 1.");
     }
   };
+}
+if ($("btn-angle-export-csv")) {
+  $("btn-angle-export-csv").onclick = () => exportAngleCsv();
+}
+if ($("btn-export-plot1-csv")) {
+  $("btn-export-plot1-csv").onclick = () => exportPlotCsv("plot1");
+}
+if ($("btn-export-plot2-csv")) {
+  $("btn-export-plot2-csv").onclick = () => exportPlotCsv("plot2");
 }
 for (const id of ["angle-marker-a", "angle-marker-b", "angle-marker-c", "angle-v1-a", "angle-v1-b", "angle-v2-c", "angle-v2-d", "angle-abs-a", "angle-abs-b", "angle-abs-axis"]) {
   if ($(id)) $(id).onchange = measureAngle;
@@ -5563,6 +5579,13 @@ function collectAnalysisResults() {
       markers: [trial.labels[markerA], trial.labels[markerB]],
       values: distances.map(value => Number.isFinite(value) ? value : null)
     };
+    results.angle = {
+      schema_version: 1,
+      units: "deg",
+      rate_hz: trial.rate_hz,
+      mode: angleMode,
+      values: angles.map(value => Number.isFinite(value) ? value : null)
+    };
   }
   return results;
 }
@@ -5762,10 +5785,116 @@ function loadVailaProject(project) {
 if ($("action-save-vaila")) $("action-save-vaila").onclick = saveVailaProject;
 
 function exportDistanceCsv() {
-  if (!trial) return;
+  if (!trial) {
+    status("Load a trial before exporting distance CSV.", true);
+    return;
+  }
+  const a = Math.max(0, Number($("marker-a") ? $("marker-a").value : 0));
+  const b = Math.max(0, Number($("marker-b") ? $("marker-b").value : 0));
+  const nameA = (trial.labels && trial.labels[a]) ? trial.labels[a] : `m${a}`;
+  const nameB = (trial.labels && trial.labels[b]) ? trial.labels[b] : `m${b}`;
+  const rate = trial.rate_hz > 0 ? trial.rate_hz : 100.0;
   const rows = ["frame,time_s,distance_m"];
-  distances.forEach((d, i) => rows.push(`${i},${i / trial.rate_hz},${Number.isFinite(d) ? d : ""}`));
-  download(rows.join("\n") + "\n", "distance.csv", "text/csv");
+  distances.forEach((d, i) => {
+    const t = (i / rate).toFixed(5);
+    const dStr = Number.isFinite(d) ? d.toFixed(6) : "";
+    rows.push(`${i},${t},${dStr}`);
+  });
+  const trialStem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const cleanA = String(nameA).replace(/[^a-zA-Z0-9_-]/g, "_");
+  const cleanB = String(nameB).replace(/[^a-zA-Z0-9_-]/g, "_");
+  download(rows.join("\n") + "\n", `${trialStem}_distance_${cleanA}_to_${cleanB}.csv`, "text/csv");
+  status(`Exported distance CSV between "${nameA}" and "${nameB}" (${distances.length} frames).`);
+}
+
+function exportAngleCsv() {
+  if (!trial) {
+    status("Load a trial before exporting angle CSV.", true);
+    return;
+  }
+  const rate = trial.rate_hz > 0 ? trial.rate_hz : 100.0;
+  const is3pt = angleMode === "3pt";
+  const isAbs = angleMode === "abs";
+  let modeDesc = "";
+  let fileSuffix = "";
+
+  if (is3pt) {
+    const a = Math.max(0, Number($("angle-marker-a") ? $("angle-marker-a").value : 0));
+    const b = Math.max(0, Number($("angle-marker-b") ? $("angle-marker-b").value : 1));
+    const c = Math.max(0, Number($("angle-marker-c") ? $("angle-marker-c").value : 2));
+    const nameA = (trial.labels && trial.labels[a]) ? trial.labels[a] : `m${a}`;
+    const nameB = (trial.labels && trial.labels[b]) ? trial.labels[b] : `m${b}`;
+    const nameC = (trial.labels && trial.labels[c]) ? trial.labels[c] : `m${c}`;
+    modeDesc = `3-Pt Vertex (${nameA} - ${nameB} - ${nameC})`;
+    fileSuffix = `angle_3pt_${nameA}_${nameB}_${nameC}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  } else if (isAbs) {
+    const a = Math.max(0, Number($("angle-abs-a") ? $("angle-abs-a").value : 0));
+    const b = Math.max(0, Number($("angle-abs-b") ? $("angle-abs-b").value : 1));
+    const axis = $("angle-abs-axis") ? $("angle-abs-axis").value : "+Z";
+    const nameA = (trial.labels && trial.labels[a]) ? trial.labels[a] : `m${a}`;
+    const nameB = (trial.labels && trial.labels[b]) ? trial.labels[b] : `m${b}`;
+    modeDesc = `Absolute SG (${nameA}->${nameB} vs ${axis})`;
+    fileSuffix = `angle_abs_${nameA}_${nameB}_vs_${axis}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  } else {
+    // 4pt
+    const v1a = Math.max(0, Number($("angle-v1-a") ? $("angle-v1-a").value : 0));
+    const v1b = Math.max(0, Number($("angle-v1-b") ? $("angle-v1-b").value : 1));
+    const v2c = Math.max(0, Number($("angle-v2-c") ? $("angle-v2-c").value : 2));
+    const v2d = Math.max(0, Number($("angle-v2-d") ? $("angle-v2-d").value : 3));
+    const name1A = (trial.labels && trial.labels[v1a]) ? trial.labels[v1a] : `m${v1a}`;
+    const name1B = (trial.labels && trial.labels[v1b]) ? trial.labels[v1b] : `m${v1b}`;
+    const name2C = (trial.labels && trial.labels[v2c]) ? trial.labels[v2c] : `m${v2c}`;
+    const name2D = (trial.labels && trial.labels[v2d]) ? trial.labels[v2d] : `m${v2d}`;
+    modeDesc = `2 Vectors (${name1A}->${name1B} vs ${name2C}->${name2D})`;
+    fileSuffix = `angle_4pt_${name1A}_${name1B}_to_${name2C}_${name2D}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  }
+
+  const rows = ["frame,time_s,angle_deg"];
+  angles.forEach((ang, i) => {
+    const t = (i / rate).toFixed(5);
+    const aStr = Number.isFinite(ang) ? ang.toFixed(4) : "";
+    rows.push(`${i},${t},${aStr}`);
+  });
+  const trialStem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  download(rows.join("\n") + "\n", `${trialStem}_${fileSuffix}.csv`, "text/csv");
+  status(`Exported angle CSV: ${modeDesc} (${angles.length} frames).`);
+}
+
+function exportCombinedAnalysesCsv() {
+  if (!trial) {
+    status("Load a trial before exporting analyses CSV.", true);
+    return;
+  }
+  const rate = trial.rate_hz > 0 ? trial.rate_hz : 100.0;
+  const rows = ["frame,time_s,distance_m,angle_deg"];
+  const nFrames = trial.xyz ? trial.xyz.length : Math.max(distances.length, angles.length);
+  for (let i = 0; i < nFrames; i++) {
+    const t = (i / rate).toFixed(5);
+    const d = distances[i];
+    const a = angles[i];
+    const dStr = Number.isFinite(d) ? d.toFixed(6) : "";
+    const aStr = Number.isFinite(a) ? a.toFixed(4) : "";
+    rows.push(`${i},${t},${dStr},${aStr}`);
+  }
+  const trialStem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  download(rows.join("\n") + "\n", `${trialStem}_analyses_combined.csv`, "text/csv");
+  status(`Exported combined analyses CSV (${nFrames} frames: distance + angle).`);
+}
+
+function exportPlotCsv(plotId = "plot1") {
+  if (!trial) {
+    status("Load a trial before exporting plot CSV.", true);
+    return;
+  }
+  const modeSelect = $(`${plotId}-mode`);
+  const mode = modeSelect ? modeSelect.value : "distance";
+  if (mode === "distance") {
+    exportDistanceCsv();
+  } else if (mode === "angle-dot-product") {
+    exportAngleCsv();
+  } else {
+    exportSingleMarkerCSV(activeMarkerIndex);
+  }
 }
 
 function saveStandaloneHtmlSnapshot() {
