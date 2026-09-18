@@ -32,12 +32,9 @@
 ## ⚡ Install Now
 
 ```bash
-git clone https://github.com/paulopreto/mkvis3d
+git clone https://github.com/vaila-multimodaltoolbox/mkvis3d
 cd mkvis3d
-uv sync
-uv run mkvis3d gui
-# Or use the direct script:
-python mkvis3d.py
+uv run mkvis3d.py
 ```
 
 See [INSTRUCTIONS.md](INSTRUCTIONS.md) for complete operational guides, CLI commands, and integration with **vailá**.
