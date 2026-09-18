@@ -1,13 +1,15 @@
-# Session Handoff: run tests and fix LCS apply modal
+# Session Handoff: Export Distance and Angle Analyses to CSV
 - **Status:** Completed
 - **Current State:**
-  - Full suite green: `uv run pytest -q` → **278 passed**.
-  - Bug fixed in `openbiomech/viewer.js`: **Apply Reference System** now closes the LCS modal on success (same pattern as Filter Apply / LCS Reset). `applyReferenceSystem` returns `false` on invalid basis so the modal stays open for correction.
+  - Added dedicated UI buttons for Distance and Angle CSV export in sidebar panels (`#btn-distance-export-csv`, `#btn-angle-export-csv`), plot window toolbars (`#btn-export-plot1-csv`, `#btn-export-plot2-csv`), and the File menu (`#action-export-distance-csv`, `#action-export-angle-csv`, `#action-export-combined-analyses-csv`, `#action-export-plot`).
+  - Implemented client-side CSV export functions in `openbiomech/viewer.js` (`exportDistanceCsv`, `exportAngleCsv`, `exportCombinedAnalysesCsv`, `exportPlotCsv`) and preserved angle metrics in `collectAnalysisResults()`.
+  - Added Python analysis computation and CSV export helpers in `openbiomech/kinematic_analysis.py` (`compute_distance_series`, `export_distance_csv`, `compute_vector_angle_series`, `export_angle_csv`, `export_analyses_csv`).
+  - Added deterministic unit tests in `tests/test_analyses_csv_export.py`. Full unit suite green: `uv run pytest -m "not browser" -q` -> 278 passed.
 - **What Worked:**
-  - Failures were only `tests/test_cross_browser.py` (chrome/chromium/firefox): `AssertionError: LCS modal should close after apply`.
-  - Root cause: `btn-apply-lcs` called `applyReferenceSystem` but never `closeLCSModal()`.
+  - Standardized CSV layout with `frame,time_s,distance_m` and `frame,time_s,angle_deg`.
+  - Contextual filename generation incorporating trial stem and marker names / mode.
+  - Integration of plot toolbar `[📥 CSV]` export dynamically detecting the active plot mode.
 - **Failed Approaches:**
-  - None beyond the initial failing run.
+  - None. (In test helper `create_synthetic_trial`, bounds check was added for small frame count).
 - **Open Questions & Next Steps:**
-  - User commits manually (no agent commit/push).
-  - Prior uncommitted work still present (venv rename, distance-hidden default, soccerfield curves, etc.).
+  - User commits manually (no agent git commit/push per repository guidelines).
