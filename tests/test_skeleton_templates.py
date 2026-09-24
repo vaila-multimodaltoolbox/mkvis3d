@@ -1,4 +1,4 @@
-"""Structural tests for the detailed MHR-70/Goliath skeleton maps."""
+"""Structural tests for the detailed MHR-70/Goliath skeleton maps (0-based pN)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def test_detailed_skeleton_connections_are_valid_and_unique(name, expected_point
     assert len(connections) == len(set(connections))
     for pair in connections:
         assert len(pair) == 2
-        assert all(1 <= int(point.removeprefix("p")) <= expected_points for point in pair)
+        assert all(0 <= int(point.removeprefix("p")) < expected_points for point in pair)
 
 
 @pytest.mark.parametrize("name", ["sam3dinov3_mhr70", "sapiens2_goliath308"])
@@ -30,25 +30,25 @@ def test_detailed_models_include_neck_shoulders_elbow_planes_and_fingers(name):
     edges = {frozenset(pair) for pair in template["connections"]}
 
     required = [
-        ("p70", "p1"),  # neck to face, never ear to shoulder
-        ("p70", "p68"),
-        ("p70", "p69"),
-        ("p68", "p6"),
-        ("p7", "p69"),  # four-point shoulder girdle
+        ("p69", "p0"),  # neck to face, never ear to shoulder
+        ("p69", "p67"),
+        ("p69", "p68"),
+        ("p67", "p5"),
+        ("p6", "p68"),  # four-point shoulder girdle
+        ("p7", "p63"),
+        ("p7", "p65"),
+        ("p63", "p65"),  # left elbow plane
         ("p8", "p64"),
         ("p8", "p66"),
-        ("p64", "p66"),  # left elbow plane
-        ("p9", "p65"),
-        ("p9", "p67"),
-        ("p65", "p67"),  # right elbow plane
-        ("p63", "p46"),
-        ("p46", "p45"),
-        ("p42", "p25"),
-        ("p25", "p24"),  # both hands/fingers
+        ("p64", "p66"),  # right elbow plane
+        ("p62", "p45"),
+        ("p45", "p44"),
+        ("p41", "p24"),
+        ("p24", "p23"),  # both hands/fingers
     ]
     assert all(frozenset(pair) in edges for pair in required)
+    assert frozenset(("p3", "p5")) not in edges
     assert frozenset(("p4", "p6")) not in edges
-    assert frozenset(("p5", "p7")) not in edges
 
 
 @pytest.mark.parametrize(
@@ -175,31 +175,31 @@ def test_soccerfield_kiki49_connections_are_valid():
     assert len(connections) == len({frozenset(p) for p in connections})
     for pair in connections:
         assert len(pair) == 2
-        assert all(1 <= int(point.removeprefix("p")) <= 49 for point in pair)
+        assert all(0 <= int(point.removeprefix("p")) < 49 for point in pair)
 
     edges = {frozenset(pair) for pair in connections}
     # Goal posts, crossbar, net depth, corner flag masts
     required = [
+        ("p32", "p34"),
         ("p33", "p35"),
-        ("p34", "p36"),
-        ("p35", "p36"),
+        ("p34", "p35"),
+        ("p32", "p36"),
         ("p33", "p37"),
-        ("p34", "p38"),
-        ("p37", "p38"),
+        ("p36", "p37"),
+        ("p40", "p42"),
         ("p41", "p43"),
-        ("p42", "p44"),
-        ("p43", "p44"),
+        ("p42", "p43"),
+        ("p40", "p44"),
         ("p41", "p45"),
-        ("p42", "p46"),
-        ("p45", "p46"),
-        ("p1", "p39"),
-        ("p6", "p40"),
-        ("p25", "p47"),
-        ("p30", "p48"),
+        ("p44", "p45"),
+        ("p0", "p38"),
+        ("p5", "p39"),
+        ("p24", "p46"),
+        ("p29", "p47"),
     ]
     assert all(frozenset(pair) in edges for pair in required)
     # No diamond approximation of the center circle (drawn procedurally)
-    for diamond in (("p15", "p31"), ("p31", "p16"), ("p16", "p32"), ("p32", "p15")):
+    for diamond in (("p14", "p30"), ("p30", "p15"), ("p15", "p31"), ("p31", "p14")):
         assert frozenset(diamond) not in edges
 
 
@@ -212,4 +212,3 @@ def test_soccerfield_kiki49_matches_custom_c3d_labels():
     template = json.loads((TEMPLATES / "soccerfield_kiki49.json").read_text())
     trial = read_c3d_native(c3d_path)
     assert list(trial.labels) == template["keypoints"]
-

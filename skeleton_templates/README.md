@@ -42,4 +42,4 @@ For seamless backward compatibility with existing tests and scripts:
 
 ## Convention
 
-Every connection pair ["pA", "pB"] references the **1-based marker index** p1..pN in the wide reconstruction CSV (frame, p1_x, p1_y, p1_z, ...).
+Every connection pair ["pA", "pB"] references the **0-based marker index** p0..p(N-1) in the wide reconstruction CSV (frame, p0_x, p0_y, p0_z, ...). Legacy 1-based templates (p1..pN, no "0-based" note, no p0) are still auto-detected by the viewer, `openbiomech.skeleton` and the Blender export.

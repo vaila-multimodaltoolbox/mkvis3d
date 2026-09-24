@@ -1,7 +1,7 @@
 """Reader and writer for wide per-marker CSV/.3d formats.
 
 Supports:
-- Legacy vailá `rec3d` numbered marker convention: `frame, p1_x, p1_y, p1_z, ...`
+- Legacy vailá `rec3d` numbered marker convention: `frame, p0_x, p0_y, p0_z, ...` (0-based since vailá 0.4.5)
 - Generic named marker conventions: `frame, nose_x, nose_y, nose_z, ...`
 - Diverse separators: underscore (`_`), dot (`.`), colon (`:`), space (` `),
   dash (`-`), slash (`/`), or bracketed coordinate notations like `Marker[X]`.
@@ -53,7 +53,7 @@ def _parse_column_axis(col: str) -> tuple[str, str] | None:
 
     # 3. Standalone axis: x, y, z
     if col_str.lower() in ("x", "y", "z"):
-        return "p1", col_str.lower()
+        return "p0", col_str.lower()
 
     # 4. Trailing axis letter without separator: markerX, markerY, markerZ
     m = re.match(r"^(.*?)([xyzXYZ])$", col_str)
@@ -135,7 +135,7 @@ def _normalize_header(df: pd.DataFrame) -> pd.DataFrame:
 def read_wide_csv(path: str | Path | io.StringIO, *, rate_hz: float = 100.0) -> MarkerTrial:
     """Load a wide CSV (or `.3d`, same format) with arbitrary marker headers into a MarkerTrial.
 
-    Supports arbitrary marker names (e.g. `nose_x, nose_y, nose_z` or `p1_x, p1_y, p1_z`),
+    Supports arbitrary marker names (e.g. `nose_x, nose_y, nose_z` or `p0_x, p0_y, p0_z`),
     various coordinate suffixes (`_x`, `.x`, `:x`, `[x]`, etc.), multiple delimiters,
     and multi-line headers.
 
@@ -205,7 +205,7 @@ def read_wide_csv(path: str | Path | io.StringIO, *, rate_hz: float = 100.0) -> 
 
 
 def write_wide_csv(trial: MarkerTrial, path: str | Path) -> None:
-    """Export MarkerTrial to wide CSV format (frame, p1_x, p1_y, p1_z, ...)."""
+    """Export MarkerTrial to wide CSV format (frame, p0_x, p0_y, p0_z, ...)."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     n_frames = trial.n_frames

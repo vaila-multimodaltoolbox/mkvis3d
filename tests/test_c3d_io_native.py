@@ -66,7 +66,7 @@ def test_native_parameter_section_matches_fixture(rec3d_c3d):
     assert float(_param(point, "RATE").value[0]) == 100.0
     assert float(_param(point, "SCALE").value[0]) == -1.0
     assert int(_param(point, "FRAMES").value[0]) == 631
-    assert _param(point, "LABELS").value[:3] == ["p1", "p2", "p3"]
+    assert _param(point, "LABELS").value[:3] == ["p0", "p1", "p2"]
     assert len(_param(point, "LABELS").value) == 70
     assert int(_param(groups["ANALOG"], "USED").value[0]) == 0
 

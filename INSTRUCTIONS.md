@@ -80,7 +80,7 @@ python mkvis3d.py
 ### Dual-Index Engine
 The viewer (`openbiomech/viewer.js`) and Python backend (`openbiomech/skeleton.py`) transparently detect:
 - **0-based indexing** (`p0..p(N-1)`): Used by vailá wide CSV exports (`p0_x, p0_y, ...`).
-- **1-based indexing** (`p1..pN`): Used by legacy templates and C3D marker indices.
+- **1-based indexing** (`p1..pN`): Legacy templates and pre-0.4.5 vailá exports (all bundled templates and `data/` fixtures are now 0-based).
 - **Semantic names**: Labels like `Nose`, `Left_Shoulder` resolve case-insensitively with hyphen/underscore normalization.
 
 ---

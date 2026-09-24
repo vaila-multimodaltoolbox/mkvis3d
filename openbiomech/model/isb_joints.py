@@ -15,7 +15,7 @@ convention with published variants and, per
 `../../loops/openbiomech-python-prototype-loop.md`'s Terminal States
 ("blocked"), is not something this loop guesses — it needs a human
 decision plus anatomically-labelled markers (the golden fixture only has
-generic `p1..p70` labels, not e.g. `LFEP`/`RANK`), neither of which exist
+generic `p0..p69` labels, not e.g. `LFEP`/`RANK`), neither of which exist
 yet. `segment.py` already documents the same deferral for the third
 JCS-defining landmark.
 """

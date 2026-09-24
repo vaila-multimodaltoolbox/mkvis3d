@@ -28,7 +28,7 @@ def test_generate_blender_python_script():
     assert "scene.render.fps = 100" in script
     assert "scene.frame_end = 631" in script
     assert 'f"OB_{label}"' in script
-    assert '"p1"' in script
+    assert '"p0"' in script
     assert "setup_openbiomech_scene()" in script
     assert "Bone_" in script
 
@@ -52,8 +52,8 @@ def test_export_bvh(tmp_path):
     assert res.exists()
     content = res.read_text(encoding="utf-8")
     assert "HIERARCHY" in content
-    assert "ROOT p1" in content
-    assert "ROOT p70" in content
+    assert "ROOT p0" in content
+    assert "ROOT p69" in content
     assert "MOTION" in content
     assert "Frames: 631" in content
 
@@ -82,7 +82,7 @@ def test_export_bvh_converts_isb_axes_to_bvh_up_axes(tmp_path):
 def test_export_bvh_matches_golden_vaila_bvh_axes(tmp_path):
     """`data/rec3d_20260826_121305.bvh` is the same trial exported by vailá's
     own (already Blender-correct) BVH writer. Our export must reproduce its
-    axis convention on marker p1's first frame, not just be internally
+    axis convention on marker p0's first frame, not just be internally
     consistent."""
 
     def first_motion_xyz(path: Path) -> tuple[float, float, float]:

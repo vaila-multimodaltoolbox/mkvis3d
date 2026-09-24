@@ -1,4 +1,13 @@
 HIERARCHY
+ROOT p0
+{
+	OFFSET 0.000000 0.000000 0.000000
+	CHANNELS 3 Xposition Yposition Zposition
+	End Site
+	{
+		OFFSET 0.000000 0.000000 0.000000
+	}
+}
 ROOT p1
 {
 	OFFSET 0.000000 0.000000 0.000000
@@ -612,15 +621,6 @@ ROOT p68
 	}
 }
 ROOT p69
-{
-	OFFSET 0.000000 0.000000 0.000000
-	CHANNELS 3 Xposition Yposition Zposition
-	End Site
-	{
-		OFFSET 0.000000 0.000000 0.000000
-	}
-}
-ROOT p70
 {
 	OFFSET 0.000000 0.000000 0.000000
 	CHANNELS 3 Xposition Yposition Zposition

@@ -24,14 +24,14 @@ def test_c3d_header_matches_known_fixture_values(rec3d_c3d):
     assert trial.n_frames == EXPECTED_N_FRAMES
     assert trial.n_markers == EXPECTED_N_MARKERS
     assert trial.rate_hz == EXPECTED_RATE_HZ
-    assert trial.labels == tuple(f"p{i}" for i in range(1, EXPECTED_N_MARKERS + 1))
+    assert trial.labels == tuple(f"p{i}" for i in range(EXPECTED_N_MARKERS))
 
 
 def test_csv_matches_known_fixture_values(rec3d_csv):
     trial = read_wide_csv(rec3d_csv, rate_hz=EXPECTED_RATE_HZ)
     assert trial.n_frames == EXPECTED_N_FRAMES
     assert trial.n_markers == EXPECTED_N_MARKERS
-    assert trial.labels == tuple(f"p{i}" for i in range(1, EXPECTED_N_MARKERS + 1))
+    assert trial.labels == tuple(f"p{i}" for i in range(EXPECTED_N_MARKERS))
 
 
 def test_c3d_and_csv_agree_on_coordinates(rec3d_c3d, rec3d_csv):

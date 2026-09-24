@@ -22,7 +22,7 @@ def test_info_prints_trial_metadata_for_c3d(capsys):
     assert "frames:   631" in out
     assert "markers:  70" in out
     assert "rate:     100 Hz" in out
-    assert "p1" in out and "p70" in out
+    assert "p0" in out and "p69" in out
 
 
 def test_info_prints_trial_metadata_for_csv(capsys):
@@ -35,11 +35,11 @@ def test_info_prints_trial_metadata_for_csv(capsys):
 
 
 def test_segment_reports_length_and_axis(capsys):
-    rc = main(["segment", str(FIXTURE_C3D), "p1", "p5"])
+    rc = main(["segment", str(FIXTURE_C3D), "p0", "p4"])
 
     out = capsys.readouterr().out
     assert rc == 0
-    assert "segment:      p1-p5" in out
+    assert "segment:      p0-p4" in out
     assert "length mean:" in out
     assert "axis (frame 0" in out
 
@@ -75,9 +75,9 @@ def test_segment_matches_direct_model_computation():
 
     trial = read_c3d_native(FIXTURE_C3D)
     seg = Segment(
-        name="p1-p5",
-        proximal=landmark_from_trial(trial, "p1"),
-        distal=landmark_from_trial(trial, "p5"),
+        name="p0-p4",
+        proximal=landmark_from_trial(trial, "p0"),
+        distal=landmark_from_trial(trial, "p4"),
     )
     expected_mean = np.nanmean(seg.length())
 
@@ -86,7 +86,7 @@ def test_segment_matches_direct_model_computation():
 
     buf = io.StringIO()
     with redirect_stdout(buf):
-        rc = main(["segment", str(FIXTURE_C3D), "p1", "p5"])
+        rc = main(["segment", str(FIXTURE_C3D), "p0", "p4"])
     assert rc == 0
     assert f"{expected_mean:.4f}" in buf.getvalue()
 

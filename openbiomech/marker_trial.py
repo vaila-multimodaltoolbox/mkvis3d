@@ -46,7 +46,7 @@ class MarkerTrial:
     """A single motion-capture trial's marker trajectories and force platforms.
 
     Attributes:
-        labels: marker names, e.g. ("p1", "p2", ..., "p70").
+        labels: marker names, e.g. ("p0", "p1", ..., "p69").
         rate_hz: point sampling frequency in Hz.
         xyz: (n_frames, n_markers, 3) float64 array, meters. NaN marks a
             missing/occluded sample for that marker at that frame.

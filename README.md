@@ -304,7 +304,7 @@ Selenium.
 
 `data/` holds one real `vailá` `rec3d` export in four parallel formats (same
 trial): `.csv`/`.3d` (wide per-marker CSV, identical to each other), `.bvh`,
-and `_m.c3d` (binary C3D, 70 markers `p1..p70`, 631 frames, 100 Hz, no
+and `_m.c3d` (binary C3D, 70 markers `p0..p69`, 631 frames, 100 Hz, no
 analog channels), plus `pilot0102_squat03.c3d` (a force-plate trial used to
 test the inverse-dynamics/GRF pipeline). This is the golden fixture that
 cross-validates the C3D reader against the CSV — see

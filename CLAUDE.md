@@ -78,9 +78,9 @@ uv run ty check               # type check
 
 `data/` holds one real vailá `rec3d` export in four parallel formats (same
 trial): `.csv`/`.3d` (wide per-marker CSV, identical to each other), `.bvh`,
-and `_m.c3d` (binary C3D, 70 markers `p1..p70`, 631 frames, 100 Hz, no analog
+and `_m.c3d` (binary C3D, 70 markers `p0..p69`, 631 frames, 100 Hz, no analog
 channels). This is the golden fixture used to cross-validate the C3D reader
-against the CSV — see `tests/test_c3d_io_golden.py`. Do not modify these
+against the CSV — see `tests/test_c3d_io_golden.py` (labels relabelled 1-based `p1..p70` to 0-based `p0..p69` on 2026-09-24 to match vailá 0.4.5; coordinates unchanged). Do not modify these
 files; do not add large binary fixtures without checking size.
 
 ## Conventions
