@@ -9,6 +9,7 @@ import pytest
 from openbiomech.csv_io import (
     _point_numbers_from_columns,
     read_wide_csv,
+    write_all_trajectories_csv,
     write_wide_csv,
 )
 from openbiomech.marker_trial import MarkerTrial
@@ -126,6 +127,27 @@ def test_write_and_read_roundtrip(tmp_path: Path):
     assert loaded_trial.labels == orig_trial.labels
     assert loaded_trial.rate_hz == orig_trial.rate_hz
     np.testing.assert_allclose(loaded_trial.xyz, orig_trial.xyz)
+
+
+def test_write_all_trajectories_csv_roundtrip(tmp_path: Path):
+    xyz = np.array(
+        [[[1.0, 2.0, 3.0], [np.nan, np.nan, np.nan]], [[4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]],
+        dtype=np.float64,
+    )
+    trial = MarkerTrial(
+        labels=("M1", "M2"),
+        rate_hz=50.0,
+        xyz=xyz,
+        residuals=np.zeros((2, 2), dtype=np.float64),
+    )
+    path = tmp_path / "all.csv"
+    write_all_trajectories_csv(trial, path)
+    loaded = read_wide_csv(path)
+    assert loaded.labels == ("M1", "M2")
+    assert loaded.rate_hz == pytest.approx(50.0)
+    np.testing.assert_allclose(loaded.xyz[0, 0], [1.0, 2.0, 3.0])
+    assert not np.isfinite(loaded.xyz[0, 1]).any()
+    np.testing.assert_allclose(loaded.xyz[1], [[4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
 
 
 def test_read_wide_csv_invalid_columns():

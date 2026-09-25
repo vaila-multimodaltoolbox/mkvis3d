@@ -216,3 +216,25 @@ def write_wide_csv(trial: MarkerTrial, path: str | Path) -> None:
         cols[f"{label}_z"] = trial.xyz[:, i, 2]
     df = pd.DataFrame(cols)
     df.to_csv(p, index=False)
+
+
+def write_all_trajectories_csv(trial: MarkerTrial, path: str | Path) -> None:
+    """Write every marker as a wide CSV: frame, time, and label_x/y/z.
+
+    ``time`` is seconds from the first frame so ``read_wide_csv`` reloads the
+    sampling rate. Missing samples are empty cells.
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    n_frames = int(trial.n_frames)
+    rate = float(trial.rate_hz)
+    xyz = np.asarray(trial.xyz, dtype=np.float64)
+    cols: dict[str, np.ndarray] = {
+        "frame": np.arange(n_frames, dtype=np.int64),
+        "time": np.arange(n_frames, dtype=np.float64) / rate,
+    }
+    for i, label in enumerate(trial.labels):
+        cols[f"{label}_x"] = xyz[:, i, 0]
+        cols[f"{label}_y"] = xyz[:, i, 1]
+        cols[f"{label}_z"] = xyz[:, i, 2]
+    pd.DataFrame(cols).to_csv(p, index=False, na_rep="")

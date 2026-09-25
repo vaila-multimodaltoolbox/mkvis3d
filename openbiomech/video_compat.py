@@ -269,3 +269,48 @@ def pick_local_video_path() -> Path | None:
         if path.is_file():
             return path.resolve()
     return None
+
+
+def pick_save_path(default_path: Path, *, title: str = "Save As") -> Path | None:
+    """Native save dialog on the server machine (zenity / kdialog). Loopback GUI only.
+
+    Returns the chosen path, or None when the user cancels or no dialog tool exists.
+    A cancel does not fall through to a second dialog.
+    """
+    default_path = default_path.expanduser()
+    candidates = [
+        [
+            "zenity",
+            "--file-selection",
+            "--save",
+            "--confirm-overwrite",
+            f"--title={title}",
+            f"--filename={default_path}",
+            "--file-filter=C3D and CSV | *.c3d *.csv *.C3D *.CSV",
+        ],
+        [
+            "kdialog",
+            "--getsavefilename",
+            str(default_path),
+            "C3D and CSV (*.c3d *.csv)",
+            "--title",
+            title,
+        ],
+    ]
+    for cmd in candidates:
+        if not shutil.which(cmd[0]):
+            continue
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if proc.returncode != 0:
+            return None
+        chosen = (proc.stdout or "").strip().splitlines()
+        if not chosen:
+            return None
+        path = Path(chosen[0].strip()).expanduser()
+        if path.name in {"", ".", ".."} or not path.parent.is_dir():
+            return None
+        return path
+    return None

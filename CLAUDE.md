@@ -48,6 +48,24 @@ code already tested in production by the sibling project
 The sequencing above is governed by
 [`loops/openbiomech-python-prototype-loop.md`](loops/openbiomech-python-prototype-loop.md).
 
+## Auxiliary: soccer-field keypoint dataset
+
+`openbiomech/soccer_field/` is an auxiliary dataset tool, not a biomech crate
+and not part of the Rust port. It builds the `kiki49` YOLO-Pose dataset
+(49 keypoints of vailá `models/soccerfield_kiki.csv`, vendored as
+`soccer_field/kiki49.csv`) from the FIFA sources on
+`/media/preto/Expansion/FIFA/dataset_vaila_fifa` plus the vailá goal-point
+clicks in `/media/preto/Paulo/processados`. The training dataset lives on the
+HDD at `/media/preto/Paulo/kiki49_dataset` (images copied, self-contained;
+never inside mkvis3d), for training later in vailá:
+
+```bash
+uv run python -m openbiomech.soccer_field.build_kiki49 [--sources ...] [--limit N] [--out DIR]
+```
+
+It needs the `soccer` dependency group (`opencv-python-headless`, on by
+default). Tests: `tests/test_soccer_field_*.py` (synthetic cameras, no drive).
+
 ## Reference sources
 
 `vendor/` is gitignored scratch space for read-only reference checkouts. The

@@ -26,6 +26,13 @@ dev = [
     "selenium>=4.48.0",
     "ty>=0.0.16",
 ]
+# Auxiliary soccer-field keypoint dataset tooling (openbiomech/soccer_field/).
+soccer = [
+    "opencv-python-headless>=4.10",
+]
+
+[tool.uv]
+default-groups = ["dev", "soccer"]
 
 [build-system]
 requires = ["hatchling"]

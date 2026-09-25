@@ -17,6 +17,7 @@ from openbiomech.cli import main
 from openbiomech.marker_trial import MarkerTrial
 from openbiomech.project_io import read_vaila_project
 from openbiomech.trial_io import load_trial
+from openbiomech.video_compat import pick_save_path
 from openbiomech.viewer import create_server, render_viewer, trial_payload
 
 
@@ -438,6 +439,146 @@ def test_gui_export_c3d_save_as_and_convert_monocular(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_gui_save_as_writes_c3d_and_csv_in_chosen_directory(tmp_path, monkeypatch):
+    source_dir = tmp_path / "source"
+    chosen_dir = tmp_path / "chosen"
+    source_dir.mkdir()
+    chosen_dir.mkdir()
+    trial = MarkerTrial(
+        labels=("M1", "M2"),
+        rate_hz=50.0,
+        xyz=np.array(
+            [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[1.5, 2.5, 3.5], [4.5, 5.5, 6.5]]],
+            dtype=np.float64,
+        ),
+        residuals=np.zeros((2, 2), dtype=np.float64),
+    )
+    payload = trial_payload(trial, "original.c3d")
+    server, url = create_server(
+        initial_payload=payload,
+        source_dir=source_dir,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    token = url.split("#")[1]
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        body = json.dumps(
+            {
+                "trial": payload,
+                "directory": str(chosen_dir),
+                "filename": "../../outside.c3d",
+            }
+        ).encode()
+        connection.request("POST", "/api/export/save_as", body=body, headers=headers)
+        response = connection.getresponse()
+        assert response.status == 200
+        written = json.loads(response.read())
+        c3d_path = chosen_dir / "outside.c3d"
+        csv_path = chosen_dir / "outside.csv"
+        assert written["directory"] == str(chosen_dir.resolve())
+        assert Path(written["c3d"]) == c3d_path.resolve()
+        assert Path(written["csv"]) == csv_path.resolve()
+        assert c3d_path.is_file() and csv_path.is_file()
+        assert not (source_dir / "outside.c3d").exists()
+        assert not (tmp_path / "outside.c3d").exists()
+        loaded_c3d = load_trial(c3d_path)
+        loaded_csv = load_trial(csv_path)
+        assert loaded_c3d.labels == ("M1", "M2")
+        assert loaded_csv.labels == ("M1", "M2")
+        assert loaded_csv.rate_hz == pytest.approx(50.0)
+        assert_allclose(loaded_c3d.xyz, trial.xyz)
+        assert_allclose(loaded_csv.xyz, trial.xyz)
+
+        csv_only = chosen_dir / "markers_only"
+        csv_only.mkdir()
+        connection.request(
+            "POST",
+            "/api/export/save_as",
+            body=json.dumps(
+                {"trial": payload, "directory": str(csv_only), "formats": ["csv"]}
+            ).encode(),
+            headers=headers,
+        )
+        csv_response = connection.getresponse()
+        assert csv_response.status == 200
+        csv_written = json.loads(csv_response.read())
+        assert "c3d" not in csv_written
+        assert (csv_only / "original.csv").is_file()
+        assert not (csv_only / "original.c3d").exists()
+
+        picked = chosen_dir / "from_dialog.c3d"
+
+        def fake_pick(default_path, *, title):
+            assert default_path.parent == source_dir
+            assert default_path.name == "original.c3d"
+            assert "C3D and CSV" in title
+            return picked
+
+        monkeypatch.setattr("openbiomech.viewer.pick_save_path", fake_pick)
+        connection.request(
+            "POST",
+            "/api/export/save_as",
+            body=json.dumps({"trial": payload}).encode(),
+            headers=headers,
+        )
+        dialog_response = connection.getresponse()
+        assert dialog_response.status == 200
+        dialog_written = json.loads(dialog_response.read())
+        assert Path(dialog_written["c3d"]) == picked.resolve()
+        assert (chosen_dir / "from_dialog.csv").is_file()
+
+        monkeypatch.setattr("openbiomech.viewer.pick_save_path", lambda *args, **kwargs: None)
+        connection.request(
+            "POST",
+            "/api/export/save_as",
+            body=json.dumps({"trial": payload, "formats": ["csv"]}).encode(),
+            headers=headers,
+        )
+        cancelled = connection.getresponse()
+        assert cancelled.status == 400
+        assert "cancelled" in json.loads(cancelled.read())["error"].lower()
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_pick_save_path_uses_native_dialog_once(tmp_path, monkeypatch):
+    calls = []
+
+    class Proc:
+        def __init__(self, returncode, stdout):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def fake_which(name):
+        return "/usr/bin/zenity" if name == "zenity" else None
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return Proc(0, f"{tmp_path / 'kept.c3d'}\n")
+
+    monkeypatch.setattr("openbiomech.video_compat.shutil.which", fake_which)
+    monkeypatch.setattr("openbiomech.video_compat.subprocess.run", fake_run)
+    chosen = pick_save_path(tmp_path / "trial.c3d", title="Save As — C3D and CSV")
+    assert chosen == tmp_path / "kept.c3d"
+    assert len(calls) == 1
+    assert calls[0][0] == "zenity"
+    assert "--save" in calls[0]
+    assert "--confirm-overwrite" in calls[0]
+
+    def cancel(cmd, **kwargs):
+        calls.append(cmd)
+        return Proc(1, "")
+
+    monkeypatch.setattr("openbiomech.video_compat.subprocess.run", cancel)
+    assert pick_save_path(tmp_path / "trial.c3d") is None
+    assert len(calls) == 2
 
 
 def test_cli_defaults_to_gui_when_no_args(monkeypatch):

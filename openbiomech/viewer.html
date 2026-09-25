@@ -1166,11 +1166,11 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       </div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Export & 3D Interchange</div>
-      <button type="button" class="dropdown-item" id="action-save-as-c3d">Save As (C3D)... <span class="shortcut-hint">Ctrl+Shift+S</span></button>
+      <button type="button" class="dropdown-item" id="action-save-as-c3d" title="Save the edited trial as C3D and a CSV of every marker into a folder you choose">Save As (C3D + CSV)... <span class="shortcut-hint">Ctrl+Shift+S</span></button>
       <button type="button" class="dropdown-item" id="action-export-c3d">Quick Save C3D (_edited.c3d)</button>
       <button type="button" class="dropdown-item" id="action-save-vaila">Save Complete Project (.vaila)...</button>
       <button type="button" class="dropdown-item" id="action-export-plot">Export Distance / Plot CSV...</button>
-      <button type="button" class="dropdown-item" id="action-export-all-csv">Export All Trajectories (CSV)...</button>
+      <button type="button" class="dropdown-item" id="action-export-all-csv" title="Save a CSV of every marker trajectory into a folder you choose">Export All Trajectories (CSV)...</button>
       <button type="button" class="dropdown-item" id="action-export-active-marker-csv">Export Active Marker (CSV)...</button>
       <button type="button" class="dropdown-item" id="action-import-replace-marker-csv">Import / Replace Marker Trajectory (CSV)...</button>
       <button type="button" class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</button>
@@ -2861,7 +2861,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           <p>mkvis3d supports industry-standard motion capture and biomechanical exchange formats:</p>
           <ul>
             <li><strong>C3D (.c3d):</strong> Binary standard preserving 3D point coordinates, analog channels, sampling frequencies, video sync frame ratios, and parameter groups (<code>POINT</code>, <code>ANALOG</code>, <code>FORCE_PLATFORM</code>). Supports both float32 and integer data formats across Little-Endian and Big-Endian architectures.
-              <br>• <strong>Save As (C3D)... (<span class="key-cap">Ctrl+Shift+S</span>):</strong> Prompts for a new target filename (preserving original file) with edited markers, gap-fills, and virtual points.
+              <br>• <strong>Save As (C3D + CSV)... (<span class="key-cap">Ctrl+Shift+S</span>):</strong> Opens a save dialog and writes the edited trial as C3D and a CSV of every marker into the folder you choose.
               <br>• <strong>Quick Save C3D:</strong> Quickly saves to <code>&lt;stem&gt;_edited.c3d</code>.
               <br>• <strong>Sample Trials Submenu:</strong> Built-in demonstration files are grouped in a compact flyout menu (<code>File ▾ 📁 Sample Trials ▸</code>).
             </li>
@@ -3218,7 +3218,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <tr><td><span class="key-cap">Shift + Drag</span></td><td>Pan 3D camera across scene</td></tr>
               <tr><td><span class="key-cap">Mouse Wheel</span></td><td>Zoom 3D camera in / out</td></tr>
               <tr><td><span class="key-cap">R</span> / <span class="key-cap">Home</span></td><td>Reset 3D camera and fit to subject</td></tr>
-              <tr><td><span class="key-cap">Ctrl + Shift + S</span></td><td><strong>Save As (C3D) with custom filename</strong></td></tr>
+              <tr><td><span class="key-cap">Ctrl + Shift + S</span></td><td><strong>Save As C3D and CSV of every marker into a chosen folder</strong></td></tr>
               <tr><td><span class="key-cap">Alt + K</span></td><td><strong>Open Segment Bases & Kinematics Modal</strong></td></tr>
               <tr><td><span class="key-cap">Alt + L</span></td><td>Open Reference System & Origin (LCS) Modal</td></tr>
               <tr><td><span class="key-cap">Alt + F</span></td><td>Open Signal Filtering & Gap Fill Modal</td></tr>

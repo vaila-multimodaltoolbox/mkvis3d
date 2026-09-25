@@ -1,15 +1,16 @@
-# Session Handoff: Export Distance and Angle Analyses to CSV
+# Session Handoff: File menu Save As for C3D and full CSV
 - **Status:** Completed
 - **Current State:**
-  - Added dedicated UI buttons for Distance and Angle CSV export in sidebar panels (`#btn-distance-export-csv`, `#btn-angle-export-csv`), plot window toolbars (`#btn-export-plot1-csv`, `#btn-export-plot2-csv`), and the File menu (`#action-export-distance-csv`, `#action-export-angle-csv`, `#action-export-combined-analyses-csv`, `#action-export-plot`).
-  - Implemented client-side CSV export functions in `openbiomech/viewer.js` (`exportDistanceCsv`, `exportAngleCsv`, `exportCombinedAnalysesCsv`, `exportPlotCsv`) and preserved angle metrics in `collectAnalysisResults()`.
-  - Added Python analysis computation and CSV export helpers in `openbiomech/kinematic_analysis.py` (`compute_distance_series`, `export_distance_csv`, `compute_vector_angle_series`, `export_angle_csv`, `export_analyses_csv`).
-  - Added deterministic unit tests in `tests/test_analyses_csv_export.py`. Full unit suite green: `uv run pytest -m "not browser" -q` -> 278 passed.
+  - File ▾ Save As (C3D + CSV)… and Ctrl+Shift+S open a native save dialog (zenity, then kdialog) and write both `<stem>.c3d` and `<stem>.csv` (every marker) into the folder the user picks.
+  - File ▾ Export All Trajectories (CSV)… uses the same Save As dialog and writes only the full-trajectory CSV there. It no longer drops the file in the browser download folder.
+  - Quick Save C3D still writes `_edited.c3d` beside the source file and downloads it.
+  - Endpoint: `POST /api/export/save_as` with `{trial, formats?, directory?, filename?}`. `directory` skips the dialog (tests). The filename stem cannot escape the chosen directory.
+  - CSV layout is `frame,time,<label>_x/y/z` via `write_all_trajectories_csv`. `time` lets `read_wide_csv` reload the rate. Missing samples are empty cells.
 - **What Worked:**
-  - Standardized CSV layout with `frame,time_s,distance_m` and `frame,time_s,angle_deg`.
-  - Contextual filename generation incorporating trial stem and marker names / mode.
-  - Integration of plot toolbar `[📥 CSV]` export dynamically detecting the active plot mode.
-- **Failed Approaches:**
-  - None. (In test helper `create_synthetic_trial`, bounds check was added for small frame count).
+  - `pick_save_path` in `openbiomech/video_compat.py`. A cancel does not open a second dialog.
+  - `save_trial_files` in `openbiomech/viewer.py`.
+  - Tests: `tests/test_application.py` (`test_gui_save_as_writes_c3d_and_csv_in_chosen_directory`, `test_pick_save_path_uses_native_dialog_once`) and `tests/test_csv_io.py::test_write_all_trajectories_csv_roundtrip`. `uv run pytest -q` on those plus the previous C3D save-as test passed.
+- **Failed Approaches:** None.
 - **Open Questions & Next Steps:**
-  - User commits manually (no agent git commit/push per repository guidelines).
+  - Pre-existing `test_viewer_html_js_contract` still fails (`btn-distance-export-csv` is not in `viewer.html`). Left untouched.
+  - The user commits and pushes manually (no agent git commit/push).

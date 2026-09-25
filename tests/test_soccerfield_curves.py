@@ -90,7 +90,9 @@ def kiki_points() -> dict[str, tuple[float, float, float]]:
     }
 
 
-def test_center_circle_radius_uses_y_only(kiki_points: dict[str, tuple[float, float, float]]) -> None:
+def test_center_circle_radius_uses_y_only(
+    kiki_points: dict[str, tuple[float, float, float]],
+) -> None:
     center = kiki_points["center_field"]
     top = kiki_points["center_circle_top"]
     radius = abs(top[1] - center[1])

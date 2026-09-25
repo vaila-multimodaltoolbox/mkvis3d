@@ -3163,24 +3163,36 @@ if (boot.server && $("action-shutdown")) {
   };
 }
 
+function allTrajectoriesCsvText() {
+  const header = ["frame", "time"];
+  trial.labels.forEach(lbl => {
+    header.push(`${lbl}_x`, `${lbl}_y`, `${lbl}_z`);
+  });
+  const rows = [header.join(",")];
+  const rate = trial.rate_hz > 0 ? trial.rate_hz : 100.0;
+  trial.xyz.forEach((framePts, f) => {
+    const row = [f, (f / rate).toFixed(5)];
+    framePts.forEach(pt => {
+      if (valid(pt)) row.push(pt[0], pt[1], pt[2]);
+      else row.push("", "", "");
+    });
+    rows.push(row.join(","));
+  });
+  return rows.join("\n") + "\n";
+}
+
+function downloadAllTrajectoriesCsv() {
+  if (!trial) {
+    status("Load a trial before exporting CSV.", true);
+    return;
+  }
+  const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[\\/]/g, "_");
+  download(allTrajectoriesCsvText(), `${stem}.csv`, "text/csv");
+  status(`Exported all trajectories to ${stem}.csv.`);
+}
+
 if ($("action-export-all-csv")) {
-  $("action-export-all-csv").onclick = () => {
-    if (!trial) return;
-    const header = ["frame", "time_s"];
-    trial.labels.forEach(lbl => {
-      header.push(`${lbl}_x`, `${lbl}_y`, `${lbl}_z`);
-    });
-    const rows = [header.join(",")];
-    trial.xyz.forEach((framePts, f) => {
-      const row = [f, (f / trial.rate_hz).toFixed(5)];
-      framePts.forEach(pt => {
-        if (valid(pt)) row.push(pt[0], pt[1], pt[2]);
-        else row.push("", "", "");
-      });
-      rows.push(row.join(","));
-    });
-    download(rows.join("\n") + "\n", `${trial.name}_trajectories.csv`, "text/csv");
-  };
+  $("action-export-all-csv").onclick = () => saveAsFiles(["csv"]);
 }
 
 // Sample file loaders
@@ -5548,20 +5560,42 @@ async function exportEditedC3D(customFilename = null) {
   }
 }
 
-async function saveAsC3D() {
+async function saveAsFiles(formats) {
   if (!trial) {
-    status("Load a trial before saving as C3D.", true);
+    status("Load a trial before saving.", true);
     return;
   }
-  const stem = (trial.name || "trial").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const defaultName = `${stem}_edited.c3d`;
-  const name = window.prompt("Save As (C3D) - enter new filename to preserve original trial:", defaultName);
-  if (!name || !name.trim()) return;
-  let finalName = name.trim();
-  if (!finalName.toLowerCase().endsWith(".c3d")) {
-    finalName += ".c3d";
+  const wantC3d = formats.includes("c3d");
+  const wantCsv = formats.includes("csv");
+  const label = wantC3d && wantCsv ? "C3D and CSV" : wantC3d ? "C3D" : "CSV";
+  if (!boot.server) {
+    if (wantCsv) downloadAllTrajectoriesCsv();
+    if (wantC3d) {
+      status("Choosing a folder for C3D requires the local GUI session.", true);
+    }
+    return;
   }
-  await exportEditedC3D(finalName);
+  status(`Choose where to save the ${label}...`);
+  try {
+    const response = await fetch("/api/export/save_as", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ trial, formats })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Save As failed.");
+    const names = [data.c3d, data.csv].filter(Boolean).map(path => path.split(/[/\\]/).pop());
+    status(`Saved ${names.join(" and ")} in ${data.directory}`);
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+async function saveAsC3D() {
+  await saveAsFiles(["c3d", "csv"]);
 }
 
 if ($("action-save-as-c3d")) $("action-save-as-c3d").onclick = saveAsC3D;
