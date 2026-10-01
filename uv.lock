@@ -94,7 +94,7 @@ wheels = [
 
 [[package]]
 name = "mkvis3d"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "ezc3d" },

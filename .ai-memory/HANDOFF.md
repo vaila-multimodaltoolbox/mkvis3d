@@ -1,20 +1,6 @@
-# Session Handoff: Export and Save As for Edited C3D, CSV, 3D, and Vaila
+# Session Handoff: Windows video file dialog
 - **Status:** Completed
-- **Current State:**
-  - File menu supports comprehensive Save As and Quick Save actions for all supported formats: C3D (`.c3d`), CSV (`.csv`), 3D (`.3d`), and Vaila (`.vaila`), as well as dual `(C3D + CSV)` save.
-  - When opening a `.vaila` project or `.c3d` file and performing modifications (e.g. adding virtual landmarks, DeLeva center of mass, filtering, deleting markers), saving to C3D now succeeds without ezc3d dimension or analog mismatches.
-  - Quick Save CSV endpoint (`/api/export/csv`) allows saving `_edited.csv` directly beside source data and downloading it in browser.
-  - Added dedicated File menu items and actions: `Save As C3D (.c3d)...`, `Save As CSV (.csv)...`, `Save As 3D (.3d)...`, `Save As (C3D + CSV)...`, `Quick Save CSV (_edited.csv)`, and `Export All Trajectories (.3d)...`.
-  - Added missing DOM button IDs in `viewer.html` for distance/angle/plot CSV exports (`btn-distance-export-csv`, `btn-angle-export-csv`, etc.), resolving all contract tests.
-  - Set `#menu-file > .dropdown-menu` with `max-height: calc(100vh - 42px)` and scrolling to guarantee all menu items fit within standard viewport dimensions during automated browser tests.
-- **What Worked:**
-  - `openbiomech/c3d_io/writer.py`: Adjusted `camera_masks` shape `(7, trial.n_markers, trial.n_frames)` and descriptions to prevent ezc3d `ValueError` on marker addition/removal with templates; cleared analog parameters when edited trials have no analog channels; included fallback to writing clean C3D if template injection fails.
-  - `openbiomech/viewer.py`: Extended `export_stem()` for `.vaila`; added `c3d`, `csv`, `3d`, and `vaila` export to `save_trial_files()`; updated `/api/export/save_as` and `/api/export/csv`.
-  - `openbiomech/viewer.js` & `viewer.html`: Wire UI to save in any selected format with native dialog or browser download fallback.
-  - `openbiomech/video_compat.py`: Added `*.3d` and `*.vaila` to `pick_save_path()` file patterns.
-  - Tests: `tests/test_save_as_export_formats.py` (5 tests covering virtual point C3D save, marker deletion, all extensions, all-format save, GUI Save As after editing `.vaila`), `tests/test_analyses_csv_export.py` (9 passed), `tests/test_cli.py` (12 passed), full suite (318 passed, 4 skipped in 103.92s).
-- **Failed Approaches:**
-  - Directly passing raw modified points to an ezc3d template without reshaping `camera_masks` failed because ezc3d strictly asserts `meta_points['camera_masks'].shape[1] == trial.n_markers`. Reshaping and zero-padding camera masks resolved it.
-  - Passing `source_path` when opening `.vaila` in `cli.py` caused `test_direct_vaila_project_restores_complete_gui_state` to fail because `test_cli.py` explicitly asserted `source_path is None` when `initial_project` is provided. Keeping `source_path=args.path if initial_project is None else None` satisfied the contract.
-- **Open Questions & Next Steps:**
-  - Git versioning: As per instructions, no `git add`, `git commit`, or `git push` was performed. Commit and push should be done manually by the user.
+- **Current State:** On Windows, `pick_local_video_path` and `pick_save_path` in `openbiomech/video_compat.py` open a WinForms dialog through `powershell -STA`, centered on screen. Linux still uses zenity/kdialog. Debug instrumentation has been removed. Load Video starts in the trial directory when one is open.
+- **What Worked:** The Windows machine has no zenity/kdialog. PowerShell WinForms `OpenFileDialog` is the dialog. An owner form placed at (−32000, −32000) left the picker off-screen and blocked the request; `CenterScreen` with a topmost owner made the dialog visible. The user confirmed Load Video works after restarting `uv run mkvis3d.py`. Tests: `test_pick_local_video_path_uses_windows_dialog` and `test_pick_save_path_uses_native_dialog_once`.
+- **Failed Approaches:** The first Windows dialog used an off-screen owner so `ShowDialog` ran but the window was not visible. Three such PowerShell processes stayed blocked until they were stopped.
+- **Open Questions & Next Steps:** Package version is `0.0.2` in `pyproject.toml`, `uv.lock`, the `openbiomech.__version__` fallback, and `README.md`. Save As uses the same centered Windows dialog and was not clicked in this session. No git commit or tag was made.

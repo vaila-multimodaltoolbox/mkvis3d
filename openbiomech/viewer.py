@@ -594,13 +594,15 @@ def create_server(
                     # Native dialog on the host — no body required.
                     if length > 0:
                         self.rfile.read(length)
-                    chosen = pick_local_video_path()
+                    chosen = pick_local_video_path(
+                        source_dir if source_dir is not None and source_dir.is_dir() else None
+                    )
                     if chosen is None:
                         self.send_bytes(
                             400,
                             json.dumps(
                                 {
-                                    "error": "No video selected (or zenity/kdialog unavailable)",
+                                    "error": "No video selected",
                                     "suggestion": ffmpeg_suggestion("input.mp4"),
                                 }
                             ).encode(),

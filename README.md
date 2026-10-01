@@ -1,8 +1,10 @@
 # mkvis3d — OpenBiomech
 
-**Package version:** `0.0.1` (see `[project].version` in `pyproject.toml`). **Python:** 3.12.x (pinned in-repo for `uv`).
+**Package version:** `0.0.2` (see `[project].version` in `pyproject.toml`). **Python:** 3.12.x (pinned in-repo for `uv`).
 
-**Last updated:** 2026-09-17 | **Full Guide:** [INSTRUCTIONS.md](INSTRUCTIONS.md)
+**Last updated:** 2026-10-01 | **Full Guide:** [INSTRUCTIONS.md](INSTRUCTIONS.md)
+
+v0.0.2: Load Video on Windows uses the native file dialog. Linux keeps zenity/kdialog.
 
 <div align="center">
   <table>

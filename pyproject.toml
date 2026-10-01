@@ -1,6 +1,6 @@
 [project]
 name = "mkvis3d"
-version = "0.0.1"
+version = "0.0.2"
 description = "OpenBiomech (mkvis3d) — open-source Visual3D/Mokka alternative. Python prototype phase; see docs/architecture.md for the long-term Rust architecture and CLAUDE.md for current status."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

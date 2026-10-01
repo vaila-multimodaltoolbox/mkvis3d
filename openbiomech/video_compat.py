@@ -7,9 +7,11 @@ video is not browser-safe, re-encode once to a sibling cache file.
 
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 # Codecs HTML5 video can typically play without plugins (Chrome/Firefox/Edge).
@@ -234,8 +236,118 @@ def ffmpeg_suggestion(source_name: str = "input.mp4") -> str:
     )
 
 
-def pick_local_video_path() -> Path | None:
-    """Native file dialog on the server machine (zenity / kdialog). Loopback GUI only."""
+def _ps_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _windows_file_dialog(
+    *,
+    save: bool,
+    title: str,
+    file_filter: str,
+    initial: Path | None = None,
+) -> tuple[bool, Path | None]:
+    """WinForms dialog via Windows PowerShell. ``(available, path)``.
+
+    ``available`` is false only when PowerShell itself is missing, so the caller
+    can fall through to zenity/kdialog. A cancel or a failed dialog does not.
+    """
+    exe = shutil.which("powershell") or shutil.which("pwsh")
+    if exe is None:
+        return False, None
+
+    initial_dir = ""
+    file_name = ""
+    if initial is not None:
+        initial = Path(initial).expanduser()
+        if initial.is_dir():
+            initial_dir = str(initial)
+        else:
+            file_name = initial.name
+            initial_dir = str(initial.parent)
+
+    dialog = "SaveFileDialog" if save else "OpenFileDialog"
+    lines = [
+        "$ErrorActionPreference = 'Stop'",
+        "Add-Type -AssemblyName System.Windows.Forms",
+        "Add-Type -AssemblyName System.Drawing",
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+        "$owner = New-Object System.Windows.Forms.Form",
+        "$owner.TopMost = $true",
+        "$owner.StartPosition = 'CenterScreen'",
+        "$owner.FormBorderStyle = 'FixedToolWindow'",
+        "$owner.ShowInTaskbar = $false",
+        "$owner.Opacity = 0.01",
+        "$owner.Size = New-Object System.Drawing.Size(200, 200)",
+        "$owner.Text = 'OpenBiomech'",
+        "$owner.Show()",
+        "$owner.Activate()",
+        f"$d = New-Object System.Windows.Forms.{dialog}",
+        f"$d.Title = {_ps_literal(title)}",
+        f"$d.Filter = {_ps_literal(file_filter)}",
+        "$d.RestoreDirectory = $true",
+    ]
+    if initial_dir:
+        lines.append(f"$d.InitialDirectory = {_ps_literal(initial_dir)}")
+    if file_name:
+        lines.append(f"$d.FileName = {_ps_literal(file_name)}")
+    if save:
+        lines.append("$d.OverwritePrompt = $true")
+        lines.append("$d.AddExtension = $true")
+    lines.extend(
+        [
+            "$result = $d.ShowDialog($owner)",
+            "$owner.Close()",
+            "$owner.Dispose()",
+            "if ($result -eq [System.Windows.Forms.DialogResult]::OK) {",
+            "  [Console]::Out.WriteLine($d.FileName)",
+            "}",
+        ]
+    )
+    encoded = base64.b64encode("\n".join(lines).encode("utf-16le")).decode("ascii")
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        proc = subprocess.run(
+            [exe, "-STA", "-NoProfile", "-EncodedCommand", encoded],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=600,
+            check=False,
+            creationflags=creationflags,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return True, None
+
+    stdout = (proc.stdout or "").strip()
+    if proc.returncode != 0 or not stdout:
+        return True, None
+    path = Path(stdout.splitlines()[-1].strip().strip('"'))
+    if save:
+        if path.name in {"", ".", ".."}:
+            return True, None
+        return True, path
+    if path.is_file():
+        return True, path.resolve()
+    return True, None
+
+
+def pick_local_video_path(start_dir: Path | None = None) -> Path | None:
+    """Native file dialog on the server machine. Loopback GUI only."""
+    if sys.platform == "win32":
+        available, chosen = _windows_file_dialog(
+            save=False,
+            title="Load Reference Video",
+            file_filter=(
+                "Video files (*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v)|"
+                "*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v;"
+                "*.MP4;*.MOV;*.MKV;*.AVI;*.WEBM;*.M4V"
+            ),
+            initial=start_dir,
+        )
+        if available:
+            return chosen
     filters_zenity = (
         "Video files | *.mp4 *.MP4 *.mov *.MOV *.mkv *.MKV *.avi *.AVI *.webm *.WEBM *.m4v *.M4V"
     )
@@ -272,12 +384,26 @@ def pick_local_video_path() -> Path | None:
 
 
 def pick_save_path(default_path: Path, *, title: str = "Save As") -> Path | None:
-    """Native save dialog on the server machine (zenity / kdialog). Loopback GUI only.
+    """Native save dialog on the server machine. Loopback GUI only.
 
     Returns the chosen path, or None when the user cancels or no dialog tool exists.
     A cancel does not fall through to a second dialog.
     """
     default_path = default_path.expanduser()
+    if sys.platform == "win32":
+        available, chosen = _windows_file_dialog(
+            save=True,
+            title=title,
+            file_filter=(
+                "Supported Motion Files (*.c3d;*.csv;*.3d;*.vaila)|"
+                "*.c3d;*.csv;*.3d;*.vaila;*.C3D;*.CSV;*.3D;*.VAILA"
+            ),
+            initial=default_path,
+        )
+        if available:
+            if chosen is None or not chosen.parent.is_dir():
+                return None
+            return chosen
     candidates = [
         [
             "zenity",

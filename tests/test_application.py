@@ -17,7 +17,7 @@ from openbiomech.cli import main
 from openbiomech.marker_trial import MarkerTrial
 from openbiomech.project_io import read_vaila_project
 from openbiomech.trial_io import load_trial
-from openbiomech.video_compat import pick_save_path
+from openbiomech.video_compat import pick_local_video_path, pick_save_path
 from openbiomech.viewer import create_server, render_viewer, trial_payload
 
 
@@ -579,6 +579,53 @@ def test_pick_save_path_uses_native_dialog_once(tmp_path, monkeypatch):
     monkeypatch.setattr("openbiomech.video_compat.subprocess.run", cancel)
     assert pick_save_path(tmp_path / "trial.c3d") is None
     assert len(calls) == 2
+
+
+def test_pick_local_video_path_uses_windows_dialog(tmp_path, monkeypatch):
+    import base64
+
+    video = tmp_path / "cam.mp4"
+    video.write_bytes(b"x")
+    calls = []
+
+    class Proc:
+        def __init__(self, returncode, stdout, stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_which(name):
+        if name in {"powershell", "pwsh"}:
+            return r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.EXE"
+        return None
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return Proc(0, f"{video}\n")
+
+    monkeypatch.setattr("openbiomech.video_compat.sys.platform", "win32")
+    monkeypatch.setattr("openbiomech.video_compat.shutil.which", fake_which)
+    monkeypatch.setattr("openbiomech.video_compat.subprocess.run", fake_run)
+    chosen = pick_local_video_path(tmp_path)
+    assert chosen == video.resolve()
+    cmd, kwargs = calls[0]
+    assert cmd[0].lower().endswith("powershell.exe")
+    assert cmd[1:3] == ["-STA", "-NoProfile"]
+    assert "-EncodedCommand" in cmd
+    script = base64.b64decode(cmd[-1]).decode("utf-16le")
+    assert "OpenFileDialog" in script
+    assert "Load Reference Video" in script
+    assert str(tmp_path) in script
+    assert kwargs["creationflags"] == getattr(__import__("subprocess"), "CREATE_NO_WINDOW", 0)
+
+    def cancel(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return Proc(0, "")
+
+    monkeypatch.setattr("openbiomech.video_compat.subprocess.run", cancel)
+    assert pick_local_video_path() is None
+    assert len(calls) == 2
+    assert all(item[0][0].lower().endswith("powershell.exe") for item in calls)
 
 
 def test_cli_defaults_to_gui_when_no_args(monkeypatch):
