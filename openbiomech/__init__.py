@@ -11,6 +11,6 @@ from . import biomech_math, c3d_io, csv_io
 try:
     __version__ = version("openbiomech")
 except PackageNotFoundError:  # editable/source tree without installed metadata
-    __version__ = "0.0.1"
+    __version__ = "0.0.2"
 
 __all__ = ["__version__", "biomech_math", "c3d_io", "csv_io"]
