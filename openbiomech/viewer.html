@@ -164,6 +164,7 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
   overflow: visible;
 }
 .menu-item.open > .dropdown-menu { display: block; }
+#menu-file > .dropdown-menu,
 #menu-view > .dropdown-menu,
 #menu-windows > .dropdown-menu {
   max-height: calc(100vh - 42px);
@@ -1166,11 +1167,19 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       </div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-header">Export & 3D Interchange</div>
-      <button type="button" class="dropdown-item" id="action-save-as-c3d" title="Save the edited trial as C3D and a CSV of every marker into a folder you choose">Save As (C3D + CSV)... <span class="shortcut-hint">Ctrl+Shift+S</span></button>
-      <button type="button" class="dropdown-item" id="action-export-c3d">Quick Save C3D (_edited.c3d)</button>
+      <button type="button" class="dropdown-item" id="action-save-as-c3d" title="Save the edited trial as a new C3D file into a folder you choose">Save As C3D (.c3d)... <span class="shortcut-hint">Ctrl+Shift+S</span></button>
+      <button type="button" class="dropdown-item" id="action-save-as-csv" title="Save all marker trajectories as a new wide CSV into a folder you choose">Save As CSV (.csv)...</button>
+      <button type="button" class="dropdown-item" id="action-save-as-3d" title="Save all marker trajectories as a new wide .3d file into a folder you choose">Save As 3D (.3d)...</button>
+      <button type="button" class="dropdown-item" id="action-save-as-both" title="Save the edited trial as both C3D and full trajectory CSV into a folder you choose">Save As (C3D + CSV)...</button>
+      <button type="button" class="dropdown-item" id="action-export-c3d" title="Quickly save edited trial as C3D beside source file and download">Quick Save C3D (_edited.c3d)</button>
+      <button type="button" class="dropdown-item" id="action-quick-save-csv" title="Quickly save edited trial as CSV beside source file and download">Quick Save CSV (_edited.csv)</button>
       <button type="button" class="dropdown-item" id="action-save-vaila">Save Complete Project (.vaila)...</button>
       <button type="button" class="dropdown-item" id="action-export-plot">Export Distance / Plot CSV...</button>
+      <button type="button" class="dropdown-item" id="action-export-distance-csv">Export Distance CSV...</button>
+      <button type="button" class="dropdown-item" id="action-export-angle-csv">Export Angle CSV...</button>
+      <button type="button" class="dropdown-item" id="action-export-combined-analyses-csv">Export Combined Analyses CSV...</button>
       <button type="button" class="dropdown-item" id="action-export-all-csv" title="Save a CSV of every marker trajectory into a folder you choose">Export All Trajectories (CSV)...</button>
+      <button type="button" class="dropdown-item" id="action-export-all-3d" title="Save a .3d file of every marker trajectory into a folder you choose">Export All Trajectories (.3d)...</button>
       <button type="button" class="dropdown-item" id="action-export-active-marker-csv">Export Active Marker (CSV)...</button>
       <button type="button" class="dropdown-item" id="action-import-replace-marker-csv">Import / Replace Marker Trajectory (CSV)...</button>
       <button type="button" class="dropdown-item" id="action-export-blender">Export Blender Python Script (.py)...</button>
@@ -1372,6 +1381,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             <button id="btn-toggle-distance" type="button" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 3px; font-size: 10px; padding: 1px 5px; cursor: pointer;">Enable</button>
           </div>
           <div id="distance" class="metric-val">— m</div>
+          <button id="btn-distance-export-csv" type="button" style="margin-top: 4px; width: 100%; font-size: 10px; padding: 2px 4px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; color: var(--text-normal);" title="Export distance time-series to CSV">📥 Export Distance CSV</button>
         </div>
       </div>
 
@@ -1465,6 +1475,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           </div>
           <div id="angle-metric-val" class="metric-val">— °</div>
           <div id="angle-details-val" style="font-size: 10px; color: var(--text-muted); margin-top: 3px; font-family: monospace;">u·v: — | ||u||: — | ||v||: —</div>
+          <button id="btn-angle-export-csv" type="button" style="margin-top: 4px; width: 100%; font-size: 10px; padding: 2px 4px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; color: var(--text-normal);" title="Export angle time-series to CSV">📥 Export Angle CSV</button>
         </div>
 
         <button id="btn-plot-angle-curve" type="button" style="width: 100%; margin-top: 6px; font-size: 11px; padding: 4px 8px; background: var(--bg-panel-alt); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; color: var(--text-bright); display: flex; align-items: center; justify-content: center; gap: 4px;">
@@ -1758,6 +1769,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <button type="button" class="btn-pane-tool btn-interpolate" id="btn-interp-plot1" title="Interpolate missing/NaN frames for active marker">⚡ Interpolate</button>
               <button type="button" class="btn-pane-tool btn-revert" id="btn-revert-plot1" style="display: none;" title="Revert active marker to raw data">↩ Revert</button>
             </div>
+            <button type="button" class="btn-pane-tool" id="btn-export-plot1-csv" title="Export Plot 1 data to CSV">📥 CSV</button>
             <button class="btn-pane-tool btn-float" data-pane="panel-plot1" title="Floating Window (Draggable / Resizable)">↗</button>
             <button class="btn-pane-tool btn-popout" data-pane="panel-plot1" title="Pop Out Plot 1 to New Window (Multi-Monitor)">⧉</button>
           </div>
@@ -1799,6 +1811,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
               <button type="button" class="btn-pane-tool btn-interpolate" id="btn-interp-plot2" title="Interpolate missing/NaN frames for active marker">⚡ Interpolate</button>
               <button type="button" class="btn-pane-tool btn-revert" id="btn-revert-plot2" style="display: none;" title="Revert active marker to raw data">↩ Revert</button>
             </div>
+            <button type="button" class="btn-pane-tool" id="btn-export-plot2-csv" title="Export Plot 2 data to CSV">📥 CSV</button>
             <button class="btn-pane-tool btn-float" data-pane="panel-plot2" title="Floating Window (Draggable / Resizable)">↗</button>
             <button class="btn-pane-tool btn-popout" data-pane="panel-plot2" title="Pop Out Plot 2 to New Window (Multi-Monitor)">⧉</button>
             <button id="btn-close-plot2" class="btn-pane-tool" style="padding: 2px 6px; font-size: 11px;" title="Close Window">✕</button>

@@ -68,8 +68,41 @@ def write_c3d(
     document.add_parameter("POINT", "RATE", [float(trial.rate_hz)])
     document.add_parameter("POINT", "LABELS", list(trial.labels))
     document.add_parameter("POINT", "UNITS", ["m"])
+    if (
+        "POINT" in document.get("parameters", {})
+        and "DESCRIPTIONS" in document["parameters"]["POINT"]
+    ):
+        old_desc = list(document["parameters"]["POINT"]["DESCRIPTIONS"].get("value", []))
+        if len(old_desc) < trial.n_markers:
+            old_desc.extend([""] * (trial.n_markers - len(old_desc)))
+        elif len(old_desc) > trial.n_markers:
+            old_desc = old_desc[: trial.n_markers]
+        document.add_parameter("POINT", "DESCRIPTIONS", old_desc)
+
     document["data"]["points"] = points
-    document["data"]["meta_points"]["residuals"] = stored_residuals.T[np.newaxis, ...]
+
+    existing_meta = document["data"].get("meta_points")
+    existing_masks = (
+        existing_meta.get("camera_masks")
+        if isinstance(existing_meta, dict) and "camera_masks" in existing_meta
+        else None
+    )
+    if (
+        isinstance(existing_masks, np.ndarray)
+        and existing_masks.ndim == 3
+        and existing_masks.shape[0] == 7
+    ):
+        camera_masks = np.zeros((7, trial.n_markers, trial.n_frames), dtype=bool)
+        m_copy = min(trial.n_markers, existing_masks.shape[1])
+        f_copy = min(trial.n_frames, existing_masks.shape[2])
+        camera_masks[:, :m_copy, :f_copy] = existing_masks[:, :m_copy, :f_copy]
+    else:
+        camera_masks = np.zeros((7, trial.n_markers, trial.n_frames), dtype=bool)
+
+    document["data"]["meta_points"] = {
+        "residuals": stored_residuals.T[np.newaxis, ...],
+        "camera_masks": camera_masks,
+    }
 
     analog = np.asarray(trial.analog, dtype=np.float64)
     if analog.size:
@@ -85,10 +118,22 @@ def write_c3d(
                 raise ValueError("analog channel count must match analog_units")
             document.add_parameter("ANALOG", "UNITS", list(trial.analog_units))
         document["data"]["analogs"] = analog.reshape(-1, n_channels).T[np.newaxis, ...]
+    elif "ANALOG" in document.get("parameters", {}):
+        # If template had analog parameters but edited trial has no analog data,
+        # reset analog channels so ezc3d does not expect mismatched frame samples.
+        document.add_parameter("ANALOG", "USED", [0])
+        document.add_parameter("ANALOG", "RATE", [0.0])
+        document["data"]["analogs"] = np.zeros((1, 0, 0), dtype=np.float64)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        document.write(str(output))
+        try:
+            document.write(str(output))
+        except Exception:
+            if template is not None:
+                # If template preservation failed, fall back to writing clean C3D
+                return write_c3d(trial, output, template=None)
+            raise
     finally:
         if template_directory is not None:
             template_directory.cleanup()

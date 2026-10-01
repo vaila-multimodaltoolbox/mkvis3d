@@ -157,7 +157,7 @@ def trial_from_payload(payload: dict) -> MarkerTrial:
 def export_stem(name: str) -> str:
     """File stem for Save As. Directory components are discarded."""
     base = Path(str(name)).name.strip()
-    for suffix in (".c3d", ".csv", ".3d"):
+    for suffix in (".c3d", ".csv", ".3d", ".vaila"):
         if base.lower().endswith(suffix):
             base = base[: -len(suffix)]
             break
@@ -174,15 +174,19 @@ def save_trial_files(
     *,
     template: bytes | None = None,
     formats: tuple[str, ...] = ("c3d", "csv"),
+    project_payload: dict | None = None,
+    source_name: str | None = None,
+    source_bytes: bytes | None = None,
 ) -> dict[str, str]:
-    """Write the edited trial into ``directory`` as C3D and/or a full-trajectory CSV."""
+    """Write the edited trial into ``directory`` as C3D, CSV, 3D, and/or .vaila project."""
     target = directory.expanduser().resolve()
     if not target.is_dir():
         raise ValueError(f"save directory does not exist: {directory}")
     safe_stem = export_stem(stem)
-    wanted = tuple(dict.fromkeys(formats))
-    if not wanted or any(item not in {"c3d", "csv"} for item in wanted):
-        raise ValueError("formats must be c3d and/or csv")
+    wanted = tuple(dict.fromkeys(fmt.lower() for fmt in formats))
+    allowed = {"c3d", "csv", "3d", "vaila"}
+    if not wanted or any(item not in allowed for item in wanted):
+        raise ValueError("formats must contain only c3d, csv, 3d, and/or vaila")
     written: dict[str, str] = {"directory": str(target)}
     if "c3d" in wanted:
         c3d_path = target / f"{safe_stem}.c3d"
@@ -192,6 +196,25 @@ def save_trial_files(
         csv_path = target / f"{safe_stem}.csv"
         write_all_trajectories_csv(trial, csv_path)
         written["csv"] = str(csv_path)
+    if "3d" in wanted:
+        p3d_path = target / f"{safe_stem}.3d"
+        write_all_trajectories_csv(trial, p3d_path)
+        written["3d"] = str(p3d_path)
+    if "vaila" in wanted:
+        vaila_path = target / f"{safe_stem}.vaila"
+        proj = project_payload or {}
+        vaila_trial = proj.get("trial") or trial_payload(trial, f"{safe_stem}.c3d")
+        vaila_state = proj.get("viewer_state") or {}
+        vaila_analyses = proj.get("analyses") or {}
+        vaila_bytes = vaila_project_bytes(
+            vaila_trial,
+            vaila_state,
+            vaila_analyses,
+            source_name=source_name,
+            source_bytes=source_bytes,
+        )
+        vaila_path.write_bytes(vaila_bytes)
+        written["vaila"] = str(vaila_path)
     return written
 
 
@@ -541,6 +564,7 @@ def create_server(
             if req_path not in (
                 "/api/trial",
                 "/api/export/c3d",
+                "/api/export/csv",
                 "/api/export/save_as",
                 "/api/export/vaila",
                 "/api/analyze/orientation",
@@ -659,8 +683,8 @@ def create_server(
                     if isinstance(raw_formats, str):
                         raw_formats = [raw_formats]
                     if not isinstance(raw_formats, list) or not raw_formats:
-                        raise ValueError("formats must list c3d and/or csv")
-                    formats = tuple(str(item) for item in raw_formats)
+                        raise ValueError("formats must list at least one valid format")
+                    formats = tuple(str(item).lower() for item in raw_formats)
                     filename_raw = str(payload.get("filename") or "").strip()
                     trial_name = str(trial_body.get("name") or "trial")
                     stem = export_stem(filename_raw or trial_name)
@@ -671,20 +695,26 @@ def create_server(
                         start_dir = (
                             source_dir if source_dir and source_dir.is_dir() else Path.home()
                         )
-                        suffix = ".c3d" if "c3d" in formats else ".csv"
-                        title = (
-                            "Save As — C3D and CSV"
-                            if "c3d" in formats and "csv" in formats
-                            else "Save As — CSV"
-                            if "csv" in formats
-                            else "Save As — C3D"
-                        )
+                        if len(formats) == 1:
+                            fmt = formats[0]
+                            suffix = f".{fmt}"
+                            title = f"Save As — {fmt.upper()}"
+                        elif "c3d" in formats and "csv" in formats:
+                            suffix = ".c3d"
+                            title = "Save As — C3D and CSV"
+                        else:
+                            suffix = f".{formats[0]}"
+                            fmts_label = " and ".join(f.upper() for f in formats)
+                            title = f"Save As — {fmts_label}"
                         chosen = pick_save_path(start_dir / f"{stem}{suffix}", title=title)
                         if chosen is None:
                             self.send_bytes(
                                 400,
                                 json.dumps(
-                                    {"error": "Save cancelled (or zenity/kdialog unavailable)"}
+                                    {
+                                        "error": "Save cancelled (or zenity/kdialog unavailable)",
+                                        "cancelled": True,
+                                    }
                                 ).encode(),
                                 "application/json",
                             )
@@ -696,14 +726,48 @@ def create_server(
                         if current_source[0] and Path(current_source[0][0]).suffix.lower() == ".c3d"
                         else None
                     )
+                    source_name = current_source[0][0] if current_source[0] else None
+                    source_bytes = current_source[0][1] if current_source[0] else None
                     written = save_trial_files(
-                        trial, directory, stem, template=template, formats=formats
+                        trial,
+                        directory,
+                        stem,
+                        template=template,
+                        formats=formats,
+                        project_payload=payload.get("project") or {
+                            "trial": trial_body,
+                            "viewer_state": payload.get("viewer_state", {}),
+                            "analyses": payload.get("analyses", {}),
+                        },
+                        source_name=source_name,
+                        source_bytes=source_bytes,
                     )
                     self.send_bytes(
                         200,
                         json.dumps(written).encode(),
                         "application/json",
                     )
+                    return
+                if req_path == "/api/export/csv":
+                    payload = json.loads(self.rfile.read(length))
+                    if isinstance(payload, dict) and "trial" in payload:
+                        trial_data = payload["trial"]
+                        custom_filename = payload.get("filename")
+                    else:
+                        trial_data = payload
+                        custom_filename = None
+                    trial = trial_from_payload(trial_data)
+                    with tempfile.TemporaryDirectory(prefix="openbiomech-csv-") as directory:
+                        target = Path(directory) / "trial.csv"
+                        write_all_trajectories_csv(trial, target)
+                        body = target.read_bytes()
+                    if custom_filename and source_dir and source_dir.is_dir():
+                        target_name = Path(str(custom_filename)).name
+                        if not target_name.lower().endswith(".csv"):
+                            target_name += ".csv"
+                        with contextlib.suppress(OSError):
+                            (source_dir / target_name).write_bytes(body)
+                    self.send_bytes(200, body, "text/csv; charset=utf-8")
                     return
                 if req_path == "/api/export/c3d":
                     payload = json.loads(self.rfile.read(length))
@@ -951,7 +1015,7 @@ def create_server(
                     current_source[0] = (
                         (project.source_name, project.source_bytes)
                         if project.source_name is not None and project.source_bytes is not None
-                        else None
+                        else (name, uploaded)
                     )
                     response = {"project": response_project}
                     self.send_bytes(
@@ -1006,16 +1070,16 @@ def serve_viewer(
         initial_payload=initial_payload,
         initial_source_name=(
             initial_project.source_name
-            if initial_project
+            if initial_project and initial_project.source_name
             else source_path.name
             if source_path
             else None
         ),
         initial_source_bytes=(
             initial_project.source_bytes
-            if initial_project
+            if initial_project and initial_project.source_bytes
             else source_path.read_bytes()
-            if source_path
+            if source_path and source_path.is_file() and source_path.suffix.lower() == ".c3d"
             else None
         ),
         initial_project=initial_project_payload,
