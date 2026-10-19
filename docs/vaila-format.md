@@ -52,7 +52,17 @@ Reproducible editing and visualization state, including:
 - laboratory reference-system axes;
 - filter, smoothing, interpolation and outlier-processing configuration;
 - active skeleton, frame, marker selections, camera, theme and display state;
-- edited FPS and playback controls.
+- edited FPS and playback controls;
+- optional `markerSizeOverrides`: map of marker label → pixel size for
+  per-point sizing (global `markerSize` remains the default);
+- optional `skeletonByGroup`: map of person/object group key (or `_all_`) to
+  `{ templateId, pairs }` so multi-person skeletons applied via click-target
+  accumulate and round-trip;
+- optional `layers`: the other trials open as overlays. Each entry has
+  `name`, `template` (skeleton id), `custom_template` (custom skeleton JSON or
+  `null`), `visible`, `color` and `data` (a trial payload with the same shape
+  as `trial.json`). Readers that do not know `layers` open the active trial
+  only.
 
 The archive stores both raw and resulting trajectories so reopening does not
 apply a filter or coordinate transform twice.

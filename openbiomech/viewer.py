@@ -34,6 +34,7 @@ from .kinematic_analysis import (
 )
 from .marker_trial import MarkerTrial
 from .project_io import VailaProject, read_vaila_project, vaila_project_bytes
+from .soccer_field.kiki49 import load_kiki49
 from .trial_io import load_trial
 from .video_compat import (
     ensure_browser_video,
@@ -108,6 +109,19 @@ def trial_payload(trial: MarkerTrial, name: str) -> dict:
         analog_safe[~np.isfinite(analog)] = None
         payload["analog"] = analog_safe.tolist()
     return payload
+
+
+def field_reference_payload() -> dict:
+    """Static kiki49 soccer-field keypoints in the freekiki world frame (metres, centre spot)."""
+    field = load_kiki49()
+    xyz = np.asarray(field.xyz, dtype=np.float64)[None]
+    trial = MarkerTrial(
+        labels=field.names,
+        rate_hz=1.0,
+        xyz=xyz,
+        residuals=np.zeros(xyz.shape[:2]),
+    )
+    return trial_payload(trial, "soccerfield_kiki49")
 
 
 def trial_from_payload(payload: dict) -> MarkerTrial:
@@ -289,6 +303,9 @@ def create_server(
         else None
     ]
     current_project: list[dict | None] = [initial_project]
+    # Source bytes of files added as extra viewer layers, keyed by upload name, so the
+    # C3D export template follows whichever layer is active.
+    layer_sources: dict[str, tuple[str, bytes]] = {}
     # name -> absolute path; grows when we register H.264 cache outputs / uploads
     video_registry: dict[str, Path] = {}
     upload_scratch: list[Path] = []  # session-lived dirs for uploaded video re-encodes
@@ -534,6 +551,14 @@ def create_server(
                 )
                 return
 
+            if req_path == "/api/field_reference":
+                self.send_bytes(
+                    200,
+                    json.dumps(field_reference_payload(), allow_nan=False).encode(),
+                    "application/json",
+                )
+                return
+
             if req_path == "/api/skeleton_template":
                 query = parse_qs(parsed.query)
                 name = Path(query.get("name", [""])[0]).stem
@@ -563,6 +588,7 @@ def create_server(
             req_path = urlsplit(self.path).path
             if req_path not in (
                 "/api/trial",
+                "/api/activate_layer",
                 "/api/export/c3d",
                 "/api/export/csv",
                 "/api/export/save_as",
@@ -626,6 +652,22 @@ def create_server(
                     }
                     self.send_bytes(
                         200, json.dumps(body, allow_nan=False).encode(), "application/json"
+                    )
+                    return
+                if req_path == "/api/activate_layer":
+                    # Body-less: only the outgoing and incoming layer names travel.
+                    if length > 0:
+                        self.rfile.read(length)
+                    query = parse_qs(urlsplit(self.path).query)
+                    name = Path(query.get("name", [""])[0]).name
+                    previous = Path(query.get("from", [""])[0]).name
+                    if current_source[0] is not None and previous:
+                        layer_sources[previous] = current_source[0]
+                    current_source[0] = layer_sources.get(name)
+                    self.send_bytes(
+                        200,
+                        json.dumps({"source": current_source[0] is not None}).encode(),
+                        "application/json",
                     )
                     return
                 if not 0 < length <= 256 * 1024 * 1024:
@@ -1004,7 +1046,21 @@ def create_server(
                     raise ValueError("expected .c3d, .csv, .3d or .vaila")
                 rate = float(query.get("rate", ["100"])[0])
                 units = query.get("units", ["m"])[0]
+                as_layer = query.get("layer", ["0"])[0] == "1"
                 uploaded = self.rfile.read(length)
+                if as_layer:
+                    if suffix == ".vaila":
+                        raise ValueError("a .vaila project cannot be added as a layer")
+                    with tempfile.TemporaryDirectory(prefix="openbiomech-") as directory:
+                        path = Path(directory) / f"trial{suffix}"
+                        path.write_bytes(uploaded)
+                        payload = trial_payload(load_trial(path, rate_hz=rate, units=units), name)
+                    layer_sources[name] = (name, uploaded)
+                    self.send_bytes(
+                        200, json.dumps(payload, allow_nan=False).encode(), "application/json"
+                    )
+                    return
+                layer_sources.clear()
                 if suffix == ".vaila":
                     project = read_vaila_project(uploaded)
                     trial_from_payload(project.trial)

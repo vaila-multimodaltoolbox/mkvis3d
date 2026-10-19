@@ -27,9 +27,18 @@ let pinnedMarkerIndices = new Set();
 let viewportMode = "rotate";
 let selectionBox = null;
 let skeletonPairs = [];
+/** Per-person (or whole-trial) skeleton instances; `skeletonPairs` is their flatten. */
+let skeletonByGroup = {};
+const SKELETON_ALL_GROUP = "_all_";
 let customSegments = [];
 let activeSkeletonTemplate = "none";
 let loadedCustomTemplate = null;
+// Layers: extra trials sharing the scene (see "Layers" section near uploadFile).
+let layers = [];
+let activeLayerId = null;
+let nextLayerId = 1;
+let switchingLayer = false;
+const LAYER_COLORS = ["#f97316", "#a855f7", "#22d3ee", "#facc15", "#f43f5e", "#84cc16", "#e879f9", "#38bdf8"];
 let popoutWindows = {};
 let skeletonColor = "auto";
 let skeletonPaletteIndex = -1;
@@ -74,15 +83,49 @@ const MARKER_PALETTE = [
 ];
 
 let markerSize = 3.5;
+/** Per-label size overrides (px); draw falls back to global `markerSize`. */
+let markerSizeOverrides = {};
 let markerColor = "auto";
 let markerPaletteIndex = -1;
 
+function effectiveMarkerSize(index) {
+  if (!trial || !trial.labels || index == null || index < 0) return markerSize;
+  const label = trial.labels[index];
+  if (label != null && Object.prototype.hasOwnProperty.call(markerSizeOverrides, label)) {
+    const v = Number(markerSizeOverrides[label]);
+    if (Number.isFinite(v)) return Math.max(1, Math.min(15, v));
+  }
+  return markerSize;
+}
+
+function syncMarkerSizeUI() {
+  const display = (selectedMarkerIndices.size > 0 && trial)
+    ? effectiveMarkerSize(activeMarkerIndex)
+    : markerSize;
+  if ($("marker-size-slider")) $("marker-size-slider").value = String(display);
+  if ($("marker-size-val")) $("marker-size-val").textContent = `${display.toFixed(1)} px`;
+}
+
 function setMarkerSize(size) {
-  markerSize = Math.max(1, Math.min(15, Number(size) || 3.5));
-  if ($("marker-size-slider")) $("marker-size-slider").value = String(markerSize);
-  if ($("marker-size-val")) $("marker-size-val").textContent = `${markerSize.toFixed(1)} px`;
+  const clamped = Math.max(1, Math.min(15, Number(size) || 3.5));
+  if (selectedMarkerIndices.size > 0 && trial && Array.isArray(trial.labels)) {
+    for (const idx of selectedMarkerIndices) {
+      const label = trial.labels[idx];
+      if (label != null) markerSizeOverrides[label] = clamped;
+    }
+  } else {
+    markerSize = clamped;
+  }
+  syncMarkerSizeUI();
   draw();
   saveSessionState();
+}
+
+function adjustMarkerSize(delta) {
+  const current = (selectedMarkerIndices.size > 0 && trial)
+    ? effectiveMarkerSize(activeMarkerIndex)
+    : markerSize;
+  setMarkerSize(current + delta);
 }
 
 function setMarkerColor(colorHex, colorName) {
@@ -117,8 +160,89 @@ function cycleMarkerColor() {
 
 function resetMarkerStyle() {
   markerPaletteIndex = -1;
-  setMarkerSize(3.5);
+  markerSizeOverrides = {};
+  markerSize = 3.5;
+  syncMarkerSizeUI();
   setMarkerColor("auto", "Default");
+  draw();
+  saveSessionState();
+}
+
+/**
+ * Person/object prefix for multi-subject C3Ds (`piquerez_p12` → `piquerez`).
+ * Bare `p12` / CoM virtual markers → null (whole-trial apply target).
+ */
+function markerGroupKey(label) {
+  if (label == null || typeof label !== "string") return null;
+  if (label.startsWith("CenterOfMass_deLeva")) return null;
+  const match = label.match(/^(.+)_p\d+$/i);
+  return match ? match[1] : null;
+}
+
+function groupMarkerIndices(labels, key) {
+  if (!Array.isArray(labels)) return [];
+  const isCom = lbl => String(lbl).startsWith("CenterOfMass_deLeva");
+  if (!key || key === SKELETON_ALL_GROUP) {
+    return labels.map((_, i) => i).filter(i => !isCom(labels[i]));
+  }
+  const prefix = `${key}_`;
+  return labels
+    .map((lbl, i) => [lbl, i])
+    .filter(([lbl]) => lbl === key || String(lbl).startsWith(prefix))
+    .map(([, i]) => i)
+    .filter(i => !isCom(labels[i]));
+}
+
+function localMarkerLabel(label, key) {
+  if (!key || key === SKELETON_ALL_GROUP || label == null) return label;
+  const prefix = `${key}_`;
+  const text = String(label);
+  return text.startsWith(prefix) ? text.slice(prefix.length) : text;
+}
+
+function activeApplyGroupKey() {
+  if (!trial || !Array.isArray(trial.labels) || activeMarkerIndex < 0) return SKELETON_ALL_GROUP;
+  return markerGroupKey(trial.labels[activeMarkerIndex]) || SKELETON_ALL_GROUP;
+}
+
+function updateApplyTargetBadge() {
+  const el = $("apply-target-badge");
+  if (!el) return;
+  if (!trial || !Array.isArray(trial.labels)) {
+    el.textContent = "Target: —";
+    return;
+  }
+  const key = activeApplyGroupKey();
+  const count = groupMarkerIndices(trial.labels, key).length;
+  el.textContent = key === SKELETON_ALL_GROUP
+    ? `Target: whole trial (${count})`
+    : `Target: ${key} (${count})`;
+}
+
+function rebuildSkeletonPairs() {
+  skeletonPairs = [];
+  for (const entry of Object.values(skeletonByGroup)) {
+    if (entry && Array.isArray(entry.pairs)) skeletonPairs.push(...entry.pairs);
+  }
+  const badge = $("skeleton-status-badge");
+  if (badge) {
+    const n = skeletonPairs.length;
+    const groups = Object.keys(skeletonByGroup).length;
+    if (n > 0) {
+      badge.textContent = groups > 1 ? `${n} connections (${groups} groups)` : `${n} connections`;
+      badge.style.color = "var(--accent)";
+    } else {
+      badge.textContent = "No skeleton";
+      badge.style.color = "var(--text-muted)";
+    }
+  }
+}
+
+function clearAllSkeletons() {
+  skeletonByGroup = {};
+  skeletonPairs = [];
+  activeSkeletonTemplate = "none";
+  rebuildSkeletonPairs();
 }
 
 function setSkeletonColor(colorHex, colorName) {
@@ -275,6 +399,19 @@ function fit() {
       for (let j = 0; j < 3; j++) {
         lo[j] = Math.min(lo[j], raw[j]);
         hi[j] = Math.max(hi[j], raw[j]);
+      }
+    }
+  }
+  for (const layer of overlayLayers()) {
+    const xyz = layer.data.xyz;
+    const layerStride = Math.max(1, Math.floor(xyz.length / 50));
+    for (let f = 0; f < xyz.length; f += layerStride) {
+      for (const raw of xyz[f]) {
+        if (!valid(raw)) continue;
+        for (let j = 0; j < 3; j++) {
+          lo[j] = Math.min(lo[j], raw[j]);
+          hi[j] = Math.max(hi[j], raw[j]);
+        }
       }
     }
   }
@@ -473,29 +610,24 @@ function getBoneColor(i, j) {
 
 // Skeleton initialization - does NOT auto-load pairs, user loads explicitly
 function initSkeleton(labels) {
-  skeletonPairs = [];
-  activeSkeletonTemplate = "none";
+  clearAllSkeletons();
   if ($("skeleton-template-select")) $("skeleton-template-select").value = "none";
-  const badge = $("skeleton-status-badge");
-  if (badge) {
-    badge.textContent = "No skeleton";
-    badge.style.color = "var(--text-muted)";
-  }
+  updateApplyTargetBadge();
 }
 
 // Apply chosen skeleton template to current trial
-function applySkeletonTemplate(templateObj) {
-  if (!trial) return 0;
-  skeletonPairs = [];
-  if (!templateObj || !Array.isArray(templateObj.connections)) {
-    draw();
-    return 0;
-  }
+/**
+ * Resolve template connections to `[idxA, idxB, side, color]` pairs for a marker label list.
+ * Pure: shared by the active trial and every overlay layer.
+ */
+function resolveSkeletonPairs(templateObj, labels, segments = []) {
+  const pairs = [];
+  if (!templateObj || !Array.isArray(templateObj.connections) || !Array.isArray(labels)) return pairs;
   const isZeroBased = (templateObj && typeof templateObj.note === "string" && templateObj.note.includes("0-based"))
     || (Array.isArray(templateObj.connections) && templateObj.connections.some(c => Array.isArray(c) && (String(c[0]).toLowerCase() === "p0" || String(c[1]).toLowerCase() === "p0")));
 
   const labelMap = new Map();
-  trial.labels.forEach((lbl, idx) => {
+  labels.forEach((lbl, idx) => {
     const clean = lbl.toLowerCase().trim();
     labelMap.set(clean, idx);
     labelMap.set(clean.replace(/_/g, "-"), idx);
@@ -524,7 +656,7 @@ function applySkeletonTemplate(templateObj) {
     else if (labelMap.has(aStr.replace(/-/g, "_"))) idxA = labelMap.get(aStr.replace(/-/g, "_"));
     else if (tKeypointToIdx.has(aStr)) {
       const pIdx = tKeypointToIdx.get(aStr);
-      if (pIdx < trial.labels.length) idxA = pIdx;
+      if (pIdx < labels.length) idxA = pIdx;
     }
 
     if (labelMap.has(bStr)) idxB = labelMap.get(bStr);
@@ -532,15 +664,15 @@ function applySkeletonTemplate(templateObj) {
     else if (labelMap.has(bStr.replace(/-/g, "_"))) idxB = labelMap.get(bStr.replace(/-/g, "_"));
     else if (tKeypointToIdx.has(bStr)) {
       const pIdx = tKeypointToIdx.get(bStr);
-      if (pIdx < trial.labels.length) idxB = pIdx;
+      if (pIdx < labels.length) idxB = pIdx;
     }
 
-    if (idxA >= 0 && idxB >= 0 && idxA < trial.labels.length && idxB < trial.labels.length && idxA !== idxB) {
+    if (idxA >= 0 && idxB >= 0 && idxA < labels.length && idxB < labels.length && idxA !== idxB) {
       const getKpName = (str, idx) => {
         if (!/^p\d+$/i.test(str)) return str;
         const pNum = parseInt(str.slice(1), 10);
         const kpIdx = isZeroBased ? pNum : pNum - 1;
-        return (tKeypoints[kpIdx] || trial.labels[idx] || str);
+        return (tKeypoints[kpIdx] || labels[idx] || str);
       };
       const nameA = getKpName(aStr, idxA);
       const nameB = getKpName(bStr, idxB);
@@ -548,39 +680,81 @@ function applySkeletonTemplate(templateObj) {
       const sideB = getMarkerSide(nameB);
       const boneSide = getBoneSide(sideA, sideB);
       const boneColor = SKELETON_SIDE_COLORS[boneSide] || SKELETON_SIDE_COLORS.center;
-      skeletonPairs.push([idxA, idxB, boneSide, boneColor]);
+      pairs.push([idxA, idxB, boneSide, boneColor]);
     }
   }
 
-  if (Array.isArray(customSegments) && customSegments.length > 0) {
-    for (const seg of customSegments) {
+  if (Array.isArray(segments) && segments.length > 0) {
+    for (const seg of segments) {
       if (!Array.isArray(seg) || seg.length < 2) continue;
       const aStr = String(seg[0]).toLowerCase().trim();
       const bStr = String(seg[1]).toLowerCase().trim();
       const idxA = labelMap.get(aStr);
       const idxB = labelMap.get(bStr);
       if (idxA !== undefined && idxB !== undefined && idxA !== idxB) {
-        if (!skeletonPairs.some(p => (p[0] === idxA && p[1] === idxB) || (p[0] === idxB && p[1] === idxA))) {
-          const nameA = trial.labels[idxA] || aStr;
-          const nameB = trial.labels[idxB] || bStr;
+        if (!pairs.some(p => (p[0] === idxA && p[1] === idxB) || (p[0] === idxB && p[1] === idxA))) {
+          const nameA = labels[idxA] || aStr;
+          const nameB = labels[idxB] || bStr;
           const sideA = getMarkerSide(nameA);
           const sideB = getMarkerSide(nameB);
           const boneSide = getBoneSide(sideA, sideB);
           const boneColor = SKELETON_SIDE_COLORS[boneSide] || SKELETON_SIDE_COLORS.center;
-          skeletonPairs.push([Math.min(idxA, idxB), Math.max(idxA, idxB), boneSide, boneColor]);
+          pairs.push([Math.min(idxA, idxB), Math.max(idxA, idxB), boneSide, boneColor]);
         }
       }
     }
   }
 
-  if ($("bones")) $("bones").checked = skeletonPairs.length > 0;
-  const badge = $("skeleton-status-badge");
-  if (badge) {
-    badge.textContent = skeletonPairs.length > 0 ? `${skeletonPairs.length} connections` : "0 connections";
-    badge.style.color = skeletonPairs.length > 0 ? "var(--accent)" : "var(--text-muted)";
+  return pairs;
+}
+
+function trialPersonGroupKeys(labels) {
+  if (!Array.isArray(labels)) return [];
+  const keys = [];
+  const seen = new Set();
+  for (const label of labels) {
+    const key = markerGroupKey(label);
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      keys.push(key);
+    }
   }
+  return keys;
+}
+
+function applySkeletonTemplate(templateObj, groupKey = null) {
+  if (!trial) return 0;
+  const key = groupKey || activeApplyGroupKey();
+  if (!templateObj || !Array.isArray(templateObj.connections)) {
+    delete skeletonByGroup[key];
+    rebuildSkeletonPairs();
+    draw();
+    return 0;
+  }
+  if (key === SKELETON_ALL_GROUP && trialPersonGroupKeys(trial.labels).length > 1) {
+    status("Click a marker on one person/object, then Load Skeleton (multi-person file).", true);
+    return 0;
+  }
+  const idxs = groupMarkerIndices(trial.labels, key);
+  if (idxs.length === 0) {
+    status("No markers in the apply target group.", true);
+    return 0;
+  }
+  const localLabels = idxs.map(i => localMarkerLabel(trial.labels[i], key));
+  const segs = key === SKELETON_ALL_GROUP ? customSegments : [];
+  const localPairs = resolveSkeletonPairs(templateObj, localLabels, segs);
+  const pairs = localPairs.map(([a, b, side, color]) => [idxs[a], idxs[b], side, color]);
+  if (pairs.length === 0) {
+    const targetName = key === SKELETON_ALL_GROUP ? "whole trial" : key;
+    status(`Skeleton resolved 0 connections for target "${targetName}" (${idxs.length} markers).`, true);
+    return 0;
+  }
+  skeletonByGroup[key] = { templateId: activeSkeletonTemplate, pairs };
+  rebuildSkeletonPairs();
+  if ($("bones")) $("bones").checked = skeletonPairs.length > 0;
+  if (layers.length) renderLayersPanel();
   draw();
-  return skeletonPairs.length;
+  return pairs.length;
 }
 
 const DE_LEVA = {
@@ -601,8 +775,23 @@ function createDeLevaCOM() {
     status("Load the SAM 3D MHR-70 or Sapiens2 Goliath-308 skeleton before creating de Leva CoM.", true);
     return;
   }
+  const groupKey = activeApplyGroupKey();
+  if (groupKey === SKELETON_ALL_GROUP && trialPersonGroupKeys(trial.labels).length > 1) {
+    status("Click a marker on one person, then Create CoM (multi-person file).", true);
+    return;
+  }
+  const groupIdxs = groupMarkerIndices(trial.labels, groupKey);
+  if (groupIdxs.length < 70) {
+    const targetName = groupKey === SKELETON_ALL_GROUP ? "whole trial" : groupKey;
+    status(`Apply target "${targetName}" has ${groupIdxs.length} markers; de Leva CoM needs ≥70.`, true);
+    return;
+  }
   const normalized = value => String(value).toLowerCase().replaceAll("-", "_");
-  const indices = new Map(template.keypoints.map((name, index) => [normalized(name), index]));
+  // Template keypoint order → trial indices of the active person/group.
+  const indices = new Map();
+  template.keypoints.forEach((name, kpIdx) => {
+    if (kpIdx < groupIdxs.length) indices.set(normalized(name), groupIdxs[kpIdx]);
+  });
   const indexOf = (...names) => {
     for (const name of names) {
       if (indices.has(name)) return indices.get(name);
@@ -679,8 +868,10 @@ function createDeLevaCOM() {
     return availableMass > 0 ? weighted.map(value => value / availableMass) : null;
   });
 
-  let comIndex = trial.labels.findIndex(label => label.startsWith("CenterOfMass_deLeva"));
-  const label = `CenterOfMass_deLeva_${sex}`;
+  const label = groupKey === SKELETON_ALL_GROUP
+    ? `CenterOfMass_deLeva_${sex}`
+    : `CenterOfMass_deLeva_${groupKey}_${sex}`;
+  let comIndex = trial.labels.findIndex(existing => existing === label);
   if (comIndex < 0) {
     comIndex = trial.labels.length;
     trial.labels.push(label);
@@ -693,16 +884,19 @@ function createDeLevaCOM() {
   refreshMarkerSelectors();
   buildTable();
   activeMarkerIndex = comIndex;
+  selectedMarkerIndices = new Set([comIndex]);
   if ($("marker-select")) $("marker-select").value = String(comIndex);
-  applySkeletonTemplate(template);
+  applySkeletonTemplate(template, groupKey);
+  updateApplyTargetBadge();
+  syncMarkerSizeUI();
   if ($("marker-count-badge")) $("marker-count-badge").textContent = `${trial.labels.length} markers`;
   status(`Created ${label}; the virtual marker is included in CSV, C3D, Blender, BVH, and HTML exports.`);
 }
 
-function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
-  if (!$("bones") || !$("bones").checked || !skeletonPairs.length || !pts) return;
+function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight, pairs = skeletonPairs) {
+  if (!$("bones") || !$("bones").checked || !pairs.length || !pts) return;
   const isAuto = skeletonColor === "auto";
-  for (const pair of skeletonPairs) {
+  for (const pair of pairs) {
     const i = pair[0], j = pair[1];
     if (valid(pts[i]) && valid(pts[j])) {
       const color = isAuto ? (pair[3] || getBoneColor(i, j)) : skeletonColor;
@@ -711,19 +905,24 @@ function drawSkeleton(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.c
   }
 }
 
+/** Labels + template that pitch helpers resolve against (active trial by default). */
+function activeFieldScene() {
+  return { labels: trial ? trial.labels : null, template: activeSkeletonTemplate };
+}
+
 /** Resolve marker index by label (case/underscore insensitive). */
-function markerIndexByLabel(name) {
-  if (!trial || !name) return -1;
+function markerIndexByLabel(name, labels = trial && trial.labels) {
+  if (!labels || !name) return -1;
   const want = String(name).toLowerCase().trim().replace(/-/g, "_");
-  for (let i = 0; i < trial.labels.length; i++) {
-    const lbl = String(trial.labels[i] || "").toLowerCase().trim().replace(/-/g, "_");
+  for (let i = 0; i < labels.length; i++) {
+    const lbl = String(labels[i] || "").toLowerCase().trim().replace(/-/g, "_");
     if (lbl === want) return i;
   }
   return -1;
 }
 
-function markerAt(pts, name) {
-  const idx = markerIndexByLabel(name);
+function markerAt(pts, name, labels = trial && trial.labels) {
+  const idx = markerIndexByLabel(name, labels);
   if (idx < 0 || !pts || !valid(pts[idx])) return null;
   return pts[idx];
 }
@@ -754,15 +953,16 @@ const PENALTY_ARC_RADIUS_M = 9.15;
  * Resolve a pitch landmark by semantic name, with fallbacks for pN-only trials.
  * Mirrors applySkeletonTemplate dual 0/1-based indexing when using template keypoints.
  */
-function pitchMarkerAt(pts, name, aliases = []) {
+function pitchMarkerAt(pts, name, aliases = [], scene = activeFieldScene()) {
+  const labels = scene.labels;
   const names = [name, ...aliases];
   for (const n of names) {
-    const hit = markerAt(pts, n);
+    const hit = markerAt(pts, n, labels);
     if (hit) return hit;
   }
-  const tpl = embeddedTemplates[activeSkeletonTemplate];
+  const tpl = embeddedTemplates[scene.template];
   const kps = tpl && Array.isArray(tpl.keypoints) ? tpl.keypoints : [];
-  if (!kps.length || !trial || !pts) return null;
+  if (!kps.length || !labels || !pts) return null;
 
   const isZeroBased = (typeof tpl.note === "string" && tpl.note.includes("0-based"))
     || (Array.isArray(tpl.connections) && tpl.connections.some(c => Array.isArray(c)
@@ -773,8 +973,8 @@ function pitchMarkerAt(pts, name, aliases = []) {
     const kpIdx = kps.findIndex(k => String(k).toLowerCase().trim().replace(/-/g, "_") === want);
     if (kpIdx < 0) continue;
     // Prefer trial index whose pN token maps to this keypoint slot.
-    for (let i = 0; i < trial.labels.length; i++) {
-      const lbl = String(trial.labels[i] || "").toLowerCase().trim();
+    for (let i = 0; i < labels.length; i++) {
+      const lbl = String(labels[i] || "").toLowerCase().trim();
       const m = /^p(\d+)$/.exec(lbl);
       if (!m) continue;
       const pNum = parseInt(m[1], 10);
@@ -790,8 +990,8 @@ function pitchMarkerAt(pts, name, aliases = []) {
  * Penalty arc ("meia-lua") per vailá drawsportsfields.penalty_arc_geometry.
  * Returns {center:[x,y], radius, theta1, theta2} with angles in radians, or null.
  */
-function penaltyArcGeometry(pts, side) {
-  const spot = pitchMarkerAt(pts, `${side}_penalty_spot`);
+function penaltyArcGeometry(pts, side, scene = activeFieldScene()) {
+  const spot = pitchMarkerAt(pts, `${side}_penalty_spot`, [], scene);
   if (!spot) return null;
   const center = [spot[0], spot[1]];
 
@@ -807,7 +1007,7 @@ function penaltyArcGeometry(pts, side) {
     `${side}_pen_box_bottom_inner`,
     `${side}_pen_box_top_inner`,
   ]) {
-    const p = pitchMarkerAt(pts, key);
+    const p = pitchMarkerAt(pts, key, [], scene);
     if (p) {
       lineX = p[0];
       break;
@@ -817,15 +1017,15 @@ function penaltyArcGeometry(pts, side) {
 
   let radius = null;
   for (const key of intersectionKeys) {
-    const p = pitchMarkerAt(pts, key);
+    const p = pitchMarkerAt(pts, key, [], scene);
     if (p) {
       radius = Math.hypot(p[0] - center[0], p[1] - center[1]);
       break;
     }
   }
   if (radius == null) {
-    const field = pitchMarkerAt(pts, "center_field");
-    const circleTop = pitchMarkerAt(pts, "center_circle_top", ["center_circle_top_intersection"]);
+    const field = pitchMarkerAt(pts, "center_field", [], scene);
+    const circleTop = pitchMarkerAt(pts, "center_circle_top", ["center_circle_top_intersection"], scene);
     if (field && circleTop) {
       radius = Math.abs(circleTop[1] - field[1]);
     }
@@ -845,17 +1045,17 @@ function penaltyArcGeometry(pts, side) {
  * Procedural center circle + penalty arcs for soccerfield_kiki49.
  * Mirrors vaila/drawsportsfields.py penalty_arc_geometry (Law 1 / FIFA).
  */
-function drawSoccerFieldCurves(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight) {
+function drawSoccerFieldCurves(pts, targetCtx = ctx, w = canvas.clientWidth, h = canvas.clientHeight, scene = activeFieldScene()) {
   if (!$("bones") || !$("bones").checked || !pts) return;
-  if (activeSkeletonTemplate !== "soccerfield_kiki49") return;
+  if (scene.template !== "soccerfield_kiki49") return;
 
   const isLight = currentTheme === "light";
   const lineColor = isLight ? "rgba(148, 163, 184, 0.95)" : "rgba(226, 232, 240, 0.9)";
   const floorZ = getFloorHeight();
   const nSeg = 64;
 
-  const center = pitchMarkerAt(pts, "center_field");
-  const circleTop = pitchMarkerAt(pts, "center_circle_top", ["center_circle_top_intersection"]);
+  const center = pitchMarkerAt(pts, "center_field", [], scene);
+  const circleTop = pitchMarkerAt(pts, "center_circle_top", ["center_circle_top_intersection"], scene);
   let centerRadius = PENALTY_ARC_RADIUS_M;
   if (center && circleTop) {
     const ry = Math.abs(circleTop[1] - center[1]);
@@ -876,7 +1076,7 @@ function drawSoccerFieldCurves(pts, targetCtx = ctx, w = canvas.clientWidth, h =
   }
 
   for (const side of ["left", "right"]) {
-    const geom = penaltyArcGeometry(pts, side);
+    const geom = penaltyArcGeometry(pts, side, scene);
     if (!geom) continue;
     const span = geom.theta2 - geom.theta1;
     const steps = Math.max(16, Math.ceil(nSeg * Math.abs(span) / (Math.PI * 2)));
@@ -1086,6 +1286,9 @@ function drawSceneToContext(targetCtx, w, h) {
     targetCtx.fillText(axesLabels[i], p[0] + 5, p[1]);
   }
 
+  // Other layers (time-synced overlays) under the active trial
+  drawLayerOverlays(targetCtx, w, h);
+
   // Draw Skeleton Bones
   drawSkeleton(pts, targetCtx, w, h);
   // Kiki pitch: procedural center circle + penalty arcs (meia-lua)
@@ -1120,12 +1323,12 @@ function drawSceneToContext(targetCtx, w, h) {
   const themeDefaultColor = isLight ? "#475569" : "#9bbed7";
   const regularColor = markerColor === "auto" ? themeDefaultColor : markerColor;
 
-  const baseRadius = markerSize;
   for (const { i, q } of visible) {
     const isAct = i === activeIdx;
     const isSelected = selectedMarkerIndices.has(i);
     const isA = showDistance && i === a, isB = showDistance && i === b;
     const isCOM = trial.labels[i]?.startsWith("CenterOfMass_deLeva");
+    const baseRadius = effectiveMarkerSize(i);
     targetCtx.beginPath();
     const radius = isAct || isCOM ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
     targetCtx.arc(q[0], q[1], radius, 0, Math.PI * 2);
@@ -1852,6 +2055,8 @@ function selectActiveMarker(idx, syncSelection = true) {
     selectedMarkerIndices = new Set([idx]);
   }
   syncActiveMarkerUI();
+  updateApplyTargetBadge();
+  syncMarkerSizeUI();
   syncPointsModal();
   updateTable();
   draw();
@@ -1873,6 +2078,8 @@ function toggleMarkerSelection(idx) {
     activeMarkerIndex = idx;
   }
   syncActiveMarkerUI();
+  updateApplyTargetBadge();
+  syncMarkerSizeUI();
   syncPointsModal();
   updateTable();
   draw();
@@ -1881,6 +2088,7 @@ function toggleMarkerSelection(idx) {
 
 function clearMarkerSelectionGroup() {
   selectedMarkerIndices = new Set();
+  syncMarkerSizeUI();
   syncPointsModal();
   updateTable();
   draw();
@@ -1895,6 +2103,8 @@ function setSelectedMarkers(indices, explicitActiveIndex = null) {
     activeMarkerIndex = Array.from(selectedMarkerIndices)[selectedMarkerIndices.size - 1];
   }
   syncActiveMarkerUI();
+  updateApplyTargetBadge();
+  syncMarkerSizeUI();
   syncPointsModal();
   updateTable();
   draw();
@@ -1962,8 +2172,12 @@ function collectViewerState() {
       rateHz: trial.rate_hz,
       theme: currentTheme,
       markerSize,
+      markerSizeOverrides: { ...markerSizeOverrides },
       markerColor,
       skeletonColor,
+      skeletonByGroup: Object.fromEntries(
+        Object.entries(skeletonByGroup).map(([k, v]) => [k, { templateId: v.templateId, pairs: v.pairs }])
+      ),
       selectedMarkerIndices: Array.from(selectedMarkerIndices),
       pinnedMarkerIndices: Array.from(pinnedMarkerIndices),
       quickFilterCutoff,
@@ -2093,8 +2307,16 @@ function restoreSessionState(data, state = readSessionState()) {
       setTheme(state.theme);
     }
     if (Number.isFinite(state.markerSize)) {
-      setMarkerSize(state.markerSize);
+      markerSize = Math.max(1, Math.min(15, Number(state.markerSize) || 3.5));
     }
+    if (state.markerSizeOverrides && typeof state.markerSizeOverrides === "object") {
+      markerSizeOverrides = {};
+      for (const [label, value] of Object.entries(state.markerSizeOverrides)) {
+        const n = Number(value);
+        if (Number.isFinite(n)) markerSizeOverrides[label] = Math.max(1, Math.min(15, n));
+      }
+    }
+    syncMarkerSizeUI();
     if (typeof state.markerColor === "string") {
       setMarkerColor(state.markerColor);
     }
@@ -2109,6 +2331,8 @@ function restoreSessionState(data, state = readSessionState()) {
       selectedMarkerIndices = new Set(validIndices.length > 0 ? validIndices : [activeMarkerIndex]);
       syncPointsModal();
       updateTable();
+      updateApplyTargetBadge();
+      syncMarkerSizeUI();
     }
     if (Array.isArray(state.pinnedMarkerIndices) && data && data.labels) {
       const validPinned = state.pinnedMarkerIndices.filter(i => Number.isInteger(i) && i >= 0 && i < data.labels.length);
@@ -2139,14 +2363,28 @@ function restoreSessionState(data, state = readSessionState()) {
       plot2CurveVisibility = { ...plot2CurveVisibility, ...state.plot2CurveVisibility };
     }
 
-    if (state.activeSkeletonTemplate && state.activeSkeletonTemplate !== "none") {
+    if (state.skeletonByGroup && typeof state.skeletonByGroup === "object" && Object.keys(state.skeletonByGroup).length > 0) {
+      skeletonByGroup = {};
+      for (const [key, entry] of Object.entries(state.skeletonByGroup)) {
+        if (entry && Array.isArray(entry.pairs)) {
+          skeletonByGroup[key] = { templateId: entry.templateId || state.activeSkeletonTemplate, pairs: entry.pairs };
+        }
+      }
+      rebuildSkeletonPairs();
+      if (state.activeSkeletonTemplate) {
+        activeSkeletonTemplate = state.activeSkeletonTemplate;
+        if ($("skeleton-template-select")) $("skeleton-template-select").value = state.activeSkeletonTemplate;
+      }
+    } else if (state.activeSkeletonTemplate && state.activeSkeletonTemplate !== "none") {
       if ($("skeleton-template-select")) $("skeleton-template-select").value = state.activeSkeletonTemplate;
+      activeSkeletonTemplate = state.activeSkeletonTemplate;
       if (state.activeSkeletonTemplate === "vicon_squat") {
         applySkeletonTemplate(VICON_SQUAT_TEMPLATE);
       } else if (embeddedTemplates[state.activeSkeletonTemplate]) {
         applySkeletonTemplate(embeddedTemplates[state.activeSkeletonTemplate]);
       }
     }
+    updateApplyTargetBadge();
   } catch (e) {
     console.warn("Could not restore session state:", e);
   }
@@ -2208,6 +2446,11 @@ function refreshMarkerSelectors() {
 }
 
 function load(data) {
+  if (!switchingLayer) {
+    layers = [];
+    activeLayerId = null;
+    renderLayersPanel();
+  }
   const savedViewerState = readSessionState();
   showLabAxes = true;
   groundLevel = "auto";
@@ -2217,7 +2460,9 @@ function load(data) {
   pause();
   activeMarkerIndex = 0;
   selectedMarkerIndices = new Set(data.labels && data.labels.length > 0 ? [0] : []);
+  skeletonByGroup = {};
   skeletonPairs = [];
+  if (!switchingLayer) markerSizeOverrides = {};
   interpolatedMarkers = {};
   plot1CurveVisibility = { x: true, y: true, z: true };
   plot2CurveVisibility = { x: true, y: true, z: true };
@@ -2245,6 +2490,8 @@ function load(data) {
   $("timeline").max = String(data.xyz.length - 1);
 
   initSkeleton(data.labels);
+  updateApplyTargetBadge();
+  syncMarkerSizeUI();
   buildTable();
   syncPointsModal();
 
@@ -3000,12 +3247,8 @@ async function loadSelectedSkeleton() {
   const select = $("skeleton-template-select");
   const val = select ? select.value : "none";
   if (val === "none") {
-    skeletonPairs = [];
-    activeSkeletonTemplate = "none";
-    if ($("skeleton-status-badge")) {
-      $("skeleton-status-badge").textContent = "None";
-      $("skeleton-status-badge").style.color = "var(--text-muted)";
-    }
+    clearAllSkeletons();
+    if ($("skeleton-template-select")) $("skeleton-template-select").value = "none";
     draw();
     saveSessionState();
     status("No skeleton model selected.");
@@ -3014,9 +3257,11 @@ async function loadSelectedSkeleton() {
   if (val === "custom") {
     if (loadedCustomTemplate) {
       activeSkeletonTemplate = "custom";
-      const count = applySkeletonTemplate(loadedCustomTemplate);
+      const target = activeApplyGroupKey();
+      const count = applySkeletonTemplate(loadedCustomTemplate, target);
       saveSessionState();
-      status(`Custom skeleton loaded (${count} connections).`);
+      const targetName = target === SKELETON_ALL_GROUP ? "whole trial" : target;
+      status(`Custom skeleton on ${targetName} (${count} connections; ${skeletonPairs.length} total).`);
     } else {
       if ($("file-skeleton-custom")) $("file-skeleton-custom").click();
     }
@@ -3024,9 +3269,11 @@ async function loadSelectedSkeleton() {
   }
   if (val === "vicon_squat") {
     activeSkeletonTemplate = "vicon_squat";
-    const count = applySkeletonTemplate(VICON_SQUAT_TEMPLATE);
+    const target = activeApplyGroupKey();
+    const count = applySkeletonTemplate(VICON_SQUAT_TEMPLATE, target);
     saveSessionState();
-    status(`Lower Body Squat skeleton loaded (${count} connections).`);
+    const targetName = target === SKELETON_ALL_GROUP ? "whole trial" : target;
+    status(`Lower Body Squat on ${targetName} (${count} connections; ${skeletonPairs.length} total).`);
     return;
   }
 
@@ -3042,9 +3289,11 @@ async function loadSelectedSkeleton() {
 
   if (tObj) {
     activeSkeletonTemplate = val;
-    const count = applySkeletonTemplate(tObj);
+    const target = activeApplyGroupKey();
+    const count = applySkeletonTemplate(tObj, target);
     saveSessionState();
-    status(`Skeleton ${tObj.schema || val} loaded (${count} connections).`);
+    const targetName = target === SKELETON_ALL_GROUP ? "whole trial" : target;
+    status(`Skeleton ${tObj.schema || val} on ${targetName} (${count} connections; ${skeletonPairs.length} total).`);
   } else {
     status(`Template '${val}' not found.`, true);
   }
@@ -3054,13 +3303,8 @@ if ($("btn-load-skeleton")) $("btn-load-skeleton").onclick = loadSelectedSkeleto
 if ($("btn-create-com")) $("btn-create-com").onclick = createDeLevaCOM;
 if ($("btn-clear-skeleton")) {
   $("btn-clear-skeleton").onclick = () => {
-    skeletonPairs = [];
-    activeSkeletonTemplate = "none";
+    clearAllSkeletons();
     if ($("skeleton-template-select")) $("skeleton-template-select").value = "none";
-    if ($("skeleton-status-badge")) {
-      $("skeleton-status-badge").textContent = "No skeleton";
-      $("skeleton-status-badge").style.color = "var(--text-muted)";
-    }
     saveSessionState();
     draw();
     status("Skeleton cleared.");
@@ -3078,9 +3322,11 @@ if ($("file-skeleton-custom")) {
         loadedCustomTemplate = json;
         activeSkeletonTemplate = "custom";
         if ($("skeleton-template-select")) $("skeleton-template-select").value = "custom";
-        const count = applySkeletonTemplate(json);
+        const target = activeApplyGroupKey();
+        const count = applySkeletonTemplate(json, target);
         saveSessionState();
-        status(`Template '${f.name}' loaded (${count} connections).`);
+        const targetName = target === SKELETON_ALL_GROUP ? "whole trial" : target;
+        status(`Template '${f.name}' on ${targetName} (${count} connections; ${skeletonPairs.length} total).`);
       } catch (err) {
         status("Invalid skeleton JSON file.", true);
       }
@@ -3848,9 +4094,9 @@ function popoutPane(paneId, placement = null) {
     } else if (e.key === "c" || e.key === "C") {
       cycleMarkerColor();
     } else if (e.key === "+" || e.key === "=") {
-      setMarkerSize(markerSize + 0.5);
+      adjustMarkerSize(0.5);
     } else if (e.key === "-") {
-      setMarkerSize(markerSize - 0.5);
+      adjustMarkerSize(-0.5);
     }
   });
 
@@ -5499,12 +5745,12 @@ document.addEventListener("keydown", e => {
   }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "+" || e.key === "=")) {
     e.preventDefault();
-    setMarkerSize(markerSize + 0.5);
+    adjustMarkerSize(0.5);
     return;
   }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "-" || e.key === "_")) {
     e.preventDefault();
-    setMarkerSize(markerSize - 0.5);
+    adjustMarkerSize(-0.5);
     return;
   }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === "c" || e.key === "C")) {
@@ -5861,6 +6107,14 @@ async function saveVailaProject() {
   const viewerState = collectViewerState();
   viewerState.raw_loaded_xyz = rawLoadedXYZ;
   viewerState.raw_force_plates = rawForcePlates;
+  viewerState.layers = layers.filter(l => l.id !== activeLayerId).map(l => ({
+    name: l.name,
+    template: l.template,
+    custom_template: l.customTemplate,
+    visible: l.visible,
+    color: l.color,
+    data: l.data,
+  }));
   status("Saving complete open .vaila project...");
   try {
     const response = await fetch("/api/export/vaila", {
@@ -5909,6 +6163,20 @@ function loadVailaProject(project) {
   recomputeTrialXYZ();
   updateLCSUI();
   updateFilterUI();
+  for (const saved of Array.isArray(state.layers) ? state.layers : []) {
+    if (!saved || !saved.data || !Array.isArray(saved.data.labels) || !Array.isArray(saved.data.xyz)) continue;
+    const layer = addLayer(saved.data, saved.template === "custom" ? "none" : saved.template);
+    if (saved.template === "custom" && saved.custom_template) {
+      layer.customTemplate = saved.custom_template;
+      setLayerTemplate(layer, "custom");
+    }
+    layer.visible = saved.visible !== false;
+    if (typeof saved.color === "string") layer.color = saved.color;
+  }
+  if (layers.length) {
+    fit();
+    renderLayersPanel();
+  }
   status(`Project ${trial.name} reopened with processing state and saved analyses.`);
 }
 
@@ -6235,6 +6503,377 @@ async function uploadFile(file) {
   }
 }
 
+// ── Layers ──────────────────────────────────────────────────────────────────
+// Several trials share one scene. The active layer's data *is* `trial` (editing,
+// plots, analyses and exports act on it); every other visible layer is drawn as a
+// read-only overlay, time-synced to the active trial, with its own skeleton.
+
+function layerTemplateObject(layer, name) {
+  if (name === "vicon_squat") return VICON_SQUAT_TEMPLATE;
+  if (name === "custom") return layer && layer.customTemplate ? layer.customTemplate : null;
+  return embeddedTemplates[name] || null;
+}
+
+function setLayerTemplate(layer, name) {
+  const tpl = layerTemplateObject(layer, name);
+  layer.template = tpl ? name : "none";
+  layer.skeletonPairs = resolveSkeletonPairs(tpl, layer.data.labels);
+}
+
+/** Active trial's template if it fits the labels, else the one template sized to them. */
+function guessLayerTemplate(labels) {
+  if (activeSkeletonTemplate !== "none" && activeSkeletonTemplate !== "custom"
+    && resolveSkeletonPairs(layerTemplateObject(null, activeSkeletonTemplate), labels).length) {
+    return activeSkeletonTemplate;
+  }
+  const sized = Object.entries(embeddedTemplates).filter(([, t]) =>
+    Array.isArray(t.keypoints) && Number(t.num_keypoints || t.keypoints.length) === labels.length).map(([k]) => k);
+  if (sized.length === 1) return sized[0];
+  // Several templates share a size (e.g. MHR-70 variants): prefer the one curated in the main dropdown.
+  const main = $("skeleton-template-select");
+  const curated = main ? sized.filter(k => Array.from(main.options).some(o => o.value === k)) : [];
+  return curated.length === 1 ? curated[0] : "none";
+}
+
+function makeLayer(data) {
+  const layer = {
+    id: nextLayerId++,
+    name: data.name,
+    data,
+    template: "none",
+    customTemplate: null,
+    skeletonPairs: [],
+    visible: true,
+    color: LAYER_COLORS[layers.length % LAYER_COLORS.length],
+    stash: null,
+  };
+  return layer;
+}
+
+/** Wrap the open trial as layer 0 the first time something is added beside it. */
+function ensureActiveLayer() {
+  if (!trial || layers.some(l => l.id === activeLayerId)) return;
+  const layer = makeLayer(trial);
+  layer.template = activeSkeletonTemplate;
+  layer.customTemplate = loadedCustomTemplate;
+  layers.push(layer);
+  activeLayerId = layer.id;
+}
+
+function addLayer(data, template = null) {
+  ensureActiveLayer();
+  const layer = makeLayer(data);
+  setLayerTemplate(layer, template || guessLayerTemplate(data.labels));
+  layers.push(layer);
+  fit();
+  renderLayersPanel();
+  status(`Layer "${data.name}" added (${data.labels.length} markers, ${data.xyz.length} frames, skeleton: ${layer.template}).`);
+  return layer;
+}
+
+/** Overlay frame at the active trial's current time; static (1-frame) layers stay at 0. */
+function layerFrame(layer) {
+  const n = layer.data.xyz.length;
+  if (n <= 1 || !trial || !(trial.rate_hz > 0)) return 0;
+  const t = frame / trial.rate_hz;
+  return Math.min(n - 1, Math.max(0, Math.round(t * layer.data.rate_hz)));
+}
+
+function overlayLayers() {
+  return layers.filter(l => l.visible && l.id !== activeLayerId);
+}
+
+function drawLayerOverlays(targetCtx, w, h) {
+  for (const layer of overlayLayers()) {
+    const pts = layer.data.xyz[layerFrame(layer)] || [];
+    drawSkeleton(pts, targetCtx, w, h, layer.skeletonPairs);
+    drawSoccerFieldCurves(pts, targetCtx, w, h, { labels: layer.data.labels, template: layer.template });
+    targetCtx.fillStyle = layer.color;
+    const radius = Math.max(1.5, markerSize * 0.75);
+    for (const p of pts) {
+      if (!valid(p)) continue;
+      const q = project(p, w, h);
+      targetCtx.beginPath();
+      targetCtx.arc(q[0], q[1], radius, 0, Math.PI * 2);
+      targetCtx.fill();
+    }
+  }
+}
+
+function captureActiveLayerState(layer) {
+  layer.template = activeSkeletonTemplate;
+  layer.customTemplate = loadedCustomTemplate;
+  layer.skeletonPairs = skeletonPairs;
+  layer.stash = {
+    customSegments,
+    rawLoadedXYZ,
+    currentLCS: { ...currentLCS },
+    activeFilterConfig,
+    skeletonByGroup: JSON.parse(JSON.stringify(skeletonByGroup)),
+    markerSizeOverrides: { ...markerSizeOverrides },
+  };
+}
+
+function restoreActiveLayerState(layer) {
+  const st = layer.stash;
+  if (st) {
+    customSegments = st.customSegments || [];
+    if (st.rawLoadedXYZ) rawLoadedXYZ = st.rawLoadedXYZ;
+    currentLCS = { ...st.currentLCS };
+    activeFilterConfig = st.activeFilterConfig;
+    if (st.markerSizeOverrides && typeof st.markerSizeOverrides === "object") {
+      markerSizeOverrides = { ...st.markerSizeOverrides };
+    }
+    recomputeTrialXYZ();
+    updateLCSUI();
+    updateFilterUI();
+  }
+  activeSkeletonTemplate = layer.template;
+  loadedCustomTemplate = layer.customTemplate;
+  if ($("skeleton-template-select")) $("skeleton-template-select").value = layer.template;
+  if (st && st.skeletonByGroup && Object.keys(st.skeletonByGroup).length > 0) {
+    skeletonByGroup = st.skeletonByGroup;
+    rebuildSkeletonPairs();
+    draw();
+  } else if (layer.template === "none") {
+    clearAllSkeletons();
+    draw();
+  } else {
+    applySkeletonTemplate(layerTemplateObject(layer, layer.template));
+  }
+  updateApplyTargetBadge();
+  syncMarkerSizeUI();
+}
+
+async function activateLayer(id) {
+  const target = layers.find(l => l.id === id);
+  const current = layers.find(l => l.id === activeLayerId);
+  if (!target || target === current) return;
+  if (current) captureActiveLayerState(current);
+  if (boot.server && token) {
+    const params = new URLSearchParams({ name: target.data.name, from: current ? current.data.name : "" });
+    try {
+      await fetch(`/api/activate_layer?${params}`, { method: "POST", headers: { "Authorization": `Bearer ${token}` } });
+    } catch (e) { /* export falls back to a template-less C3D */ }
+  }
+  const time = trial && trial.rate_hz > 0 ? frame / trial.rate_hz : 0;
+  const view = { yaw, pitch, zoom, pan: [...pan], center: [...center], span };
+  activeLayerId = id;
+  switchingLayer = true;
+  try {
+    load(target.data);
+  } finally {
+    switchingLayer = false;
+  }
+  restoreActiveLayerState(target);
+  ({ yaw, pitch, zoom, span } = view);
+  pan = view.pan;
+  center = view.center;
+  frame = Math.min(trial.xyz.length - 1, Math.max(0, Math.round(time * trial.rate_hz)));
+  renderLayersPanel();
+  draw();
+  status(`Active layer: ${target.name}.`);
+}
+
+function removeLayer(id) {
+  const layer = layers.find(l => l.id === id);
+  if (!layer) return;
+  if (layer.id === activeLayerId) {
+    status("Make another layer active before removing this one.", true);
+    return;
+  }
+  layers = layers.filter(l => l !== layer);
+  if (layers.length === 1) {
+    layers = [];
+    activeLayerId = null;
+  }
+  fit();
+  renderLayersPanel();
+  status(`Layer "${layer.name}" removed.`);
+}
+
+function layerTemplateOptions() {
+  const opts = [];
+  const seen = new Set();
+  const main = $("skeleton-template-select");
+  if (main) {
+    for (const o of main.options) {
+      if (o.value === "custom") continue;
+      opts.push([o.value, o.textContent]);
+      seen.add(o.value);
+    }
+  }
+  for (const key of Object.keys(embeddedTemplates)) {
+    if (!seen.has(key)) opts.push([key, key]);
+  }
+  return opts;
+}
+
+function renderLayersPanel() {
+  const section = $("layers-section");
+  const list = $("layers-list");
+  if (!section || !list) return;
+  section.hidden = layers.length === 0;
+  if ($("layer-count-badge")) $("layer-count-badge").textContent = `${layers.length} layers`;
+  list.replaceChildren();
+  const options = layerTemplateOptions();
+  for (const layer of layers) {
+    const isActive = layer.id === activeLayerId;
+    const row = document.createElement("div");
+    row.setAttribute("role", "listitem");
+    row.className = "layer-row";
+    row.style.cssText = "display:flex;align-items:center;gap:4px;margin-top:4px;font-size:11px;";
+
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "active-layer";
+    radio.checked = isActive;
+    radio.title = "Make active layer";
+    radio.setAttribute("aria-label", `Make ${layer.name} the active layer`);
+    radio.onchange = () => activateLayer(layer.id);
+
+    const vis = document.createElement("input");
+    vis.type = "checkbox";
+    vis.checked = layer.visible || isActive;
+    vis.disabled = isActive;
+    vis.title = "Show layer";
+    vis.setAttribute("aria-label", `Show ${layer.name}`);
+    vis.onchange = () => { layer.visible = vis.checked; draw(); };
+
+    const color = document.createElement("input");
+    color.type = "color";
+    color.value = layer.color;
+    color.title = "Overlay marker color";
+    color.setAttribute("aria-label", `Marker color of ${layer.name}`);
+    color.style.cssText = "width:20px;height:18px;padding:0;border:none;background:transparent;";
+    color.oninput = () => { layer.color = color.value; draw(); };
+
+    const name = document.createElement("span");
+    name.textContent = layer.name;
+    name.title = `${layer.name} · ${layer.data.labels.length} markers · ${layer.data.xyz.length} frames · ${layer.data.rate_hz} Hz`;
+    name.style.cssText = `flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isActive ? "font-weight:700;" : ""}`;
+
+    const sel = document.createElement("select");
+    sel.setAttribute("aria-label", `Skeleton template of ${layer.name}`);
+    sel.style.cssText = "max-width:96px;font-size:10px;";
+    for (const [value, text] of options) {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = text;
+      sel.appendChild(o);
+    }
+    const current = isActive ? activeSkeletonTemplate : layer.template;
+    if (current === "custom") {
+      const o = document.createElement("option");
+      o.value = "custom";
+      o.textContent = "Custom JSON";
+      sel.appendChild(o);
+    }
+    sel.value = current;
+    sel.onchange = () => {
+      if (layer.id === activeLayerId) {
+        if ($("skeleton-template-select")) $("skeleton-template-select").value = sel.value;
+        loadSelectedSkeleton();
+      } else {
+        setLayerTemplate(layer, sel.value);
+        draw();
+      }
+    };
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "✕";
+    del.title = "Remove layer";
+    del.setAttribute("aria-label", `Remove ${layer.name}`);
+    del.disabled = isActive;
+    del.style.cssText = "padding:0 5px;font-size:10px;";
+    del.onclick = () => removeLayer(layer.id);
+
+    row.append(radio, vis, color, name, sel, del);
+    list.appendChild(row);
+  }
+}
+
+async function fetchLayerPayload(file) {
+  const params = new URLSearchParams({
+    name: file.name,
+    rate: $("rate") ? $("rate").value : "100",
+    units: $("units") ? $("units").value : "m",
+    layer: "1",
+  });
+  try {
+    const response = await fetch(`/api/trial?${params}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/octet-stream" },
+      body: file,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Failed to open ${file.name}.`);
+    return data;
+  } catch (error) {
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (!boot.server && (ext === "csv" || ext === "3d")) {
+      const units = $("units") ? $("units").value : "m";
+      const rate = $("rate") ? Number($("rate").value) || 100 : 100;
+      return parseWideCsvClient(await file.text(), file.name, rate, units);
+    }
+    throw error;
+  }
+}
+
+async function addLayerFiles(fileList) {
+  const files = Array.from(fileList || []);
+  pause();
+  for (const file of files) {
+    try {
+      if (!trial) {
+        await uploadFile(file);
+        const guess = trial && activeSkeletonTemplate === "none" ? guessLayerTemplate(trial.labels) : "none";
+        if (guess !== "none" && $("skeleton-template-select")) {
+          $("skeleton-template-select").value = guess;
+          await loadSelectedSkeleton();
+        }
+        continue;
+      }
+      status(`Adding ${file.name} as a layer...`);
+      addLayer(await fetchLayerPayload(file));
+    } catch (error) {
+      status(`${file.name}: ${error.message}`, true);
+    }
+  }
+}
+
+async function addFieldReference() {
+  try {
+    const response = await fetch("/api/field_reference");
+    if (!response.ok) throw new Error("Field reference needs the local GUI session.");
+    const data = await response.json();
+    if (!trial) {
+      load(data);
+      if ($("skeleton-template-select")) $("skeleton-template-select").value = "soccerfield_kiki49";
+      await loadSelectedSkeleton();
+      return;
+    }
+    if (layers.some(l => l.name === data.name)) {
+      status("Soccer field reference is already loaded.");
+      return;
+    }
+    addLayer(data, "soccerfield_kiki49");
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+if ($("action-add-layer-files")) $("action-add-layer-files").onclick = () => $("file-add-layers").click();
+if ($("file-add-layers")) {
+  $("file-add-layers").onchange = async () => {
+    const input = $("file-add-layers");
+    await addLayerFiles(input.files);
+    input.value = "";
+  };
+}
+if ($("action-add-field-reference")) $("action-add-field-reference").onclick = addFieldReference;
+
 if ($("file")) {
   $("file").onchange = () => {
     const file = $("file").files[0];
@@ -6267,8 +6906,8 @@ function initMarkerControls() {
   if (slider) {
     slider.oninput = e => setMarkerSize(Number(e.target.value));
   }
-  if (btnInc) btnInc.onclick = () => setMarkerSize(markerSize + 0.5);
-  if (btnDec) btnDec.onclick = () => setMarkerSize(markerSize - 0.5);
+  if (btnInc) btnInc.onclick = () => adjustMarkerSize(0.5);
+  if (btnDec) btnDec.onclick = () => adjustMarkerSize(-0.5);
   if (btnCycle) btnCycle.onclick = cycleMarkerColor;
   if (btnReset) btnReset.onclick = resetMarkerStyle;
   if (colorPicker) {
@@ -6303,8 +6942,8 @@ function initMarkerControls() {
 
   // View menu items
   if ($("action-cycle-marker-color")) $("action-cycle-marker-color").onclick = cycleMarkerColor;
-  if ($("action-inc-marker-size")) $("action-inc-marker-size").onclick = () => setMarkerSize(markerSize + 0.5);
-  if ($("action-dec-marker-size")) $("action-dec-marker-size").onclick = () => setMarkerSize(markerSize - 0.5);
+  if ($("action-inc-marker-size")) $("action-inc-marker-size").onclick = () => adjustMarkerSize(0.5);
+  if ($("action-dec-marker-size")) $("action-dec-marker-size").onclick = () => adjustMarkerSize(-0.5);
   if ($("action-reset-marker-style")) $("action-reset-marker-style").onclick = resetMarkerStyle;
 }
 
@@ -10204,7 +10843,7 @@ initSkeletonStyleControls();
 initPointsModal();
 resize();
 setTheme(currentTheme);
-setMarkerSize(markerSize);
+syncMarkerSizeUI();
 setMarkerColor(markerColor);
 setSkeletonColor(skeletonColor);
 if (boot && boot.server) checkCompanionVideos();

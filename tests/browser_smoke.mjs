@@ -227,7 +227,8 @@ for (const [key, modal, close] of [["k", "modal-kinematics", "btn-close-kinemati
 assert.equal(await evaluate('markerSize'), 3.5);
 assert.equal(await evaluate('markerColor'), "auto");
 
-// Test '+' and '-' keyboard shortcuts for marker size
+// Empty selection → global default size
+await evaluate('clearMarkerSelectionGroup()');
 await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "+", bubbles: true }))');
 assert.equal(await evaluate('markerSize'), 4.0);
 assert.equal(await evaluate('document.getElementById("marker-size-val").textContent'), "4.0 px");
@@ -235,9 +236,33 @@ assert.equal(await evaluate('document.getElementById("marker-size-val").textCont
 await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "-", bubbles: true }))');
 assert.equal(await evaluate('markerSize'), 3.5);
 
-// Test marker size slider
 await evaluate('document.getElementById("marker-size-slider").value = "5"; document.getElementById("marker-size-slider").dispatchEvent(new Event("input"))');
 assert.equal(await evaluate('markerSize'), 5.0);
+
+// Selection → per-marker override only
+await evaluate('setSelectedMarkers([0]); setMarkerSize(9)');
+assert.equal(await evaluate('markerSize'), 5.0);
+assert.equal(await evaluate('effectiveMarkerSize(0)'), 9);
+assert.equal(await evaluate('effectiveMarkerSize(1)'), 5.0);
+await evaluate('resetMarkerStyle()');
+assert.equal(await evaluate('markerSize'), 3.5);
+assert.equal(await evaluate('Object.keys(markerSizeOverrides).length'), 0);
+
+// Group helpers for multi-person labels (cena_completa style)
+assert.equal(await evaluate('markerGroupKey("piquerez_p12")'), "piquerez");
+assert.equal(await evaluate('markerGroupKey("ball_p0")'), "ball");
+assert.equal(await evaluate('markerGroupKey("p12")'), null);
+assert.deepEqual(await evaluate('groupMarkerIndices(["piquerez_p0","piquerez_p1","barreira_p0","ball_p0"], "piquerez")'), [0, 1]);
+assert.equal(await evaluate('localMarkerLabel("piquerez_p5", "piquerez")'), "p5");
+assert.deepEqual(await evaluate(`(() => {
+  const labels = Array.from({length: 70}, (_, i) => "piquerez_p" + i)
+    .concat(Array.from({length: 70}, (_, i) => "barreira_p" + i))
+    .concat(["ball_p0"]);
+  const tpl = embeddedTemplates.sam3dinov3_mhr70;
+  const idxs = groupMarkerIndices(labels, "piquerez");
+  const local = idxs.map(i => localMarkerLabel(labels[i], "piquerez"));
+  return resolveSkeletonPairs(tpl, local).length;
+})()`), 88);
 
 // Test 'C' shortcut to cycle marker colors (11 colors from viewc3d.py)
 await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true }))');
@@ -595,6 +620,42 @@ if(process.argv[3]){
   // 6. Test Esc key hides context menu
   await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}))');
   assert.equal(await evaluate('document.getElementById("canvas-context-menu").hidden'), true);
+}
+// Layers: extra trials as time-synced overlays, each with its own skeleton.
+{
+  await evaluate(`(() => {
+    const base = window.trial;
+    const copy = JSON.parse(JSON.stringify({ name: "layer_copy.c3d", labels: base.labels, rate_hz: base.rate_hz / 2, xyz: base.xyz.slice(0, 100) }));
+    addLayer(copy, "sam3dinov3_mhr70");
+    const fieldPts = base.xyz[0].slice(0, 49).map((p, i) => [i, i % 7, 0]);
+    addLayer({ name: "soccerfield_kiki49", labels: fieldPts.map((_, i) => "p" + i), rate_hz: 1, xyz: [fieldPts] }, "soccerfield_kiki49");
+  })()`);
+  assert.equal(await evaluate('layers.length'), 3);
+  assert.equal(await evaluate('document.getElementById("layers-section").hidden'), false);
+  assert.equal(await evaluate('document.querySelectorAll("#layers-list [role=listitem]").length'), 3);
+  assert.ok(await evaluate('layers[1].skeletonPairs.length > 0'));
+  assert.ok(await evaluate('layers[2].skeletonPairs.length > 0'));
+  // Half-rate overlay maps by time; the static field stays on frame 0.
+  await evaluate('frame = 40; draw()');
+  assert.equal(await evaluate('layerFrame(layers[1])'), 20);
+  assert.equal(await evaluate('layerFrame(layers[2])'), 0);
+  await evaluate('frame = 600; draw()');
+  assert.equal(await evaluate('layerFrame(layers[1])'), 99);
+  // Switching the active layer keeps edits and per-layer skeletons.
+  await evaluate('window.__baseTrial = trial; trial.xyz[0][0] = [9, 9, 9]');
+  await evaluate('activateLayer(layers[1].id)');
+  assert.equal(await evaluate('trial.name'), "layer_copy.c3d");
+  assert.equal(await evaluate('activeSkeletonTemplate'), "sam3dinov3_mhr70");
+  assert.equal(await evaluate('layers.length'), 3);
+  await evaluate('activateLayer(layers[0].id)');
+  assert.equal(await evaluate('trial === window.__baseTrial'), true);
+  assert.deepEqual(await evaluate('trial.xyz[0][0]'), [9, 9, 9]);
+  await evaluate('removeLayer(layers[2].id)');
+  assert.equal(await evaluate('layers.length'), 2);
+  // Opening a file the normal way drops the overlays.
+  await evaluate('load(JSON.parse(JSON.stringify(window.__baseTrial)))');
+  assert.equal(await evaluate('layers.length'), 0);
+  assert.equal(await evaluate('document.getElementById("layers-section").hidden'), true);
 }
 assert.deepEqual(errors,[]);
 console.log("Browser passed: playback, FPS edit, filtering, exports, de Leva CoM, detailed skeleton, local uploads, and no JS exceptions.");
