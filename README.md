@@ -196,6 +196,15 @@ orbit/pan/zoom, distance measurement, real-time synced charts, force
 platform / GRF vector overlays, and CSV/HTML export. C3D, CSV, and `.3d`
 files can also be uploaded directly from the browser.
 
+**Layers.** *File > Add File(s) as Layers...* puts several trials in one scene
+(for example one rec3d C3D per player). Each layer has its own skeleton
+template, visibility and marker color in the sidebar *Layers* list. The active
+layer is the one you edit, plot and export. The other layers are read-only
+overlays, synchronized by time to the active trial. *File > Add Soccer Field
+Reference (kiki49)* adds the 49 real-world pitch keypoints (metres, origin at
+the centre spot, z up), the same world frame as vailá freekiki DLT
+calibrations and rec3d output.
+
 ### CLI
 
 ```bash
