@@ -100,6 +100,50 @@ def test_viewer_header_shows_package_version():
     assert 'id="app-version"' in html
     assert f">v{__version__}<" in html
     assert f"<title>mkvis3d v{__version__}" in html
+    assert __version__ == "0.0.3"
+
+
+def test_gui_rejects_client_local_path_and_unauthed_example(tmp_path):
+    """Hardening: no host-path uploads; sample/example GETs need the session token."""
+    server, url = create_server(0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    token = url.split("#")[1]
+    try:
+        connection.request("GET", "/api/example?name=pilot0102_squat03.c3d")
+        denied = connection.getresponse()
+        assert denied.status == 403
+        denied.read()
+
+        connection.request(
+            "GET",
+            "/api/example?name=pilot0102_squat03.c3d",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        ok = connection.getresponse()
+        assert ok.status == 200
+        assert json.loads(ok.read())["name"] == "pilot0102_squat03.c3d"
+
+        fake = tmp_path / "clip.mp4"
+        fake.write_bytes(b"not-a-real-video")
+        connection.request(
+            "POST",
+            f"/api/transcode_upload?name=clip.mp4&local_path={fake}",
+            body=b"not-a-real-video",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        blocked = connection.getresponse()
+        assert blocked.status == 400
+        assert "local_path" in json.loads(blocked.read())["error"]
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_view_cli_exports_golden_trial(tmp_path):
@@ -157,8 +201,16 @@ def test_local_gui_upload_matches_cli_and_rejects_missing_token(tmp_path):
         assert response.status == 200
         assert b"PNG" in response.read() or len(response.read()) > 0
 
-        # Test /api/current_trial
+        # Test /api/current_trial (requires session Bearer)
         connection.request("GET", "/api/current_trial")
+        response = connection.getresponse()
+        assert response.status == 403
+        response.read()
+        connection.request(
+            "GET",
+            "/api/current_trial",
+            headers={"Authorization": f"Bearer {url.split('#')[1]}"},
+        )
         response = connection.getresponse()
         assert response.status == 200
         current_data = json.loads(response.read())
@@ -466,14 +518,41 @@ def test_gui_save_as_writes_c3d_and_csv_in_chosen_directory(tmp_path, monkeypatc
     token = url.split("#")[1]
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     try:
-        body = json.dumps(
-            {
-                "trial": payload,
-                "directory": str(chosen_dir),
-                "filename": "../../outside.c3d",
-            }
-        ).encode()
-        connection.request("POST", "/api/export/save_as", body=body, headers=headers)
+        # Client-supplied absolute directories are rejected (dialog-only saves).
+        connection.request(
+            "POST",
+            "/api/export/save_as",
+            body=json.dumps(
+                {
+                    "trial": payload,
+                    "directory": str(chosen_dir),
+                    "filename": "../../outside.c3d",
+                }
+            ).encode(),
+            headers=headers,
+        )
+        rejected = connection.getresponse()
+        assert rejected.status == 400
+        assert "directory" in json.loads(rejected.read())["error"].lower()
+
+        picks = iter(
+            [
+                chosen_dir / "outside.c3d",
+                chosen_dir / "markers_only" / "original.csv",
+                chosen_dir / "from_dialog.c3d",
+            ]
+        )
+
+        def fake_pick(default_path, *, title):
+            return next(picks)
+
+        monkeypatch.setattr("openbiomech.viewer.pick_save_path", fake_pick)
+        connection.request(
+            "POST",
+            "/api/export/save_as",
+            body=json.dumps({"trial": payload, "filename": "../../outside.c3d"}).encode(),
+            headers=headers,
+        )
         response = connection.getresponse()
         assert response.status == 200
         written = json.loads(response.read())
@@ -498,9 +577,7 @@ def test_gui_save_as_writes_c3d_and_csv_in_chosen_directory(tmp_path, monkeypatc
         connection.request(
             "POST",
             "/api/export/save_as",
-            body=json.dumps(
-                {"trial": payload, "directory": str(csv_only), "formats": ["csv"]}
-            ).encode(),
+            body=json.dumps({"trial": payload, "formats": ["csv"]}).encode(),
             headers=headers,
         )
         csv_response = connection.getresponse()
@@ -510,15 +587,6 @@ def test_gui_save_as_writes_c3d_and_csv_in_chosen_directory(tmp_path, monkeypatc
         assert (csv_only / "original.csv").is_file()
         assert not (csv_only / "original.c3d").exists()
 
-        picked = chosen_dir / "from_dialog.c3d"
-
-        def fake_pick(default_path, *, title):
-            assert default_path.parent == source_dir
-            assert default_path.name == "original.c3d"
-            assert "C3D and CSV" in title
-            return picked
-
-        monkeypatch.setattr("openbiomech.viewer.pick_save_path", fake_pick)
         connection.request(
             "POST",
             "/api/export/save_as",
@@ -528,7 +596,7 @@ def test_gui_save_as_writes_c3d_and_csv_in_chosen_directory(tmp_path, monkeypatc
         dialog_response = connection.getresponse()
         assert dialog_response.status == 200
         dialog_written = json.loads(dialog_response.read())
-        assert Path(dialog_written["c3d"]) == picked.resolve()
+        assert Path(dialog_written["c3d"]) == (chosen_dir / "from_dialog.c3d").resolve()
         assert (chosen_dir / "from_dialog.csv").is_file()
 
         monkeypatch.setattr("openbiomech.viewer.pick_save_path", lambda *args, **kwargs: None)

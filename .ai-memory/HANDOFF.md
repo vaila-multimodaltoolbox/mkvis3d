@@ -1,6 +1,6 @@
-# Session Handoff: Click-scoped skeleton/CoM and per-marker size
+# Session Handoff: Resizable left sidebar
 - **Status:** Completed (not committed)
-- **Current State:** In a multi-person C3D (`person_pN` / `ball_p0` labels), click sets the apply target. Load Skeleton and Create CoM act on that person’s markers only; skeletons accumulate in `skeletonByGroup`. Marker size slider/+/- write `markerSizeOverrides` for the current selection (empty selection changes the global default). Badge `#apply-target-badge` shows the target. Guard: whole-trial apply is refused when more than one person prefix is present.
-- **What Worked:** Helpers `markerGroupKey`, `groupMarkerIndices`, `localMarkerLabel`, `activeApplyGroupKey`; remapped `resolveSkeletonPairs` via local `pN` labels; CoM labels `CenterOfMass_deLeva_{group}_{sex}` (unchanged `CenterOfMass_deLeva_{sex}` for single-person). Persisted in viewer state / `.vaila`: `markerSizeOverrides`, `skeletonByGroup`. Docs: `docs/vaila-format.md`. Smoke asserts group helpers, 88-bone remap, and selection-scoped size. Verification: `pytest tests/test_viewer_layers.py tests/test_application.py::test_browser_smoke_automated` — 5 passed.
-- **Failed Approaches:** None this session.
-- **Open Questions & Next Steps:** Optional: double-click to select a whole person group; import `skeleton_cena_completa.json` as a stock template. Layers workflow for separate files remains valid. Keep CRLF in `openbiomech/viewer.js`.
+- **Current State:** Left sidebar width is mouse-resizable via `#sidebar-splitter` (`.window-splitter-v`) between `#sidebar` and `#sidebar-toggle-rail`. Width driven by `--sidebar-width` on `#app-container` (default 280px, clamp 180–480 and container−320). Persisted in `localStorage` key `mkvis3d_sidebar_width`; splitter hidden when sidebar collapsed. Double-click resets to 280px. In-app manual bullet updated.
+- **What Worked:** Mirrored existing `initHorizontalSplitter` / `initVerticalSplitter` pointer-capture pattern; device preference (not session/project) matching `mkvis3d_sidebar_visible`.
+- **Failed Approaches:** none
+- **Open Questions & Next Steps:** User can smoke-check in GUI (drag, reload persist, collapse, dblclick reset). Prior v0.0.3 docs/GUI hardening still uncommitted alongside this change.

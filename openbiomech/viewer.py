@@ -15,6 +15,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+# GET APIs that mutate session state or expose the loaded trial require the
+# same Bearer token as POSTs. Static assets and <video> byte-range streaming
+# stay open (browsers cannot attach Authorization to media element requests).
+_SESSION_GET_PATHS = frozenset(
+    {
+        "/api/examples",
+        "/api/example",
+        "/api/current_trial",
+        "/api/field_reference",
+        "/api/companion_videos",
+        "/api/ensure_browser_video",
+    }
+)
+
 import numpy as np
 
 from .analysis_io import run_dynamics
@@ -347,15 +361,18 @@ def create_server(
 
             if req_path == "/favicon.ico":
                 icon_path = get_project_root() / "assets" / "icons" / "vaila.ico"
-                if not icon_path.is_file():
-                    fallback = Path("/home/preto/data/vaila/docs/images/vaila_ico_trans.ico")
-                    if fallback.is_file():
-                        icon_path = fallback
                 if icon_path.is_file():
                     self.send_bytes(200, icon_path.read_bytes(), "image/x-icon")
                     return
                 self.send_bytes(404, b"Not found", "text/plain")
                 return
+
+            if req_path in _SESSION_GET_PATHS:
+                if self.headers.get("Authorization") != f"Bearer {token}":
+                    self.send_bytes(
+                        403, b'{"error":"Session token required"}', "application/json"
+                    )
+                    return
 
             if req_path == "/api/examples":
                 data_dir = get_project_root() / "data"
@@ -675,30 +692,25 @@ def create_server(
                 if req_path == "/api/transcode_upload":
                     query = parse_qs(urlsplit(self.path).query)
                     original_name = Path(query.get("name", ["upload.mp4"])[0]).name or "upload.mp4"
-                    # Optional absolute path on the host (loopback GUI) so we can
-                    # write *_compress.mp4 beside the real file.
-                    local_path_raw = (query.get("local_path", [""])[0] or "").strip()
-                    local_source: Path | None = None
-                    if local_path_raw:
-                        candidate = Path(local_path_raw).expanduser()
-                        if candidate.is_file() and candidate.name == original_name:
-                            local_source = candidate.resolve()
+                    # Reject host paths from the client — only the upload body or
+                    # /api/pick_and_ensure_video (native dialog) may touch disk.
+                    if (query.get("local_path", [""])[0] or "").strip():
+                        raise ValueError(
+                            "local_path is not allowed; use File > Load Reference Video "
+                            "for host-side compression beside the original file"
+                        )
                     suffix = Path(original_name).suffix.lower() or ".mp4"
                     if suffix not in (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"):
                         raise ValueError("expected a video file (.mp4/.mov/.mkv/.webm/.avi/.m4v)")
                     uploaded = self.rfile.read(length)
-                    if local_source is not None:
-                        playable, info = ensure_browser_video(local_source)
-                        video_registry[local_source.name] = playable.resolve()
-                    else:
-                        scratch = Path(tempfile.mkdtemp(prefix="openbiomech-video-"))
-                        upload_scratch.append(scratch)
-                        source = scratch / original_name
-                        source.write_bytes(uploaded)
-                        # Browser file inputs have no filesystem path — compress in
-                        # scratch and serve via /api/video. Use Load Video (host
-                        # dialog) to write *_compress.mp4 beside the original.
-                        playable, info = ensure_browser_video(source)
+                    scratch = Path(tempfile.mkdtemp(prefix="openbiomech-video-"))
+                    upload_scratch.append(scratch)
+                    source = scratch / original_name
+                    source.write_bytes(uploaded)
+                    # Browser file inputs have no filesystem path — compress in
+                    # scratch and serve via /api/video. Use Load Video (host
+                    # dialog) to write *_compress.mp4 beside the original.
+                    playable, info = ensure_browser_video(source)
                     video_registry[playable.name] = playable.resolve()
                     video_registry[original_name] = playable.resolve()
                     body = {
@@ -732,39 +744,42 @@ def create_server(
                     filename_raw = str(payload.get("filename") or "").strip()
                     trial_name = str(trial_body.get("name") or "trial")
                     stem = export_stem(filename_raw or trial_name)
-                    directory_raw = str(payload.get("directory") or "").strip()
-                    if directory_raw:
-                        directory = Path(directory_raw).expanduser()
-                    else:
-                        start_dir = (
-                            source_dir if source_dir and source_dir.is_dir() else Path.home()
+                    # Never trust a client-supplied absolute directory — always use
+                    # the host save dialog (tests monkeypatch pick_save_path).
+                    if str(payload.get("directory") or "").strip():
+                        raise ValueError(
+                            "client-supplied save directory is not allowed; "
+                            "use the host save dialog"
                         )
-                        if len(formats) == 1:
-                            fmt = formats[0]
-                            suffix = f".{fmt}"
-                            title = f"Save As — {fmt.upper()}"
-                        elif "c3d" in formats and "csv" in formats:
-                            suffix = ".c3d"
-                            title = "Save As — C3D and CSV"
-                        else:
-                            suffix = f".{formats[0]}"
-                            fmts_label = " and ".join(f.upper() for f in formats)
-                            title = f"Save As — {fmts_label}"
-                        chosen = pick_save_path(start_dir / f"{stem}{suffix}", title=title)
-                        if chosen is None:
-                            self.send_bytes(
-                                400,
-                                json.dumps(
-                                    {
-                                        "error": "Save cancelled (or zenity/kdialog unavailable)",
-                                        "cancelled": True,
-                                    }
-                                ).encode(),
-                                "application/json",
-                            )
-                            return
-                        directory = chosen.parent
-                        stem = export_stem(chosen.name)
+                    start_dir = (
+                        source_dir if source_dir and source_dir.is_dir() else Path.home()
+                    )
+                    if len(formats) == 1:
+                        fmt = formats[0]
+                        suffix = f".{fmt}"
+                        title = f"Save As — {fmt.upper()}"
+                    elif "c3d" in formats and "csv" in formats:
+                        suffix = ".c3d"
+                        title = "Save As — C3D and CSV"
+                    else:
+                        suffix = f".{formats[0]}"
+                        fmts_label = " and ".join(f.upper() for f in formats)
+                        title = f"Save As — {fmts_label}"
+                    chosen = pick_save_path(start_dir / f"{stem}{suffix}", title=title)
+                    if chosen is None:
+                        self.send_bytes(
+                            400,
+                            json.dumps(
+                                {
+                                    "error": "Save cancelled (or zenity/kdialog unavailable)",
+                                    "cancelled": True,
+                                }
+                            ).encode(),
+                            "application/json",
+                        )
+                        return
+                    directory = chosen.parent
+                    stem = export_stem(chosen.name)
                     template = (
                         current_source[0][1]
                         if current_source[0] and Path(current_source[0][0]).suffix.lower() == ".c3d"
@@ -1144,7 +1159,12 @@ def serve_viewer(
         source_dir=source_path.parent if source_path and source_path.is_file() else None,
         initial_videos=initial_videos,
     )
-    print(f"mkvis3d: {url}", flush=True)
+    # Do not print the session token (URL hash) — it authorizes mutating APIs.
+    print(
+        f"mkvis3d: http://127.0.0.1:{server.server_port}/  "
+        "(open the browser URL from this launch; do not share the tab hash)",
+        flush=True,
+    )
     print("Use File > Shut Down mkvis3d in the viewer or press Ctrl+C to stop.", flush=True)
     if open_browser:
         webbrowser.open(url)

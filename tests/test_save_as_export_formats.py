@@ -148,7 +148,7 @@ def test_save_trial_files_all_permitted_formats(tmp_path):
     assert_allclose(vaila_trial.xyz, xyz, atol=1e-5)
 
 
-def test_gui_save_as_after_modifying_vaila_project(tmp_path):
+def test_gui_save_as_after_modifying_vaila_project(tmp_path, monkeypatch):
     """Opening a .vaila project, editing markers, and saving as C3D, CSV, or .3d."""
     source_dir = tmp_path / "source"
     chosen_dir = tmp_path / "export_dest"
@@ -196,12 +196,24 @@ def test_gui_save_as_after_modifying_vaila_project(tmp_path):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     try:
+        picks = iter(
+            [
+                chosen_dir / "new_run.c3d",
+                chosen_dir / "new_run.csv",
+                chosen_dir / "new_run.3d",
+            ]
+        )
+        monkeypatch.setattr(
+            "openbiomech.viewer.pick_save_path",
+            lambda default_path, *, title: next(picks),
+        )
+
         # 1. Save As C3D only
         conn.request(
             "POST",
             "/api/export/save_as",
             body=json.dumps(
-                {"trial": payload, "directory": str(chosen_dir), "formats": ["c3d"], "filename": "new_run"}
+                {"trial": payload, "formats": ["c3d"], "filename": "new_run"}
             ).encode(),
             headers=headers,
         )
@@ -219,7 +231,7 @@ def test_gui_save_as_after_modifying_vaila_project(tmp_path):
             "POST",
             "/api/export/save_as",
             body=json.dumps(
-                {"trial": payload, "directory": str(chosen_dir), "formats": ["csv"], "filename": "new_run"}
+                {"trial": payload, "formats": ["csv"], "filename": "new_run"}
             ).encode(),
             headers=headers,
         )
@@ -237,7 +249,7 @@ def test_gui_save_as_after_modifying_vaila_project(tmp_path):
             "POST",
             "/api/export/save_as",
             body=json.dumps(
-                {"trial": payload, "directory": str(chosen_dir), "formats": ["3d"], "filename": "new_run"}
+                {"trial": payload, "formats": ["3d"], "filename": "new_run"}
             ).encode(),
             headers=headers,
         )

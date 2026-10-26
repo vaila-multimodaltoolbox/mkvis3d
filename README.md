@@ -1,10 +1,10 @@
 # mkvis3d — OpenBiomech
 
-**Package version:** `0.0.2` (see `[project].version` in `pyproject.toml`). **Python:** 3.12.x (pinned in-repo for `uv`).
+**Package version:** `0.0.3` (see `[project].version` in `pyproject.toml`). **Python:** 3.12.x (pinned in-repo for `uv`).
 
-**Last updated:** 2026-10-01 | **Full Guide:** [INSTRUCTIONS.md](INSTRUCTIONS.md)
+**Last updated:** 2026-10-26 | **Full Guide:** [INSTRUCTIONS.md](INSTRUCTIONS.md)
 
-v0.0.2: Load Video on Windows uses the native file dialog. Linux keeps zenity/kdialog.
+v0.0.3: Sample Trials submenu (inline) includes Soccer Field Reference; Open File accepts multiple C3D/CSV/.3d (first active, rest layers); GUI hardening (label XSS escape, session auth on sample/field APIs, no client save path / local_path).
 
 <div align="center">
   <table>
@@ -196,14 +196,18 @@ orbit/pan/zoom, distance measurement, real-time synced charts, force
 platform / GRF vector overlays, and CSV/HTML export. C3D, CSV, and `.3d`
 files can also be uploaded directly from the browser.
 
-**Layers.** *File > Add File(s) as Layers...* puts several trials in one scene
-(for example one rec3d C3D per player). Each layer has its own skeleton
-template, visibility and marker color in the sidebar *Layers* list. The active
-layer is the one you edit, plot and export. The other layers are read-only
-overlays, synchronized by time to the active trial. *File > Add Soccer Field
-Reference (kiki49)* adds the 49 real-world pitch keypoints (metres, origin at
-the centre spot, z up), the same world frame as vailá freekiki DLT
-calibrations and rec3d output.
+**Open multiple files.** *File > Open File...* (and the sidebar picker) accept
+several C3D/CSV/`.3d` at once: the first becomes the active trial; the rest are
+added as layers. *File > Add File(s) as Layers...* keeps adding overlays when a
+trial is already open.
+
+**Layers.** Extra trials share one scene (for example one rec3d C3D per player).
+Each layer has its own skeleton template, visibility and marker color in the
+sidebar *Layers* list. The active layer is the one you edit, plot and export.
+The other layers are read-only overlays, synchronized by time to the active
+trial. *File > Sample Trials > Soccer Field Reference (kiki49)* adds the 49
+real-world pitch keypoints (metres, origin at the centre spot, z up), the same
+world frame as vailá freekiki DLT calibrations and rec3d output.
 
 ### CLI
 

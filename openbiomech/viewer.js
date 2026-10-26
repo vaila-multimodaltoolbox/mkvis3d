@@ -1,5 +1,14 @@
 "use strict";
 const $ = id => document.getElementById(id);
+/** Escape untrusted trial labels / file names before any HTML interpolation. */
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 const boot = JSON.parse($("trial-data").textContent);
 let embeddedTemplates = {};
 try {
@@ -1939,7 +1948,18 @@ function buildTable() {
         setSingleSelectedMarker(i);
       }
     };
-    tr.innerHTML = `<td>${i + 1}</td><td><strong>${lbl}</strong></td><td>—</td><td>—</td><td>—</td><td>—</td>`;
+    const tdIdx = document.createElement("td");
+    tdIdx.textContent = String(i + 1);
+    const tdName = document.createElement("td");
+    const strong = document.createElement("strong");
+    strong.textContent = lbl;
+    tdName.appendChild(strong);
+    // Build row cells without innerHTML so malicious marker labels cannot XSS.
+    tr.replaceChildren(tdIdx, tdName, ...[0, 1, 2, 3].map(() => {
+      const td = document.createElement("td");
+      td.textContent = "—";
+      return td;
+    }));
     return tr;
   }));
 }
@@ -2580,12 +2600,37 @@ function resize() {
 new ResizeObserver(resize).observe($("workspace"));
 
 // Device preference, deliberately independent of saved projects and session state.
+const SIDEBAR_WIDTH_DEFAULT = 280;
+const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_MAX = 480;
+
+function clampSidebarWidth(px, containerWidth) {
+  const maxByContainer = Math.max(SIDEBAR_WIDTH_MIN, (containerWidth || 0) - 320);
+  const maxWidth = Math.min(SIDEBAR_WIDTH_MAX, maxByContainer);
+  return Math.min(maxWidth, Math.max(SIDEBAR_WIDTH_MIN, Math.round(px)));
+}
+
+function applySidebarWidth(px, persist = true) {
+  const app = $("app-container");
+  if (!app) return;
+  const width = clampSidebarWidth(px, app.getBoundingClientRect().width);
+  app.style.setProperty("--sidebar-width", `${width}px`);
+  const splitter = $("sidebar-splitter");
+  if (splitter) splitter.setAttribute("aria-valuenow", String(width));
+  if (persist) {
+    try { localStorage.setItem("mkvis3d_sidebar_width", String(width)); } catch (e) {}
+  }
+  return width;
+}
+
 function setSidebarVisible(visible, persist = true) {
   const sidebar = $("sidebar");
   const toggle = $("btn-toggle-sidebar");
+  const splitter = $("sidebar-splitter");
   if (!visible && sidebar.contains(document.activeElement)) toggle.focus();
   sidebar.hidden = !visible;
   sidebar.inert = !visible;
+  if (splitter) splitter.hidden = !visible;
   toggle.setAttribute("aria-expanded", String(visible));
   toggle.setAttribute("aria-label", visible ? "Hide sidebar" : "Show sidebar");
   toggle.title = visible ? "Hide sidebar" : "Show sidebar";
@@ -2599,6 +2644,12 @@ function setSidebarVisible(visible, persist = true) {
 }
 let sidebarVisible = true;
 try { sidebarVisible = localStorage.getItem("mkvis3d_sidebar_visible") !== "false"; } catch (e) {}
+let sidebarWidth = SIDEBAR_WIDTH_DEFAULT;
+try {
+  const stored = parseFloat(localStorage.getItem("mkvis3d_sidebar_width"));
+  if (Number.isFinite(stored)) sidebarWidth = stored;
+} catch (e) {}
+applySidebarWidth(sidebarWidth, false);
 setSidebarVisible(sidebarVisible, false);
 $("btn-toggle-sidebar").onclick = $("action-win-sidebar").onclick = () => setSidebarVisible($("sidebar").hidden);
 
@@ -2931,7 +2982,8 @@ function showCanvasContextMenu(clientX, clientY) {
     $("ctx-action-create-segment").disabled = count < 2;
     $("ctx-action-create-segment").style.opacity = count >= 2 ? "1" : "0.5";
     if (count === 2 && labels.length === 2) {
-      $("ctx-action-create-segment").innerHTML = `<span>🦴</span> <span>Create Segment (${labels[0]} ↔ ${labels[1]}) (K)</span>`;
+      $("ctx-action-create-segment").innerHTML =
+        `<span>🦴</span> <span>Create Segment (${escapeHtml(labels[0])} ↔ ${escapeHtml(labels[1])}) (K)</span>`;
     } else {
       $("ctx-action-create-segment").innerHTML = `<span>🦴</span> <span>Create Segment / Bone (K)</span>`;
     }
@@ -2942,7 +2994,8 @@ function showCanvasContextMenu(clientX, clientY) {
     $("ctx-action-create-lcs").disabled = count < 3;
     $("ctx-action-create-lcs").style.opacity = count >= 3 ? "1" : "0.5";
     if (count >= 3 && labels.length >= 3) {
-      $("ctx-action-create-lcs").innerHTML = `<span>📐</span> <span>Define System / Plane s1 (${labels[0]}...)</span>`;
+      $("ctx-action-create-lcs").innerHTML =
+        `<span>📐</span> <span>Define System / Plane s1 (${escapeHtml(labels[0])}...)</span>`;
     } else {
       $("ctx-action-create-lcs").innerHTML = `<span>📐</span> <span>Define System / Plane s1 (3+ Pts)</span>`;
     }
@@ -2953,7 +3006,8 @@ function showCanvasContextMenu(clientX, clientY) {
     $("ctx-action-create-lcs-s2").disabled = count < 3;
     $("ctx-action-create-lcs-s2").style.opacity = count >= 3 ? "1" : "0.5";
     if (count >= 3 && labels.length >= 3) {
-      $("ctx-action-create-lcs-s2").innerHTML = `<span>📐</span> <span>Define System / Plane s2 (${labels[0]}...)</span>`;
+      $("ctx-action-create-lcs-s2").innerHTML =
+        `<span>📐</span> <span>Define System / Plane s2 (${escapeHtml(labels[0])}...)</span>`;
     } else {
       $("ctx-action-create-lcs-s2").innerHTML = `<span>📐</span> <span>Define System / Plane s2 (3+ Pts)</span>`;
     }
@@ -3461,7 +3515,9 @@ document.querySelectorAll("[data-example]").forEach(item => {
     pause();
     status(`Loading sample ${filename}...`);
     try {
-      const resp = await fetch(`/api/example?name=${encodeURIComponent(filename)}`);
+      const resp = await fetch(`/api/example?name=${encodeURIComponent(filename)}`, {
+        headers: sessionAuthHeaders(),
+      });
       if (!resp.ok) throw new Error("Could not load example from server.");
       const data = await resp.json();
       load(data);
@@ -4226,7 +4282,11 @@ function syncPopoutContent(paneId) {
         tbody.innerHTML = "";
         for (let i = 0; i < trial.labels.length; i++) {
           const tr = doc.createElement("tr");
-          tr.innerHTML = `<td>${i + 1}</td><td>${trial.labels[i]}</td><td></td><td></td><td></td><td></td>`;
+          const tdIdx = doc.createElement("td");
+          tdIdx.textContent = String(i + 1);
+          const tdName = doc.createElement("td");
+          tdName.textContent = trial.labels[i];
+          tr.append(tdIdx, tdName, doc.createElement("td"), doc.createElement("td"), doc.createElement("td"), doc.createElement("td"));
           const mIdx = i;
           tr.onclick = () => selectActiveMarker(mIdx);
           tbody.appendChild(tr);
@@ -4467,7 +4527,9 @@ function sessionAuthHeaders() {
 async function ensureServerBrowserVideo(item) {
   if (!boot.server || !item || !item.name) return null;
   status(`Checking browser codec for "${item.name}"…`);
-  const resp = await fetch(`/api/ensure_browser_video?name=${encodeURIComponent(item.name)}`);
+  const resp = await fetch(`/api/ensure_browser_video?name=${encodeURIComponent(item.name)}`, {
+    headers: sessionAuthHeaders(),
+  });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     throw new Error(data.error || `ensure_browser_video failed (${resp.status})`);
@@ -4481,9 +4543,7 @@ async function ensureServerBrowserVideo(item) {
 async function transcodeUploadedVideo(item) {
   if (!boot.server || !item || !item.file) return null;
   status(`Compressing "${item.name}" to H.264 (*_compress.mp4)…`);
-  const localPath = item.file && item.file.path ? String(item.file.path) : "";
-  let url = `/api/transcode_upload?name=${encodeURIComponent(item.name)}`;
-  if (localPath) url += `&local_path=${encodeURIComponent(localPath)}`;
+  const url = `/api/transcode_upload?name=${encodeURIComponent(item.name)}`;
   const resp = await fetch(url, {
     method: "POST",
     headers: {
@@ -4703,7 +4763,7 @@ function updateVideoReadout() {
 async function checkCompanionVideos() {
   if (!boot.server) return;
   try {
-    const resp = await fetch("/api/companion_videos");
+    const resp = await fetch("/api/companion_videos", { headers: sessionAuthHeaders() });
     if (!resp.ok) return;
     const data = await resp.json();
     if (data && Array.isArray(data.videos) && data.videos.length > 0) {
@@ -5261,7 +5321,7 @@ function syncPointsModal() {
 
     opt.innerHTML = `
       <input type="checkbox" class="point-checkbox" style="pointer-events: none; accent-color: var(--accent);" ${isSelected ? "checked" : ""}>
-      <span style="flex: 1; font-family: monospace;">${item.name}</span>
+      <span style="flex: 1; font-family: monospace;">${escapeHtml(item.name)}</span>
       ${isPinned ? '<span style="font-size: 10px; margin-right: 3px;" title="Pinned">📌</span>' : ""}
       ${isActive ? '<span style="font-size: 10px; color: var(--accent); font-weight: 700; margin-right: 4px;">★ Active</span>' : ""}
       ${statusTag}
@@ -6821,20 +6881,13 @@ async function fetchLayerPayload(file) {
   }
 }
 
-async function addLayerFiles(fileList) {
-  const files = Array.from(fileList || []);
-  pause();
+function fileExt(name) {
+  return (String(name || "").split(".").pop() || "").toLowerCase();
+}
+
+async function addFilesAsLayers(files) {
   for (const file of files) {
     try {
-      if (!trial) {
-        await uploadFile(file);
-        const guess = trial && activeSkeletonTemplate === "none" ? guessLayerTemplate(trial.labels) : "none";
-        if (guess !== "none" && $("skeleton-template-select")) {
-          $("skeleton-template-select").value = guess;
-          await loadSelectedSkeleton();
-        }
-        continue;
-      }
       status(`Adding ${file.name} as a layer...`);
       addLayer(await fetchLayerPayload(file));
     } catch (error) {
@@ -6843,9 +6896,55 @@ async function addLayerFiles(fileList) {
   }
 }
 
+async function guessAndLoadSkeletonForTrial() {
+  const guess = trial && activeSkeletonTemplate === "none" ? guessLayerTemplate(trial.labels) : "none";
+  if (guess !== "none" && $("skeleton-template-select")) {
+    $("skeleton-template-select").value = guess;
+    await loadSelectedSkeleton();
+  }
+}
+
+/**
+ * Open and/or layer motion files.
+ * replaceFirst=true (Open File): first file replaces the scene; rest become layers.
+ * replaceFirst=false (Add Layers): first becomes base only if no trial; otherwise all are layers.
+ */
+async function openOrLayerFiles(fileList, { replaceFirst = false } = {}) {
+  let files = Array.from(fileList || []);
+  if (!files.length) return;
+
+  const vailaFiles = files.filter(f => fileExt(f.name) === "vaila");
+  if (vailaFiles.length && files.length > 1) {
+    status("Opening .vaila project alone — multi-file mix with layers is not supported.", true);
+    files = [vailaFiles[0]];
+  }
+
+  pause();
+  if (replaceFirst) {
+    await uploadFile(files[0]);
+    await addFilesAsLayers(files.slice(1));
+    return;
+  }
+  if (!trial) {
+    await uploadFile(files[0]);
+    await guessAndLoadSkeletonForTrial();
+    await addFilesAsLayers(files.slice(1));
+    return;
+  }
+  await addFilesAsLayers(files);
+}
+
+async function addLayerFiles(fileList) {
+  await openOrLayerFiles(fileList, { replaceFirst: false });
+}
+
+async function openFiles(fileList) {
+  await openOrLayerFiles(fileList, { replaceFirst: true });
+}
+
 async function addFieldReference() {
   try {
-    const response = await fetch("/api/field_reference");
+    const response = await fetch("/api/field_reference", { headers: sessionAuthHeaders() });
     if (!response.ok) throw new Error("Field reference needs the local GUI session.");
     const data = await response.json();
     if (!trial) {
@@ -6875,9 +6974,10 @@ if ($("file-add-layers")) {
 if ($("action-add-field-reference")) $("action-add-field-reference").onclick = addFieldReference;
 
 if ($("file")) {
-  $("file").onchange = () => {
-    const file = $("file").files[0];
-    if (file) uploadFile(file);
+  $("file").onchange = async () => {
+    const input = $("file");
+    await openFiles(input.files);
+    input.value = "";
   };
 }
 
@@ -7053,6 +7153,64 @@ function initHorizontalSplitter() {
     container.style.setProperty("--video-col-width", "420px");
     resize();
     saveSessionState();
+  });
+}
+
+// Drag handle between #sidebar and #sidebar-toggle-rail — resizes
+// --sidebar-width on #app-container. Device preference via localStorage
+// (same pattern as mkvis3d_sidebar_visible), not project/session state.
+function initSidebarSplitter() {
+  const splitter = $("sidebar-splitter");
+  const app = $("app-container");
+  if (!splitter || !app) return;
+
+  splitter.setAttribute("aria-valuemin", String(SIDEBAR_WIDTH_MIN));
+  splitter.setAttribute("aria-valuemax", String(SIDEBAR_WIDTH_MAX));
+  const current = parseFloat(getComputedStyle(app).getPropertyValue("--sidebar-width")) || SIDEBAR_WIDTH_DEFAULT;
+  splitter.setAttribute("aria-valuenow", String(Math.round(current)));
+
+  let isDragging = false;
+  let startX = 0;
+  let startWidth = SIDEBAR_WIDTH_DEFAULT;
+
+  splitter.addEventListener("pointerdown", e => {
+    if (splitter.hidden) return;
+    isDragging = true;
+    startX = e.clientX;
+    splitter.classList.add("is-dragging");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const currentWidthStr = getComputedStyle(app).getPropertyValue("--sidebar-width").trim();
+    startWidth = parseFloat(currentWidthStr) || SIDEBAR_WIDTH_DEFAULT;
+    splitter.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  splitter.addEventListener("pointermove", e => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    applySidebarWidth(startWidth + dx, false);
+    resize();
+  });
+
+  const stopDrag = e => {
+    if (isDragging) {
+      isDragging = false;
+      splitter.classList.remove("is-dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try { splitter.releasePointerCapture(e.pointerId); } catch (_) {}
+      const currentWidthStr = getComputedStyle(app).getPropertyValue("--sidebar-width").trim();
+      applySidebarWidth(parseFloat(currentWidthStr) || SIDEBAR_WIDTH_DEFAULT, true);
+    }
+  };
+
+  splitter.addEventListener("pointerup", stopDrag);
+  splitter.addEventListener("pointercancel", stopDrag);
+
+  splitter.addEventListener("dblclick", () => {
+    applySidebarWidth(SIDEBAR_WIDTH_DEFAULT, true);
+    resize();
   });
 }
 
@@ -10824,7 +10982,7 @@ if (boot.project) {
 } else if (boot.trial) {
   load(boot.trial);
 } else if (boot.server) {
-  fetch("/api/current_trial")
+  fetch("/api/current_trial", { headers: sessionAuthHeaders() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (data) load(data);
@@ -10838,6 +10996,7 @@ initInterpolationAndPlotControls();
 initKinematicsControls();
 initVerticalSplitter();
 initHorizontalSplitter();
+initSidebarSplitter();
 initViewportModeControls();
 initSkeletonStyleControls();
 initPointsModal();

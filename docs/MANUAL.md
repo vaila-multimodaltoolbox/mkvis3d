@@ -569,11 +569,14 @@ From `File ▾` ➔ `Save Standalone HTML Viewer...`:
 - **`Quick Save C3D`:** Directly exports the current modified state as `<stem>_edited.c3d`.
 - **Analog Signal Preservation:** Fully preserves synchronized analog channels (force plates, EMG), sample rates, manufacturer parameter groups, and events.
 
-### 9.3 Sample Trials Flyout Submenu
-To keep the primary `File ▾` menu compact, built-in demonstration trials are cleanly organized in a flyout submenu (`File ▾` ➔ `📁 Sample Trials ▸`):
-- `rec3d Gait (2 markers)`: Monocular 3D gait sample.
-- `Deep Squat (15 markers)`: Multi-marker lower body squat with synchronized bilateral force platforms.
-- Additional demo files loaded without menu clutter.
+### 9.3 Sample Trials Submenu
+To keep the primary `File ▾` menu compact, built-in demonstration trials expand **inline** under `File ▾` ➔ `📁 Sample Trials ▸` (not a side flyout — that was clipped by the scrollable File menu):
+- `Lower Body Squat (pilot0102_squat03.c3d)`: Multi-marker lower body squat with synchronized bilateral force platforms.
+- `Full Body Gait C3D` / wide CSV / `.3d`: rec3d gait sample in parallel formats.
+- `Soccer Field Reference (kiki49)`: 49 real-world pitch keypoints (metres, centre spot origin) as a static layer or base trial.
+
+### 9.3.1 Open Multiple Motion Files
+`File ▾` ➔ `Open File...` (Ctrl+O) and the sidebar file picker accept multiple `.c3d` / `.csv` / `.3d` selections. The first file replaces the active trial; additional files are added as synchronized layers (same behaviour as `Add File(s) as Layers...` for the extras). Complete `.vaila` projects open alone and cannot be mixed with other files in one selection.
 
 ### 9.4 Blender 3D Python Integration
 From `File ▾` ➔ `Export Blender Python Script (.py)...`:

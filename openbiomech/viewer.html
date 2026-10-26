@@ -175,23 +175,36 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
   position: relative;
   width: 100%;
 }
+/* Inline expand (not side flyout): File/View menus use overflow-y:auto, which
+   clips absolute left:100% flyouts so clicks hit the canvas underneath. */
 .dropdown-submenu-menu {
   display: none;
-  position: absolute;
-  top: -6px;
-  left: 100%;
-  min-width: 260px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  box-shadow: var(--shadow-menu);
-  padding: 6px 0;
-  z-index: 2050;
+  position: static;
+  min-width: 0;
+  margin: 2px 0 4px;
+  padding: 2px 0 2px 8px;
+  border: 0;
+  border-left: 2px solid var(--border-color);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
 }
 .dropdown-submenu:hover > .dropdown-submenu-menu,
 .dropdown-submenu:focus-within > .dropdown-submenu-menu,
 .dropdown-submenu.open > .dropdown-submenu-menu {
   display: block;
+}
+.dropdown-submenu.open > .submenu-toggle .submenu-caret,
+.dropdown-submenu:hover > .submenu-toggle .submenu-caret,
+.dropdown-submenu:focus-within > .submenu-toggle .submenu-caret {
+  transform: rotate(90deg);
+}
+.submenu-caret {
+  display: inline-block;
+  font-size: 11px;
+  margin-left: 12px;
+  color: var(--text-muted);
+  transition: transform 0.12s ease;
 }
 .dropdown-item {
   width: 100%;
@@ -255,16 +268,22 @@ body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; b
 
 /* Sidebar */
 #sidebar {
-  width: 280px;
-  flex: 0 0 280px;
+  width: var(--sidebar-width, 280px);
+  flex: 0 0 var(--sidebar-width, 280px);
   background: var(--bg-panel);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   user-select: none;
+  min-width: 0;
 }
 #sidebar[hidden] { display: none; }
+#sidebar-splitter {
+  flex: 0 0 6px;
+  align-self: stretch;
+}
+#sidebar-splitter[hidden] { display: none; }
 #sidebar-toggle-rail {
   flex: 0 0 28px;
   background: var(--bg-panel);
@@ -1150,7 +1169,6 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <button type="button" class="dropdown-item" id="action-open-file">Open File... <span class="shortcut-hint">Ctrl+O</span></button>
       <button type="button" class="dropdown-item" id="action-add-layer-files">Add File(s) as Layers...</button>
       <input type="file" id="file-add-layers" accept=".c3d,.csv,.3d" multiple hidden>
-      <button type="button" class="dropdown-item" id="action-add-field-reference">Add Soccer Field Reference (kiki49)</button>
       <button type="button" class="dropdown-item" id="action-load-video">🎬 Load Reference Video (mp4/mov/mkv/avi)...</button>
       <input type="file" id="video-file-input" accept=".mp4,.mov,.mkv,.avi,.webm,.m4v,video/*" multiple hidden>
       <button type="button" class="dropdown-item" id="btn-attach-analysis">Attach Analysis JSON/CSV...</button>
@@ -1159,13 +1177,15 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       <div class="dropdown-submenu" id="submenu-sample-trials">
         <button type="button" class="dropdown-item submenu-toggle">
           <span>📁 Sample Trials</span>
-          <span style="font-size: 11px; margin-left: 12px; color: var(--text-muted);">▸</span>
+          <span class="submenu-caret">▸</span>
         </button>
         <div class="dropdown-submenu-menu">
           <button type="button" class="dropdown-item" data-example="pilot0102_squat03.c3d">Lower Body Squat (pilot0102_squat03.c3d)</button>
           <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305_m.c3d">Full Body Gait C3D (rec3d..._m.c3d)</button>
           <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305.csv">Wide CSV Trial (rec3d....csv)</button>
           <button type="button" class="dropdown-item" data-example="rec3d_20260826_121305.3d">Wide 3D Trial (rec3d....3d)</button>
+          <div class="dropdown-divider"></div>
+          <button type="button" class="dropdown-item" id="action-add-field-reference">Soccer Field Reference (kiki49)</button>
         </div>
       </div>
       <div class="dropdown-divider"></div>
@@ -1325,9 +1345,9 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
     <!-- File Section -->
     <section id="open-panel" class="sidebar-section">
       <div class="sidebar-header">Load Motion File</div>
-      <input id="file" type="file" accept=".c3d,.csv,.3d,.vaila" aria-label="Motion file input">
+      <input id="file" type="file" accept=".c3d,.csv,.3d,.vaila" multiple aria-label="Motion file input">
       <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-        Supports C3D, CSV, .3d, and complete .vaila projects.
+        Supports C3D, CSV, .3d, and complete .vaila projects. Select multiple files to open the first as the active trial and the rest as layers.
       </p>
       
       <div style="margin-top: 10px;">
@@ -1693,6 +1713,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
       </div>
     </section>
   </aside>
+  <div id="sidebar-splitter" class="window-splitter-v" role="separator" aria-orientation="vertical" aria-controls="sidebar" title="Drag to adjust sidebar width (double-click to reset)"></div>
   <div id="sidebar-toggle-rail">
     <button id="btn-toggle-sidebar" type="button" aria-label="Hide sidebar" title="Hide sidebar" aria-expanded="true" aria-controls="sidebar">‹</button>
   </div>
@@ -2893,7 +2914,8 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
             <li><strong>C3D (.c3d):</strong> Binary standard preserving 3D point coordinates, analog channels, sampling frequencies, video sync frame ratios, and parameter groups (<code>POINT</code>, <code>ANALOG</code>, <code>FORCE_PLATFORM</code>). Supports both float32 and integer data formats across Little-Endian and Big-Endian architectures.
               <br>• <strong>Save As (C3D + CSV)... (<span class="key-cap">Ctrl+Shift+S</span>):</strong> Opens a save dialog and writes the edited trial as C3D and a CSV of every marker into the folder you choose.
               <br>• <strong>Quick Save C3D:</strong> Quickly saves to <code>&lt;stem&gt;_edited.c3d</code>.
-              <br>• <strong>Sample Trials Submenu:</strong> Built-in demonstration files are grouped in a compact flyout menu (<code>File ▾ 📁 Sample Trials ▸</code>).
+              <br>• <strong>Sample Trials Submenu:</strong> Built-in demonstration files and the soccer field reference (kiki49) expand inline under <code>File ▾ 📁 Sample Trials ▸</code>.
+              <br>• <strong>Open multiple files:</strong> <code>File ▾ Open File...</code> accepts several C3D/CSV/.3d at once — first becomes the active trial, the rest are layers.
             </li>
             <li><strong>CSV (.csv):</strong> Universal tabular format containing frame index, time (s), and 3D coordinate columns (<code>X</code>, <code>Y</code>, <code>Z</code>) per marker.</li>
             <li><strong>Raw 3D (.3d):</strong> ASCII and binary 3D trajectory data formats.</li>
@@ -2917,7 +2939,7 @@ button[aria-pressed="true"]:hover { background: var(--accent-hover); }
           <ul>
             <li><strong>Fast 3D Viewport Refresh (↻):</strong> Re-instantiates WebGL/Canvas rendering context, cleans GPU compositor surfaces, and recalculates scene bounding boxes. Use this whenever coordinate frames are transformed.</li>
             <li><strong>Multi-Monitor Popout (⧉):</strong> Detach the 3D viewport into an independent OS window for multi-screen biomechanics setups.</li>
-            <li><strong>Sidebar:</strong> Use the arrow beside the workspace or Windows → Sidebar to show or hide trial controls. Visibility is remembered on this device.</li>
+            <li><strong>Sidebar:</strong> Use the arrow beside the workspace or Windows → Sidebar to show or hide trial controls. Drag the thin splitter between the sidebar and the arrow rail to resize; double-click the splitter to reset to 280&nbsp;px. Width and visibility are remembered on this device.</li>
             <li><strong>Marker Customization:</strong> Adjust marker sphere radius via the sidebar slider, select color presets or choose custom hex values. Press <span class="key-cap">C</span> to cycle colors.</li>
             <li><strong>Labels Toggle:</strong> Press <span class="key-cap">L</span> to toggle on-screen text labels above markers.</li>
             <li><strong>Floor Grid:</strong> Press <span class="key-cap">G</span> to toggle the calibrated 1-meter floor grid.</li>
