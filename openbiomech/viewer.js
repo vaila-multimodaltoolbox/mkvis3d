@@ -94,6 +94,8 @@ const MARKER_PALETTE = [
 let markerSize = 3.5;
 /** Per-label size overrides (px); draw falls back to global `markerSize`. */
 let markerSizeOverrides = {};
+/** Per-label color overrides (hex); draw falls back to global `markerColor`. */
+let markerColorOverrides = {};
 let markerColor = "auto";
 let markerPaletteIndex = -1;
 
@@ -107,12 +109,52 @@ function effectiveMarkerSize(index) {
   return markerSize;
 }
 
+function markerColorName(colorHex) {
+  if (colorHex === "auto") return "Default";
+  const match = MARKER_PALETTE.find(p => p.hex.toLowerCase() === String(colorHex).toLowerCase());
+  return match ? match.name : colorHex;
+}
+
+/** Resolved draw color for one marker (override → anatomical auto → global/theme). */
+function effectiveMarkerColor(index, themeDefaultColor) {
+  if (trial && trial.labels && index != null && index >= 0) {
+    const label = trial.labels[index];
+    if (label != null && Object.prototype.hasOwnProperty.call(markerColorOverrides, label)) {
+      return markerColorOverrides[label];
+    }
+  }
+  if (markerColor === "auto" && (skeletonPairs.length > 0 || activeSkeletonTemplate !== "none")) {
+    const mSide = getMarkerAnatomicalSide(index);
+    if (mSide === "left") return SKELETON_SIDE_COLORS.left;
+    if (mSide === "right") return SKELETON_SIDE_COLORS.right;
+    if (mSide === "center") return SKELETON_SIDE_COLORS.center;
+  }
+  return markerColor === "auto" ? themeDefaultColor : markerColor;
+}
+
 function syncMarkerSizeUI() {
   const display = (selectedMarkerIndices.size > 0 && trial)
     ? effectiveMarkerSize(activeMarkerIndex)
     : markerSize;
   if ($("marker-size-slider")) $("marker-size-slider").value = String(display);
   if ($("marker-size-val")) $("marker-size-val").textContent = `${display.toFixed(1)} px`;
+}
+
+function syncMarkerColorUI() {
+  let display = markerColor;
+  if (selectedMarkerIndices.size > 0 && trial && Array.isArray(trial.labels)
+    && activeMarkerIndex >= 0 && activeMarkerIndex < trial.labels.length) {
+    const label = trial.labels[activeMarkerIndex];
+    if (label != null && Object.prototype.hasOwnProperty.call(markerColorOverrides, label)) {
+      display = markerColorOverrides[label];
+    }
+  }
+  const colorName = display === "auto" ? "Default (Theme)" : markerColorName(display);
+  if ($("marker-color-name-badge")) $("marker-color-name-badge").textContent = colorName;
+  if ($("marker-color-custom") && display !== "auto") $("marker-color-custom").value = display;
+  document.querySelectorAll("#marker-color-swatches .color-swatch-btn").forEach(btn => {
+    btn.classList.toggle("selected", btn.dataset.color === display);
+  });
 }
 
 function setMarkerSize(size) {
@@ -138,21 +180,24 @@ function adjustMarkerSize(delta) {
 }
 
 function setMarkerColor(colorHex, colorName) {
-  markerColor = colorHex;
-  if (!colorName) {
-    if (colorHex === "auto") {
-      colorName = "Default";
-    } else {
-      const match = MARKER_PALETTE.find(p => p.hex.toLowerCase() === colorHex.toLowerCase());
-      colorName = match ? match.name : colorHex;
+  if (!colorName) colorName = colorHex === "auto" ? "Default" : markerColorName(colorHex);
+  if (selectedMarkerIndices.size > 0 && trial && Array.isArray(trial.labels) && colorHex !== "auto") {
+    for (const idx of selectedMarkerIndices) {
+      const label = trial.labels[idx];
+      if (label != null) markerColorOverrides[label] = colorHex;
     }
+    status(`Marker color: ${colorName} (${selectedMarkerIndices.size} selected)`);
+  } else if (selectedMarkerIndices.size > 0 && trial && Array.isArray(trial.labels) && colorHex === "auto") {
+    for (const idx of selectedMarkerIndices) {
+      const label = trial.labels[idx];
+      if (label != null) delete markerColorOverrides[label];
+    }
+    status(`Marker color: Default (${selectedMarkerIndices.size} selected)`);
+  } else {
+    markerColor = colorHex;
+    status(`Marker color: ${colorName}`);
   }
-  if ($("marker-color-name-badge")) $("marker-color-name-badge").textContent = colorName;
-  if ($("marker-color-custom") && colorHex !== "auto") $("marker-color-custom").value = colorHex;
-  document.querySelectorAll("#marker-color-swatches .color-swatch-btn").forEach(btn => {
-    btn.classList.toggle("selected", btn.dataset.color === colorHex);
-  });
-  status(`Marker color: ${colorName}`);
+  syncMarkerColorUI();
   draw();
   saveSessionState();
 }
@@ -170,9 +215,12 @@ function cycleMarkerColor() {
 function resetMarkerStyle() {
   markerPaletteIndex = -1;
   markerSizeOverrides = {};
+  markerColorOverrides = {};
   markerSize = 3.5;
+  markerColor = "auto";
   syncMarkerSizeUI();
-  setMarkerColor("auto", "Default");
+  syncMarkerColorUI();
+  status("Marker color: Default");
   draw();
   saveSessionState();
 }
@@ -252,6 +300,21 @@ function clearAllSkeletons() {
   skeletonPairs = [];
   activeSkeletonTemplate = "none";
   rebuildSkeletonPairs();
+  // Do not syncActiveLayerSkeletonState here: load()/initSkeleton clear globals while
+  // switching layers; syncing would clobber the target layer before restore.
+}
+
+/** Keep the active layer row/stash in sync when skeleton is applied without switching layers. */
+function syncActiveLayerSkeletonState() {
+  if (!layers.length || activeLayerId == null || switchingLayer) return;
+  const layer = layers.find(l => l.id === activeLayerId);
+  if (!layer) return;
+  layer.template = activeSkeletonTemplate;
+  layer.customTemplate = loadedCustomTemplate;
+  layer.skeletonPairs = skeletonPairs.slice();
+  if (!layer.stash) layer.stash = {};
+  layer.stash.skeletonByGroup = JSON.parse(JSON.stringify(skeletonByGroup));
+  if ($("layers-list")) renderLayersPanel();
 }
 
 function setSkeletonColor(colorHex, colorName) {
@@ -737,6 +800,7 @@ function applySkeletonTemplate(templateObj, groupKey = null) {
   if (!templateObj || !Array.isArray(templateObj.connections)) {
     delete skeletonByGroup[key];
     rebuildSkeletonPairs();
+    syncActiveLayerSkeletonState();
     draw();
     return 0;
   }
@@ -761,7 +825,7 @@ function applySkeletonTemplate(templateObj, groupKey = null) {
   skeletonByGroup[key] = { templateId: activeSkeletonTemplate, pairs };
   rebuildSkeletonPairs();
   if ($("bones")) $("bones").checked = skeletonPairs.length > 0;
-  if (layers.length) renderLayersPanel();
+  syncActiveLayerSkeletonState();
   draw();
   return pairs.length;
 }
@@ -1330,7 +1394,6 @@ function drawSceneToContext(targetCtx, w, h) {
   const actColor = isLight ? "#0f766e" : "#59dec3";
   const bColor = isLight ? "#b45309" : "#f2c875";
   const themeDefaultColor = isLight ? "#475569" : "#9bbed7";
-  const regularColor = markerColor === "auto" ? themeDefaultColor : markerColor;
 
   for (const { i, q } of visible) {
     const isAct = i === activeIdx;
@@ -1342,13 +1405,7 @@ function drawSceneToContext(targetCtx, w, h) {
     const radius = isAct || isCOM ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
     targetCtx.arc(q[0], q[1], radius, 0, Math.PI * 2);
 
-    let ptColor = regularColor;
-    if (markerColor === "auto" && (skeletonPairs.length > 0 || activeSkeletonTemplate !== "none")) {
-      const mSide = getMarkerAnatomicalSide(i);
-      if (mSide === "left") ptColor = SKELETON_SIDE_COLORS.left;
-      else if (mSide === "right") ptColor = SKELETON_SIDE_COLORS.right;
-      else if (mSide === "center") ptColor = SKELETON_SIDE_COLORS.center;
-    }
+    const ptColor = effectiveMarkerColor(i, themeDefaultColor);
 
     targetCtx.fillStyle = isCOM ? "#ec4899" : (isAct ? actColor : (isA ? actColor : (isB ? bColor : ptColor)));
     targetCtx.fill();
@@ -2077,6 +2134,7 @@ function selectActiveMarker(idx, syncSelection = true) {
   syncActiveMarkerUI();
   updateApplyTargetBadge();
   syncMarkerSizeUI();
+  syncMarkerColorUI();
   syncPointsModal();
   updateTable();
   draw();
@@ -2100,6 +2158,7 @@ function toggleMarkerSelection(idx) {
   syncActiveMarkerUI();
   updateApplyTargetBadge();
   syncMarkerSizeUI();
+  syncMarkerColorUI();
   syncPointsModal();
   updateTable();
   draw();
@@ -2109,6 +2168,7 @@ function toggleMarkerSelection(idx) {
 function clearMarkerSelectionGroup() {
   selectedMarkerIndices = new Set();
   syncMarkerSizeUI();
+  syncMarkerColorUI();
   syncPointsModal();
   updateTable();
   draw();
@@ -2125,6 +2185,7 @@ function setSelectedMarkers(indices, explicitActiveIndex = null) {
   syncActiveMarkerUI();
   updateApplyTargetBadge();
   syncMarkerSizeUI();
+  syncMarkerColorUI();
   syncPointsModal();
   updateTable();
   draw();
@@ -2194,6 +2255,7 @@ function collectViewerState() {
       markerSize,
       markerSizeOverrides: { ...markerSizeOverrides },
       markerColor,
+      markerColorOverrides: { ...markerColorOverrides },
       skeletonColor,
       skeletonByGroup: Object.fromEntries(
         Object.entries(skeletonByGroup).map(([k, v]) => [k, { templateId: v.templateId, pairs: v.pairs }])
@@ -2338,8 +2400,15 @@ function restoreSessionState(data, state = readSessionState()) {
     }
     syncMarkerSizeUI();
     if (typeof state.markerColor === "string") {
-      setMarkerColor(state.markerColor);
+      markerColor = state.markerColor;
     }
+    if (state.markerColorOverrides && typeof state.markerColorOverrides === "object") {
+      markerColorOverrides = {};
+      for (const [label, value] of Object.entries(state.markerColorOverrides)) {
+        if (typeof value === "string" && value) markerColorOverrides[label] = value;
+      }
+    }
+    syncMarkerColorUI();
     if (typeof state.skeletonColor === "string") {
       setSkeletonColor(state.skeletonColor);
     }
@@ -2353,6 +2422,7 @@ function restoreSessionState(data, state = readSessionState()) {
       updateTable();
       updateApplyTargetBadge();
       syncMarkerSizeUI();
+      syncMarkerColorUI();
     }
     if (Array.isArray(state.pinnedMarkerIndices) && data && data.labels) {
       const validPinned = state.pinnedMarkerIndices.filter(i => Number.isInteger(i) && i >= 0 && i < data.labels.length);
@@ -2482,7 +2552,10 @@ function load(data) {
   selectedMarkerIndices = new Set(data.labels && data.labels.length > 0 ? [0] : []);
   skeletonByGroup = {};
   skeletonPairs = [];
-  if (!switchingLayer) markerSizeOverrides = {};
+  if (!switchingLayer) {
+    markerSizeOverrides = {};
+    markerColorOverrides = {};
+  }
   interpolatedMarkers = {};
   plot1CurveVisibility = { x: true, y: true, z: true };
   plot2CurveVisibility = { x: true, y: true, z: true };
@@ -2512,6 +2585,7 @@ function load(data) {
   initSkeleton(data.labels);
   updateApplyTargetBadge();
   syncMarkerSizeUI();
+  syncMarkerColorUI();
   buildTable();
   syncPointsModal();
 
@@ -2886,7 +2960,46 @@ function handleCanvasPointerMove(e) {
   }
 }
 
-function handleCanvasPointerUp(e) {
+/** Closest valid projected marker within maxDist px; returns { index, dist } or null. */
+function closestProjectedMarker(pts, mx, my, w, h, maxDist = 16) {
+  let closestIdx = -1, closestD = maxDist;
+  if (!pts) return null;
+  for (let i = 0; i < pts.length; i++) {
+    if (!valid(pts[i])) continue;
+    const q = project(pts[i], w, h);
+    const d = Math.hypot(q[0] - mx, q[1] - my);
+    if (d < closestD) {
+      closestD = d;
+      closestIdx = i;
+    }
+  }
+  return closestIdx >= 0 ? { index: closestIdx, dist: closestD } : null;
+}
+
+/**
+ * Pick among the active trial and visible overlay layers.
+ * Prefer nearer hits; on equal distance prefer the active layer.
+ * Returns { layerId, index, dist, isActive } or null.
+ */
+function pickMarkerAtScreen(mx, my, w, h, maxDist = 16) {
+  if (!trial || !trial.xyz) return null;
+  let best = null;
+  const activeHit = closestProjectedMarker(trial.xyz[frame] || [], mx, my, w, h, maxDist);
+  if (activeHit) {
+    best = { layerId: activeLayerId, index: activeHit.index, dist: activeHit.dist, isActive: true };
+  }
+  for (const layer of overlayLayers()) {
+    const pts = layer.data.xyz[layerFrame(layer)] || [];
+    const hit = closestProjectedMarker(pts, mx, my, w, h, maxDist);
+    if (!hit) continue;
+    if (!best || hit.dist < best.dist - 1e-6 || (Math.abs(hit.dist - best.dist) < 1e-6 && !best.isActive)) {
+      best = { layerId: layer.id, index: hit.index, dist: hit.dist, isActive: false };
+    }
+  }
+  return best;
+}
+
+async function handleCanvasPointerUp(e) {
   if (e.button === 2 || pointerDownButton === 2) {
     // Right-click release: do not alter selection or clear state
     pointerDownButton = 0;
@@ -2901,30 +3014,24 @@ function handleCanvasPointerUp(e) {
     const pts = trial.xyz[frame] || [];
 
     if (clickDist < 5) {
-      // Direct click on 3D canvas (not a drag)
+      // Direct click on 3D canvas (not a drag) — active trial + overlay layers
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-      let closestIdx = -1, closestD = 16;
-      for (let i = 0; i < pts.length; i++) {
-        if (!valid(pts[i])) continue;
-        const q = project(pts[i], w, h);
-        const d = Math.hypot(q[0] - mx, q[1] - my);
-        if (d < closestD) {
-          closestD = d;
-          closestIdx = i;
+      const pick = pickMarkerAtScreen(mx, my, w, h, 16);
+      if (pick) {
+        if (!pick.isActive && pick.layerId != null) {
+          await activateLayer(pick.layerId);
         }
-      }
-      if (closestIdx >= 0) {
         if (e.shiftKey || e.altKey) {
-          toggleMarkerSelection(closestIdx);
+          toggleMarkerSelection(pick.index);
         } else {
-          setSingleSelectedMarker(closestIdx);
+          setSingleSelectedMarker(pick.index);
         }
       } else if (!e.shiftKey && !e.altKey) {
         // Click in empty space clears group selection but preserves active marker
         clearMarkerSelectionGroup();
       }
     } else if (selectionBox && !e.ctrlKey && !e.metaKey) {
-      // Marquee box selection ended (works seamlessly even if Alt was released just before pointerup)
+      // Marquee box selection ended (active layer only)
       const boxed = [];
       for (let i = 0; i < pts.length; i++) {
         if (!valid(pts[i])) continue;
@@ -3302,6 +3409,7 @@ async function loadSelectedSkeleton() {
   const val = select ? select.value : "none";
   if (val === "none") {
     clearAllSkeletons();
+    syncActiveLayerSkeletonState();
     if ($("skeleton-template-select")) $("skeleton-template-select").value = "none";
     draw();
     saveSessionState();
@@ -3358,6 +3466,7 @@ if ($("btn-create-com")) $("btn-create-com").onclick = createDeLevaCOM;
 if ($("btn-clear-skeleton")) {
   $("btn-clear-skeleton").onclick = () => {
     clearAllSkeletons();
+    syncActiveLayerSkeletonState();
     if ($("skeleton-template-select")) $("skeleton-template-select").value = "none";
     saveSessionState();
     draw();
@@ -6671,6 +6780,7 @@ function captureActiveLayerState(layer) {
     activeFilterConfig,
     skeletonByGroup: JSON.parse(JSON.stringify(skeletonByGroup)),
     markerSizeOverrides: { ...markerSizeOverrides },
+    markerColorOverrides: { ...markerColorOverrides },
   };
 }
 
@@ -6683,6 +6793,9 @@ function restoreActiveLayerState(layer) {
     activeFilterConfig = st.activeFilterConfig;
     if (st.markerSizeOverrides && typeof st.markerSizeOverrides === "object") {
       markerSizeOverrides = { ...st.markerSizeOverrides };
+    }
+    if (st.markerColorOverrides && typeof st.markerColorOverrides === "object") {
+      markerColorOverrides = { ...st.markerColorOverrides };
     }
     recomputeTrialXYZ();
     updateLCSUI();
@@ -6703,6 +6816,7 @@ function restoreActiveLayerState(layer) {
   }
   updateApplyTargetBadge();
   syncMarkerSizeUI();
+  syncMarkerColorUI();
 }
 
 async function activateLayer(id) {
@@ -6922,6 +7036,7 @@ async function openOrLayerFiles(fileList, { replaceFirst = false } = {}) {
   pause();
   if (replaceFirst) {
     await uploadFile(files[0]);
+    await guessAndLoadSkeletonForTrial();
     await addFilesAsLayers(files.slice(1));
     return;
   }

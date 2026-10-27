@@ -1,6 +1,6 @@
-# Session Handoff: Resizable left sidebar
+# Session Handoff: Multi-C3D skeleton + marker select/style
 - **Status:** Completed (not committed)
-- **Current State:** Left sidebar width is mouse-resizable via `#sidebar-splitter` (`.window-splitter-v`) between `#sidebar` and `#sidebar-toggle-rail`. Width driven by `--sidebar-width` on `#app-container` (default 280px, clamp 180–480 and container−320). Persisted in `localStorage` key `mkvis3d_sidebar_width`; splitter hidden when sidebar collapsed. Double-click resets to 280px. In-app manual bullet updated.
-- **What Worked:** Mirrored existing `initHorizontalSplitter` / `initVerticalSplitter` pointer-capture pattern; device preference (not session/project) matching `mkvis3d_sidebar_visible`.
-- **Failed Approaches:** none
-- **Open Questions & Next Steps:** User can smoke-check in GUI (drag, reload persist, collapse, dblclick reset). Prior v0.0.3 docs/GUI hardening still uncommitted alongside this change.
+- **Current State:** Opening several C3Ds now auto-guesses skeleton on file 0; clicking an overlay marker activates that layer and selects the point; marker color follows selection via `markerColorOverrides` (like size). Active-layer skeleton syncs to the Layers panel without clobbering on `load()`/`initSkeleton`.
+- **What Worked:** `openOrLayerFiles(replaceFirst)` → `guessAndLoadSkeletonForTrial`; `pickMarkerAtScreen` + async `handleCanvasPointerUp`; per-label color overrides with session/layer stash; `syncActiveLayerSkeletonState` gated by `!switchingLayer`. Browser smoke: `uv run pytest tests/test_application.py::test_browser_smoke_automated` passed.
+- **Failed Approaches:** Calling `syncActiveLayerSkeletonState` from `clearAllSkeletons` wiped the target layer template during `activateLayer`→`load`→`initSkeleton` before restore.
+- **Open Questions & Next Steps:** User smoke-check in GUI (multi-select C3Ds → click each cloud → size/color/Load Skeleton). Prior uncommitted work (resizable sidebar, v0.0.3 docs) still uncommitted alongside this.
