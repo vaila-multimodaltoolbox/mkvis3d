@@ -326,6 +326,7 @@ def test_compute_vector_dot_product_angle_edge_cases():
     traj_u = np.tile([1.0, 0.0, 0.0], (n, 1))
     traj_v = np.tile([0.0, 1.0, 0.0], (n, 1))
     angles = compute_vector_dot_product_angle(traj_u, traj_v)
+    assert isinstance(angles, np.ndarray)
     assert angles.shape == (n,)
     assert np.allclose(angles, 90.0, atol=1e-12)
 

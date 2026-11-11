@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from openbiomech.marker_trial import MarkerTrial
+from openbiomech.marker_trial import ForcePlatform, MarkerTrial
 
 # Standard unit basis vectors
 DIRECTION_VECTORS: dict[str, np.ndarray] = {
@@ -233,37 +233,32 @@ def transform_trial_reference_system(
     xyz_rot = np.einsum("ij,fmj->fmi", R, trial.xyz)
     xyz_transformed = xyz_rot + t
 
-    transformed_fps = None
+    transformed_fps: list[ForcePlatform] | None = None
     if trial.force_plates:
         transformed_fps = []
         for fp in trial.force_plates:
-            new_corners = [tuple(R @ np.array(c) + t) for c in fp.corners]
-            new_cop = None
-            if fp.cop is not None:
-                cop_arr = np.array(fp.cop, dtype=np.float64)
-                valid_mask = ~np.isnan(cop_arr).any(axis=1)
-                new_cop = np.full_like(cop_arr, np.nan)
-                if np.any(valid_mask):
-                    new_cop[valid_mask] = cop_arr[valid_mask] @ R.T + t
-            new_force = None
-            if fp.force is not None:
-                force_arr = np.array(fp.force, dtype=np.float64)
-                new_force = force_arr @ R.T
-            new_moment = None
-            if fp.moment is not None:
-                moment_arr = np.array(fp.moment, dtype=np.float64)
-                new_moment = moment_arr @ R.T
+            corners_arr = np.asarray(fp.corners, dtype=np.float64)
+            new_corners = corners_arr @ R.T + t
+            cop_arr = np.asarray(fp.cop, dtype=np.float64)
+            new_cop = np.full_like(cop_arr, np.nan)
+            valid_mask = ~np.isnan(cop_arr).any(axis=1)
+            if np.any(valid_mask):
+                new_cop[valid_mask] = cop_arr[valid_mask] @ R.T + t
+            new_force = np.asarray(fp.force, dtype=np.float64) @ R.T
+            new_moment = np.asarray(fp.moment, dtype=np.float64) @ R.T
+            new_origin = np.asarray(fp.origin, dtype=np.float64) @ R.T + t
             transformed_fps.append(
-                fp.__class__(
+                ForcePlatform(
+                    id=fp.id,
                     name=fp.name,
+                    plate_type=fp.plate_type,
                     corners=new_corners,
-                    rate_hz=fp.rate_hz,
+                    origin=new_origin,
+                    channels=fp.channels,
+                    cop=new_cop,
                     force=new_force,
                     moment=new_moment,
-                    cop=new_cop,
-                    origin=tuple(R @ np.array(fp.origin) + t)
-                    if hasattr(fp, "origin") and fp.origin
-                    else None,
+                    contact=np.asarray(fp.contact).copy(),
                 )
             )
 

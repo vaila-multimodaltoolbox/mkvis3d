@@ -1,6 +1,6 @@
 [project]
 name = "mkvis3d"
-version = "0.0.3"
+version = "0.0.4"
 description = "OpenBiomech (mkvis3d) — open-source Visual3D/Mokka alternative. Python prototype phase; see docs/architecture.md for the long-term Rust architecture and CLAUDE.md for current status."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -60,7 +60,16 @@ quote-style = "double"
 python-version = "3.12"
 
 [tool.ty.src]
-exclude = [".git", ".venv", "__pycache__", "*.pyc", "build", "dist", "skeleton_templates"]
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "*.pyc",
+    "build",
+    "dist",
+    "skeleton_templates",
+    "blender_addon",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

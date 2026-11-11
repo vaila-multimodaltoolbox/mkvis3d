@@ -100,7 +100,7 @@ def test_viewer_header_shows_package_version():
     assert 'id="app-version"' in html
     assert f">v{__version__}<" in html
     assert f"<title>mkvis3d v{__version__}" in html
-    assert __version__ == "0.0.3"
+    assert __version__ == "0.0.4"
 
 
 def test_gui_rejects_client_local_path_and_unauthed_example(tmp_path):

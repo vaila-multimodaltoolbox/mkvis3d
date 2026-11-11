@@ -159,7 +159,9 @@ def read_wide_csv(path: str | Path | io.StringIO, *, rate_hz: float = 100.0) -> 
 
     df = _normalize_header(df)
 
-    valid_markers, marker_axes, residuals_map = _extract_marker_columns(df.columns)
+    valid_markers, marker_axes, residuals_map = _extract_marker_columns(
+        [str(c) for c in df.columns]
+    )
     if not valid_markers:
         raise ValueError(f"{path}: no 3D marker coordinate triplets (x, y, z) found in columns")
 

@@ -40,7 +40,7 @@ def test_write_c3d_with_template_after_adding_virtual_markers(golden_c3d_path, t
     template_bytes = golden_c3d_path.read_bytes()
 
     # Add virtual points and center-of-mass marker
-    new_labels = (*original.labels, "Virtual_KJC", "CenterOfMass_deLeva_male")
+    new_labels = (*original.labels, "Virtual_KJC", "CoM")
     extra_coords = np.full((original.n_frames, 2, 3), 0.5, dtype=np.float64)
     new_xyz = np.concatenate([original.xyz, extra_coords], axis=1)
     new_residuals = np.zeros((original.n_frames, len(new_labels)), dtype=np.float64)
@@ -212,9 +212,7 @@ def test_gui_save_as_after_modifying_vaila_project(tmp_path, monkeypatch):
         conn.request(
             "POST",
             "/api/export/save_as",
-            body=json.dumps(
-                {"trial": payload, "formats": ["c3d"], "filename": "new_run"}
-            ).encode(),
+            body=json.dumps({"trial": payload, "formats": ["c3d"], "filename": "new_run"}).encode(),
             headers=headers,
         )
         resp = conn.getresponse()
@@ -230,9 +228,7 @@ def test_gui_save_as_after_modifying_vaila_project(tmp_path, monkeypatch):
         conn.request(
             "POST",
             "/api/export/save_as",
-            body=json.dumps(
-                {"trial": payload, "formats": ["csv"], "filename": "new_run"}
-            ).encode(),
+            body=json.dumps({"trial": payload, "formats": ["csv"], "filename": "new_run"}).encode(),
             headers=headers,
         )
         resp2 = conn.getresponse()
@@ -248,9 +244,7 @@ def test_gui_save_as_after_modifying_vaila_project(tmp_path, monkeypatch):
         conn.request(
             "POST",
             "/api/export/save_as",
-            body=json.dumps(
-                {"trial": payload, "formats": ["3d"], "filename": "new_run"}
-            ).encode(),
+            body=json.dumps({"trial": payload, "formats": ["3d"], "filename": "new_run"}).encode(),
             headers=headers,
         )
         resp3 = conn.getresponse()

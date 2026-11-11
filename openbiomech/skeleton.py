@@ -113,14 +113,11 @@ def classify_template_connections(
     connections = template.get("connections", [])
     results = []
 
-    is_zero_based = (
-        "0-based" in str(template.get("note", ""))
-        or any(
-            isinstance(c, (list, tuple))
-            and len(c) >= 2
-            and (str(c[0]).lower() == "p0" or str(c[1]).lower() == "p0")
-            for c in connections
-        )
+    is_zero_based = "0-based" in str(template.get("note", "")) or any(
+        isinstance(c, (list, tuple))
+        and len(c) >= 2
+        and (str(c[0]).lower() == "p0" or str(c[1]).lower() == "p0")
+        for c in connections
     )
 
     for conn in connections:

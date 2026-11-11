@@ -188,7 +188,10 @@ def run_suite_for_browser(browser_name):
 
         # 4. Marker Color Customization (Palette, Custom, Reset)
         badge = driver.find_element(By.ID, "marker-color-name-badge")
-        assert badge.text.upper() == "DEFAULT", f"Expected initial color Default, got: {badge.text}"
+        default_badge = "DEFAULT (THEME)"
+        assert badge.text.upper() == default_badge, (
+            f"Expected initial color Default (Theme), got: {badge.text}"
+        )
 
         # Click Orange swatch (#f97316)
         swatch_orange = driver.find_element(
@@ -222,8 +225,8 @@ def run_suite_for_browser(browser_name):
         btn_reset = driver.find_element(By.ID, "btn-reset-marker-style")
         btn_reset.click()
         time.sleep(0.1)
-        assert badge.text.upper() == "DEFAULT", (
-            f"Expected Default badge after reset, got: {badge.text}"
+        assert badge.text.upper() == default_badge, (
+            f"Expected Default (Theme) badge after reset, got: {badge.text}"
         )
         assert val_readout.text == "3.5 px", f"Expected reset size 3.5 px, got: {val_readout.text}"
         print(f"[{browser_name}] PASS: Marker color controls (Orange, Blue, Custom #00ffaa, Reset)")
@@ -237,7 +240,7 @@ def run_suite_for_browser(browser_name):
         actions.send_keys("c").perform()
         time.sleep(0.1)
         badge_after_c = badge.text
-        assert badge_after_c.upper() != "DEFAULT", (
+        assert badge_after_c.upper() != default_badge, (
             f"Expected cycle color shortcut C to change badge, got: {badge_after_c}"
         )
 

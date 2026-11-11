@@ -15,20 +15,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-# GET APIs that mutate session state or expose the loaded trial require the
-# same Bearer token as POSTs. Static assets and <video> byte-range streaming
-# stay open (browsers cannot attach Authorization to media element requests).
-_SESSION_GET_PATHS = frozenset(
-    {
-        "/api/examples",
-        "/api/example",
-        "/api/current_trial",
-        "/api/field_reference",
-        "/api/companion_videos",
-        "/api/ensure_browser_video",
-    }
-)
-
 import numpy as np
 
 from .analysis_io import run_dynamics
@@ -55,6 +41,20 @@ from .video_compat import (
     ffmpeg_suggestion,
     pick_local_video_path,
     pick_save_path,
+)
+
+# GET APIs that mutate session state or expose the loaded trial require the
+# same Bearer token as POSTs. Static assets and <video> byte-range streaming
+# stay open (browsers cannot attach Authorization to media element requests).
+_SESSION_GET_PATHS = frozenset(
+    {
+        "/api/examples",
+        "/api/example",
+        "/api/current_trial",
+        "/api/field_reference",
+        "/api/companion_videos",
+        "/api/ensure_browser_video",
+    }
 )
 
 
@@ -367,12 +367,12 @@ def create_server(
                 self.send_bytes(404, b"Not found", "text/plain")
                 return
 
-            if req_path in _SESSION_GET_PATHS:
-                if self.headers.get("Authorization") != f"Bearer {token}":
-                    self.send_bytes(
-                        403, b'{"error":"Session token required"}', "application/json"
-                    )
-                    return
+            if (
+                req_path in _SESSION_GET_PATHS
+                and self.headers.get("Authorization") != f"Bearer {token}"
+            ):
+                self.send_bytes(403, b'{"error":"Session token required"}', "application/json")
+                return
 
             if req_path == "/api/examples":
                 data_dir = get_project_root() / "data"
@@ -751,9 +751,7 @@ def create_server(
                             "client-supplied save directory is not allowed; "
                             "use the host save dialog"
                         )
-                    start_dir = (
-                        source_dir if source_dir and source_dir.is_dir() else Path.home()
-                    )
+                    start_dir = source_dir if source_dir and source_dir.is_dir() else Path.home()
                     if len(formats) == 1:
                         fmt = formats[0]
                         suffix = f".{fmt}"
@@ -793,7 +791,8 @@ def create_server(
                         stem,
                         template=template,
                         formats=formats,
-                        project_payload=payload.get("project") or {
+                        project_payload=payload.get("project")
+                        or {
                             "trial": trial_body,
                             "viewer_state": payload.get("viewer_state", {}),
                             "analyses": payload.get("analyses", {}),

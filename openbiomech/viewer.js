@@ -225,29 +225,35 @@ function resetMarkerStyle() {
   saveSessionState();
 }
 
+/** Virtual whole-body CoM marker (`CoM` / legacy `CenterOfMass_deLeva_*`). */
+function isComLabel(label) {
+  if (label == null) return false;
+  const text = String(label);
+  return text === "CoM" || text.startsWith("CoM_") || text.startsWith("CenterOfMass_deLeva");
+}
+
 /**
  * Person/object prefix for multi-subject C3Ds (`piquerez_p12` → `piquerez`).
  * Bare `p12` / CoM virtual markers → null (whole-trial apply target).
  */
 function markerGroupKey(label) {
   if (label == null || typeof label !== "string") return null;
-  if (label.startsWith("CenterOfMass_deLeva")) return null;
+  if (isComLabel(label)) return null;
   const match = label.match(/^(.+)_p\d+$/i);
   return match ? match[1] : null;
 }
 
 function groupMarkerIndices(labels, key) {
   if (!Array.isArray(labels)) return [];
-  const isCom = lbl => String(lbl).startsWith("CenterOfMass_deLeva");
   if (!key || key === SKELETON_ALL_GROUP) {
-    return labels.map((_, i) => i).filter(i => !isCom(labels[i]));
+    return labels.map((_, i) => i).filter(i => !isComLabel(labels[i]));
   }
   const prefix = `${key}_`;
   return labels
     .map((lbl, i) => [lbl, i])
     .filter(([lbl]) => lbl === key || String(lbl).startsWith(prefix))
     .map(([, i]) => i)
-    .filter(i => !isCom(labels[i]));
+    .filter(i => !isComLabel(labels[i]));
 }
 
 function localMarkerLabel(label, key) {
@@ -844,8 +850,10 @@ const DE_LEVA = {
 function createDeLevaCOM() {
   if (!trial || !rawLoadedXYZ) return;
   const template = embeddedTemplates[activeSkeletonTemplate];
-  if (!template || !Array.isArray(template.keypoints) || template.keypoints.length < 70) {
-    status("Load the SAM 3D MHR-70 or Sapiens2 Goliath-308 skeleton before creating de Leva CoM.", true);
+  // Whole-body CoM needs a loaded template with named keypoints (MediaPipe 33,
+  // SAM MHR-70, Sapiens2, …). Landmark completeness is checked below — not size.
+  if (!template || !Array.isArray(template.keypoints) || template.keypoints.length === 0) {
+    status("Load a whole-body skeleton (MediaPipe Pose 33, SAM MHR-70, or Sapiens2) before creating de Leva CoM.", true);
     return;
   }
   const groupKey = activeApplyGroupKey();
@@ -854,9 +862,9 @@ function createDeLevaCOM() {
     return;
   }
   const groupIdxs = groupMarkerIndices(trial.labels, groupKey);
-  if (groupIdxs.length < 70) {
+  if (groupIdxs.length < 1) {
     const targetName = groupKey === SKELETON_ALL_GROUP ? "whole trial" : groupKey;
-    status(`Apply target "${targetName}" has ${groupIdxs.length} markers; de Leva CoM needs ≥70.`, true);
+    status(`Apply target "${targetName}" has no markers for de Leva CoM.`, true);
     return;
   }
   const normalized = value => String(value).toLowerCase().replaceAll("-", "_");
@@ -880,8 +888,9 @@ function createDeLevaCOM() {
     rightElbow: indexOf("right_elbow"),
     leftWrist: indexOf("left_wrist"),
     rightWrist: indexOf("right_wrist"),
-    leftMiddle: indexOf("left_middle_tip", "left_middle_finger4"),
-    rightMiddle: indexOf("right_middle_tip", "right_middle_finger4"),
+    // MediaPipe Pose 33 has index/pinky tips, not middle-finger tip.
+    leftMiddle: indexOf("left_middle_tip", "left_middle_finger4", "left_index", "left_index_tip", "left_pinky"),
+    rightMiddle: indexOf("right_middle_tip", "right_middle_finger4", "right_index", "right_index_tip", "right_pinky"),
     leftHip: indexOf("left_hip"),
     rightHip: indexOf("right_hip"),
     leftKnee: indexOf("left_knee"),
@@ -890,13 +899,24 @@ function createDeLevaCOM() {
     rightAnkle: indexOf("right_ankle"),
     leftHeel: indexOf("left_heel"),
     rightHeel: indexOf("right_heel"),
-    leftBigToe: indexOf("left_big_toe_tip", "left_big_toe"),
-    rightBigToe: indexOf("right_big_toe_tip", "right_big_toe"),
-    leftSmallToe: indexOf("left_small_toe_tip", "left_small_toe"),
-    rightSmallToe: indexOf("right_small_toe_tip", "right_small_toe")
+    // MediaPipe Pose 33 exposes a single foot_index tip per side.
+    leftBigToe: indexOf("left_big_toe_tip", "left_big_toe", "left_foot_index"),
+    rightBigToe: indexOf("right_big_toe_tip", "right_big_toe", "right_foot_index"),
+    leftSmallToe: indexOf("left_small_toe_tip", "left_small_toe", "left_foot_index"),
+    rightSmallToe: indexOf("right_small_toe_tip", "right_small_toe", "right_foot_index")
   };
-  if (Object.values(ids).some(index => index < 0)) {
-    status("The selected skeleton lacks landmarks required by the de Leva whole-body model.", true);
+  const requiredKeys = [
+    "nose", "leftShoulder", "rightShoulder", "leftElbow", "rightElbow",
+    "leftWrist", "rightWrist", "leftMiddle", "rightMiddle",
+    "leftHip", "rightHip", "leftKnee", "rightKnee",
+    "leftAnkle", "rightAnkle", "leftHeel", "rightHeel"
+  ];
+  const missingRequired = requiredKeys.filter(key => ids[key] < 0);
+  if (ids.leftBigToe < 0 && ids.leftSmallToe < 0) missingRequired.push("leftToe");
+  if (ids.rightBigToe < 0 && ids.rightSmallToe < 0) missingRequired.push("rightToe");
+  // Neck is optional: MediaPipe Pose has none; head proximal falls back to shoulder mid.
+  if (missingRequired.length) {
+    status(`The selected skeleton lacks landmarks required by de Leva CoM: ${missingRequired.join(", ")}.`, true);
     return;
   }
 
@@ -905,14 +925,29 @@ function createDeLevaCOM() {
   const midpoint = (a, b) => valid(a) && valid(b)
     ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]
     : null;
+  const firstValid = (...pts) => {
+    for (const pt of pts) {
+      if (valid(pt)) return pt;
+    }
+    return null;
+  };
   const comTrajectory = rawLoadedXYZ.map(points => {
-    const p = key => points[ids[key]];
+    const p = key => (ids[key] >= 0 ? points[ids[key]] : null);
     const shoulderMid = midpoint(p("leftShoulder"), p("rightShoulder"));
     const hipMid = midpoint(p("leftHip"), p("rightHip"));
-    const leftToes = midpoint(p("leftBigToe"), p("leftSmallToe"));
-    const rightToes = midpoint(p("rightBigToe"), p("rightSmallToe"));
+    const neckPt = firstValid(p("neck"), shoulderMid);
+    const leftToes = firstValid(
+      midpoint(p("leftBigToe"), p("leftSmallToe")),
+      p("leftBigToe"),
+      p("leftSmallToe")
+    );
+    const rightToes = firstValid(
+      midpoint(p("rightBigToe"), p("rightSmallToe")),
+      p("rightBigToe"),
+      p("rightSmallToe")
+    );
     const segments = [
-      ["head", p("neck"), p("nose")],
+      ["head", neckPt, p("nose")],
       ["trunk", shoulderMid, hipMid],
       ["upper_arm", p("leftShoulder"), p("leftElbow")],
       ["upper_arm", p("rightShoulder"), p("rightElbow")],
@@ -941,10 +976,16 @@ function createDeLevaCOM() {
     return availableMass > 0 ? weighted.map(value => value / availableMass) : null;
   });
 
-  const label = groupKey === SKELETON_ALL_GROUP
-    ? `CenterOfMass_deLeva_${sex}`
-    : `CenterOfMass_deLeva_${groupKey}_${sex}`;
+  const label = groupKey === SKELETON_ALL_GROUP ? "CoM" : `CoM_${groupKey}`;
   let comIndex = trial.labels.findIndex(existing => existing === label);
+  // Replace a legacy long name or previous CoM for the same apply target.
+  if (comIndex < 0) {
+    comIndex = trial.labels.findIndex(existing => {
+      if (!isComLabel(existing)) return false;
+      if (groupKey === SKELETON_ALL_GROUP) return existing === "CoM" || String(existing).startsWith("CenterOfMass_deLeva");
+      return existing === `CoM_${groupKey}` || String(existing).startsWith(`CenterOfMass_deLeva_${groupKey}_`);
+    });
+  }
   if (comIndex < 0) {
     comIndex = trial.labels.length;
     trial.labels.push(label);
@@ -1399,7 +1440,7 @@ function drawSceneToContext(targetCtx, w, h) {
     const isAct = i === activeIdx;
     const isSelected = selectedMarkerIndices.has(i);
     const isA = showDistance && i === a, isB = showDistance && i === b;
-    const isCOM = trial.labels[i]?.startsWith("CenterOfMass_deLeva");
+    const isCOM = isComLabel(trial.labels[i]);
     const baseRadius = effectiveMarkerSize(i);
     targetCtx.beginPath();
     const radius = isAct || isCOM ? Math.max(3, baseRadius * 1.7) : (isA || isB ? Math.max(2.5, baseRadius * 1.4) : baseRadius);
@@ -5408,7 +5449,7 @@ function syncPointsModal() {
     const isSelected = selectedMarkerIndices.has(i);
     const isActive = i === activeMarkerIndex;
     const isFocused = fIdx === pointsModalFocusedIndex;
-    const isCOM = item.name.startsWith("CenterOfMass_deLeva");
+    const isCOM = isComLabel(item.name);
     const isPinned = pinnedMarkerIndices.has(i);
     const hasCoords = pts && valid(pts[i]);
 

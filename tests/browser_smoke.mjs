@@ -538,7 +538,7 @@ if(process.argv[3]){
   await evaluate('document.getElementById("action-kinematics-plot-euler").click()');
   assert.equal(await evaluate('document.getElementById("plot1-mode").value'), "kinematics-euler");
  await evaluate('document.getElementById("btn-create-com").click();');
- assert.equal(await evaluate('trial.labels.at(-1)'), "CenterOfMass_deLeva_male");
+ assert.equal(await evaluate('trial.labels.at(-1)'), "CoM");
  assert.equal(await evaluate('trial.xyz[0].length'), 71);
  assert.equal(await evaluate('rawLoadedXYZ[0].length'), 71);
  const editedC3DBytes = await evaluate(`fetch("/api/export/c3d", {

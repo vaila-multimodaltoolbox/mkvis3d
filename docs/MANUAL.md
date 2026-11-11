@@ -476,7 +476,7 @@ $$\mathbf{r}_{\text{CoM}}(t) = \frac{1}{M_{\text{total}}} \sum_{i=1}^{16} m_i \c
 where:
 $$\mathbf{r}_{i,\text{CoM}}(t) = \mathbf{r}_{i,\text{prox}}(t) + \lambda_i \cdot (\mathbf{r}_{i,\text{dist}}(t) - \mathbf{r}_{i,\text{prox}}(t))$$
 
-In mkvis3d, clicking **`Create CoM`** calculates this trajectory across the entire trial and appends a new 3D marker `CenterOfMass_deLeva_male` or `CenterOfMass_deLeva_female` to the scene.
+In mkvis3d, clicking **`Create CoM`** calculates this trajectory across the entire trial and appends a new 3D marker `CoM` to the scene (sex is chosen in the UI; multi-person files use `CoM_<person>`).
 
 ---
 
@@ -639,7 +639,7 @@ uv run mkvis3d.py dynamics trial.json --output results.csv
 ### 10.3 Tutorial C: Countermovement Jump (CMJ) Impulse & CoM
 1. Open jump trial C3D.
 2. In sidebar, select sex and click **`Create CoM`** (de Leva 1996).
-3. Select active marker `CenterOfMass_deLeva_male`.
+3. Select active marker `CoM`.
 4. In Plot 1, switch mode to `Active Marker · Z Position (Height)`.
 5. Measure difference between baseline standing CoM height and maximum flight height using Distance measurement.
 

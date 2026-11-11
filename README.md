@@ -1,9 +1,10 @@
 # mkvis3d — OpenBiomech
 
-**Package version:** `0.0.3` (see `[project].version` in `pyproject.toml`). **Python:** 3.12.x (pinned in-repo for `uv`).
+**Package version:** `0.0.4` (see `[project].version` in `pyproject.toml`). **Python:** 3.12.x (pinned in-repo for `uv`).
 
-**Last updated:** 2026-10-26 | **Full Guide:** [INSTRUCTIONS.md](INSTRUCTIONS.md)
+**Last updated:** 2026-11-11 | **Full Guide:** [INSTRUCTIONS.md](INSTRUCTIONS.md)
 
+v0.0.4: de Leva whole-body CoM works on MediaPipe Pose 33 (and other whole-body templates, not only ≥70); virtual marker label shortened to `CoM`; multi-C3D layer skeleton select/style improvements.
 v0.0.3: Sample Trials submenu (inline) includes Soccer Field Reference; Open File accepts multiple C3D/CSV/.3d (first active, rest layers); GUI hardening (label XSS escape, session auth on sample/field APIs, no client save path / local_path).
 
 <div align="center">

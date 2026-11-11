@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import re
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -299,7 +300,7 @@ def relative_segment_kinematics(
 
 def evaluate_virtual_point_expression(
     trial: MarkerTrial,
-    expression: str,
+    expression: str | Sequence[float] | np.ndarray,
 ) -> np.ndarray:
     """Evaluate a mathematical expression using marker points across all frames.
 
